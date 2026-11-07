@@ -1,0 +1,441 @@
+# Kernote — Decision Log
+
+Status: living document · Last updated 2026-11-06
+
+Format: one ADR per decision. Status is `accepted`, `proposed`, `superseded` or
+`rejected`. A decision changes only by adding a new entry that supersedes an old
+one — entries are never edited away. This file is the dogfood target: Kernote's
+own `decision` memory type should eventually be able to read it.
+
+---
+
+## ADR-0001 — Two local processes, no desktop shell for the MVP
+**Status:** accepted · 2026-11-06
+
+**Context.** The guide calls for a "desktop-quality application" on Windows and
+Linux. That can mean Electron/Tauri packaging or a localhost web app.
+
+**Decision.** Ship a Vite/React frontend plus a FastAPI backend on localhost for
+the MVP. No Electron or Tauri.
+
+**Alternatives.** *Tauri* — small binaries and a real desktop feel, but adds a
+Rust toolchain and a packaging story to a 25-day budget. *Electron* — familiar
+but heavy on a 16 GB machine and slow to iterate.
+
+**Consequences.** Days saved now; packaging deferred to Day 21 as a stretch. The
+frontend must avoid browser-only assumptions in its data layer so a shell can be
+added later without a rewrite. "Desktop-quality" is therefore a UI-craft claim,
+not a distribution claim, and the README must say so plainly.
+
+---
+
+## ADR-0002 — SQLite as the single source of truth, indexes disposable
+**Status:** accepted · 2026-11-06
+
+**Context.** `CLAUDE.md` requires separated raw captures, normalized chunks,
+canonical memories and derived indexes, with rebuildable indexes.
+
+**Decision.** One SQLite database per project workspace holds L1–L3. L4 (FTS5
+tables and embedding vectors) is derived and droppable, with a tested `reindex`
+that reproduces retrieval results exactly.
+
+**Alternatives.** *Postgres* — overkill and hostile to local-first distribution.
+*Files on disk plus an index* — loses transactional integrity across the lifecycle.
+
+**Consequences.** Simple backup (copy one file) and simple export. Single-writer
+concurrency must be respected: WAL mode, `busy_timeout`, one writer, scans
+batched per file group. Reindex equivalence becomes a required test.
+
+---
+
+## ADR-0003 — numpy brute-force vector search for the MVP
+**Status:** accepted · 2026-11-06
+
+**Context.** The guide explicitly defers the vector-index choice until a spike
+confirms Windows/Linux install reliability.
+
+**Decision.** Store 384-d float32 L2-normalized vectors as SQLite BLOBs and do
+cosine similarity with a single numpy matrix multiply. No vector extension.
+
+**Alternatives.** *sqlite-vec* — good fit, but a native extension load is exactly
+the Windows friction the guide warns about. *FAISS* — heavy, another large wheel.
+*Chroma/LanceDB* — a second datastore, contradicting ADR-0002.
+
+**Consequences.** Zero install risk and no extra dependency. At MVP scale
+(≤50k chunks → ~75 MB, one 50k×384 matmul) latency stays in the tens of
+milliseconds, which is well inside the p50 budget. Revisit via spike if a real
+repo exceeds ~200k chunks or RAM becomes the binding constraint; that revisit
+would be ADR-0003a, not an edit here.
+
+---
+
+## ADR-0004 — `onnxruntime` for runtime embeddings; PyTorch confined to experiments
+**Status:** accepted · 2026-11-06
+
+**Context.** The baseline embedding model is `all-MiniLM-L6-v2`. The obvious
+path, `sentence-transformers`, pulls in `torch` (~2 GB CPU wheel) as a *runtime*
+dependency, on a 16 GB machine with no CUDA, for a product whose core flows must
+work with no paid API and a fast local install.
+
+**Decision.** Runtime embeddings run on `onnxruntime` with the MiniLM ONNX export
+plus `tokenizers` (~90 MB total), in `requirements.txt`. `torch`, `sklearn` and
+`sentence-transformers` move to `requirements-ml.txt`, installed only for the
+optional classifier and tiny-LM experiments.
+
+**Alternatives.** *sentence-transformers at runtime* — simplest code, but a 2 GB
+install and slower CPU inference for the core product. *No embeddings, FTS only* —
+cheapest, but loses the semantic half of hybrid retrieval, which is a `Must`.
+
+**Consequences.** Install is minutes, not tens of minutes, and CPU inference is
+faster. Cost: the embedding path is slightly more code than one import, and the
+ONNX artifact must be vendored or fetched once with its hash recorded. This does
+not contradict `CLAUDE.md`'s "PyTorch for narrow experiments" — it enforces it.
+
+---
+
+## ADR-0005 — Dual fingerprints: content hash primary, Git blob hash as attribution
+**Status:** accepted · 2026-11-06
+
+**Context.** Freshness must rest on deterministic evidence. Git blob hashes are
+the natural choice, but they are unavailable for untracked files and non-repo
+folders, and `core.autocrlf` can make them differ across Windows and Linux for
+byte-identical logical content.
+
+**Decision.** Every source reference stores `content_hash` (SHA-256 of raw bytes,
+always present, the key for content-addressed captures) and, when inside a repo,
+`git_blob_hash` + `git_commit` for attribution and diff generation.
+
+**Alternatives.** *Git blob only* — breaks outside repos and across autocrlf.
+*Content hash only* — cannot produce a `git diff` as evidence.
+
+**Consequences.** Kernote works on a plain directory, with drift detection
+degrading to "this file changed" without hunk-level overlap. Minor storage cost
+for the second hash. Cross-OS capture identity stays stable.
+
+---
+
+## ADR-0006 — Deterministic extraction first; the model adapter is strictly additive
+**Status:** accepted · 2026-11-06
+
+**Context.** Lifecycle stage 3 ("Understand") classifies memory types and extracts
+facts, decisions, commands and dependencies. The MVP may not depend on a paid API
+and may not depend on a local generative model. This is the single largest
+unflagged risk in the kickoff guide: without a position here, Days 6–9 stall.
+
+**Decision.** Stage 3 is implemented as a set of named deterministic rule
+extractors (`rule:markdown_sections`, `rule:markdown_commands`, `rule:adr`,
+`rule:manifests`, `rule:config`, `rule:code_symbols`, `rule:git_history`) plus
+user-authored memories. An optional model adapter may improve titles, summaries
+and rationale afterwards; its output is schema-validated and tagged
+`model:<id>@<version>`. The app is fully functional with the adapter disabled,
+and that configuration is the default and the one that CI tests.
+
+**Alternatives.** *LLM-first extraction* — higher recall, but introduces a hard
+dependency the product principles forbid and makes output non-reproducible.
+*Manual-only memories* — safe but gives no reason to scan a repository.
+
+**Consequences.** Lower extraction recall than an LLM pipeline, which the README
+must state as a known limitation. In exchange: reproducible output, fast tests,
+no API cost, and `extraction_method` lets any bad extractor's output be found and
+re-reviewed in bulk later.
+
+---
+
+## ADR-0007 — A finding is a request for review, never a verdict
+**Status:** accepted · 2026-11-06
+
+**Context.** Stale, conflicting and duplicate signals are all probabilistic. The
+guide identifies false stale alerts as a trust-destroying risk.
+
+**Decision.** One `findings` table for every maintenance signal. A finding
+carries a detector id, machine-readable evidence (hashes, diff hunks, scores), an
+explanation, and a severity band. It never asserts a memory is wrong. Memory
+status moves to `needs_review` only on high severity, and only a human resolution
+changes canonical content. Conflicts keep both claims; merges write new revisions
+and set `superseded_by` without deleting anything.
+
+**Alternatives.** *Auto-mark stale* — cheap, and it poisons trust on the first
+false positive. *Separate tables per signal* — triples the review UI for no gain.
+
+**Consequences.** One review queue, one resolution flow, one audit trail across
+Memory Intelligence Center and Change Impact. Severity thresholds need tuning
+against the evaluation set, and the diff-overlap test in `maintain/drift.py`
+becomes the highest-value unit test in the codebase.
+
+---
+
+## ADR-0008 — MCP surface is read-only
+**Status:** accepted · 2026-11-06
+
+**Context.** Agents need project context. `CLAUDE.md` forbids silent destructive
+memory operations and requires approval for canonical writes.
+
+**Decision.** The MCP server exposes exactly four read-only tools:
+`search_memory`, `project_summary`, `get_decision`, `build_context`. No write
+tool, in any form.
+
+**Alternatives.** *Agent-writable memory* — attractive for capture, but an agent
+writing unreviewed records is precisely the "silent" path the contract forbids.
+
+**Consequences.** Agents consume but cannot corrupt the vault. If agent-proposed
+memories are wanted later, they arrive as `findings` for human review — a new ADR,
+not a loosening of this one. A small tool surface is also a testable one, which is
+what makes the `Should` rating achievable in two days.
+
+---
+
+## ADR-0009 — Linux/WSL is the primary dev target; Windows is verified, not assumed
+**Status:** proposed · 2026-11-06 · *needs your confirmation (open question Q3)*
+
+**Context.** The guide targets Windows + Linux. Development is happening on
+WSL2 on this machine. Windows dependency friction is a named risk.
+
+**Decision (proposed).** Develop and CI on Linux/WSL. Verify native Windows at
+two checkpoints — Day 18 and Day 23 — covering install, scan, retrieval and
+restart. Keep the stack free of native extensions (which ADR-0003 and ADR-0004
+already enforce) so that verification is cheap.
+
+**Consequences if accepted.** Windows is a supported-but-later-verified target;
+the Day 25 limitations list states exactly what was tested on which OS. If
+Windows must be co-primary instead, Days 3–5 need an extra half-day for a
+Windows-first environment spike.
+
+---
+
+## ADR-0010 — Buy-before-build: borrow proven libraries for everything outside the core
+**Status:** accepted · 2026-11-06 · *supersedes nothing; constrains all later ADRs*
+
+**Context.** Kernote is being built as a real-world product, not a research
+demo. A 25-day budget cannot absorb hand-written implementations of solved
+problems, and hand-rolled versions of gitignore matching, secret detection, diff
+parsing and multi-language code parsing are reliably worse than the maintained
+originals — not just slower to write.
+
+**Decision.** Anything outside Kernote's differentiated core is taken from a
+proven, maintained open-source project, including for small tasks. The core —
+the memory lifecycle, provenance, drift evidence, review flows, grounded answer
+composition, scoring with reasons, context policy — is written here. Candidate
+libraries are verified against their source before adoption, never recalled from
+memory. `docs/TOOLING.md` holds the mapping, and §5 of it holds the rejection
+criteria (owns our core, native/GPU build on a core path, unmaintained,
+one-liner, untestable offline, incompatible license).
+
+**Alternatives.** *Minimal-dependency purism* — fewer supply-chain and audit
+surfaces, but on this timeline it buys a worse product. *Framework-first* (adopt
+a RAG or agent framework wholesale) — fast to a demo, but it would own the memory
+model, which is the one thing that must not be outsourced.
+
+**Consequences.** Faster, more correct non-core code, and more review attention
+available for the parts that matter. Costs accepted deliberately: a larger
+dependency tree, a license-compatibility obligation (MIT/Apache-2.0/BSD/ISC
+only; GPL read but never vendored), and a `pip-licenses` + `detect-secrets`
+check in the Day-23 release gate. Every core-path dependency must state in
+`TOOLING.md` what hand-written code it replaced.
+
+---
+
+## ADR-0011 — `fastembed` is the embedding runtime
+**Status:** accepted · 2026-11-06 · *implements ADR-0004*
+
+**Context.** ADR-0004 chose ONNX over PyTorch for runtime embeddings but left
+the implementation as hand-written `onnxruntime` + `tokenizers` glue — roughly
+150 lines covering tokenization, batching, pooling, normalization and model
+fetching with hash pinning.
+
+**Decision.** Use `fastembed` (Qdrant). Verified 2026-11-06: it runs
+`sentence-transformers/all-MiniLM-L6-v2` at 384 dimensions on ONNX Runtime with
+**no PyTorch dependency**, manages its own execution providers, and batches.
+
+**Alternatives.** *Hand-written ONNX glue* — one fewer dependency, 150 lines of
+pooling and tokenization bugs to find ourselves. *`sentence-transformers`* —
+rejected in ADR-0004 for the ~2 GB torch runtime wheel.
+
+**Consequences.** `retrieval/embed.py` shrinks to a thin adapter, which keeps the
+model swap in ADR-0014 cheap. `fastembed` ignores any `device` argument — it is
+CPU/ONNX-managed — which suits the Iris Xe target where GPU acceleration was
+never available anyway.
+
+---
+
+## ADR-0012 — tree-sitter for code symbol extraction, with per-language query files
+**Status:** accepted · 2026-11-06 · *refines ADR-0006*
+
+**Context.** ADR-0006 lists `rule:code_symbols` among the deterministic
+extractors without saying how it parses code. Regex-based symbol extraction
+across several languages is weeks of work and permanently approximate, and
+provenance needs exact line ranges.
+
+**Decision.** Use `tree-sitter` with `tree-sitter-language-pack` (verified
+2026-11-06: one package, 300+ grammars, extracts symbols, imports and structure
+with line ranges). Follow `cased/kit`'s architecture: per-language
+`queries/<lang>/tags.scm` files, so adding a language is a new query file rather
+than a change to core logic. Seed those queries from Aider's `aider/queries/`
+(Apache-2.0, attributed).
+
+**Alternatives.** *universal-ctags* — mature, but a system binary dependency and
+coarser output. *Regex per language* — rejected above. *LLM extraction* —
+forbidden as a core path by ADR-0006.
+
+**Consequences.** Exact line ranges for `architecture` memories, and only tested
+languages get a query file — which is how `CLAUDE.md`'s "do not claim support for
+untested languages" becomes structurally true rather than a promise. Costs: a
+native wheel (prebuilt for Windows and Linux, so acceptable under ADR-0010 §2)
+and a per-language query-writing effort that is explicitly scoped and cuttable.
+
+---
+
+## ADR-0013 — Borrow the scanner's hard parts
+**Status:** accepted · 2026-11-06 · *refines the ingest design in ARCHITECTURE.md*
+
+**Context.** The scanner's correctness is a safety boundary: it must not ingest
+secrets, must honour `.gitignore` exactly, and must produce diff hunks precise
+enough that drift findings are trustworthy. My Day-1 draft hand-rolled all four
+of these.
+
+**Decision.** Replace the hand-written pieces with: `pathspec` for gitignore
+semantics, `identify` for text/binary and file-type tagging, `detect-secrets`
+for secret refusal, `unidiff` for diff hunk parsing. Scanner exclude defaults are
+seeded from `github-linguist/linguist`'s `vendor.yml` and `documentation.yml`
+rather than invented. Git is still invoked via the Git CLI with argument lists
+per `CLAUDE.md`; only the parsing is borrowed.
+
+**Alternatives.** *Hand-rolled* — my original plan. Gitignore negation and
+precedence, and real-world secret formats, are both areas where a from-scratch
+implementation fails quietly, and quiet failure here means leaking a credential
+into the vault.
+
+**Consequences.** The highest-risk safety path now rests on maintained, widely
+audited code. `detect-secrets` also goes into `pre-commit`, so the contract's
+"review the diff for secrets" step is machine-enforced. The hostile fixture
+(fake `.env`, fake private key, binary, 5 MB file, CRLF file) tests our *wiring*
+of these tools rather than our reimplementation of them.
+
+---
+
+## ADR-0014 — Spike `model2vec` static embeddings as a possible default
+**Status:** proposed · 2026-11-06 · *needs a Day 14–17 measurement*
+
+**Context.** The target machine is CPU-only with no CUDA. Embedding a medium
+repository is the heaviest routine operation in the product, and ADR-0004's
+MiniLM-via-ONNX baseline is the slow path in both scan and reindex.
+
+**Decision (proposed).** During the Days 14–17 retrieval milestone, benchmark
+`minishlab/potion-base-8M` against `all-MiniLM-L6-v2` on our own labelled
+question set using `ranx`. Published MTEB figures (verified 2026-11-06) put
+`potion-base-8M` at **91.96%** of all-MiniLM-L6-v2's average score at orders of
+magnitude lower CPU cost, with `potion-base-32M` at ~92% and roughly 70× faster
+on CPU. Adopt it as the default only if **our** Recall@k and nDCG stay within an
+agreed margin; otherwise keep MiniLM and record the measurement.
+
+**Alternatives.** *MiniLM only* — the known-good baseline, and the fallback if
+the spike disappoints. *A larger model* — contradicts the hardware constraint.
+
+**Consequences if accepted.** Much faster scan and reindex on the Latitude 3420,
+which makes the performance budgets in `ARCHITECTURE.md` §8 comfortable instead
+of tight. `embeddings.model_id` is already part of that table's primary key, so
+both models can coexist and be compared without a migration. The decision must
+rest on our own measured numbers, not the published benchmark — an embedding
+model chosen from a leaderboard is exactly the research-demo habit this product
+is avoiding.
+
+---
+
+## ADR-0003a — `sqlite-vec` deferral confirmed by evidence
+**Status:** accepted · 2026-11-06 · *amends ADR-0003, does not supersede it*
+
+**Context.** ADR-0003 deferred `sqlite-vec` on a *predicted* Windows install
+risk. Since `sqlite-vec` ships as a plain pip wheel loaded via
+`sqlite_vec.load(conn)`, that prediction deserved checking rather than assuming.
+
+**Decision.** The deferral stands, now on evidence. Verified 2026-11-06:
+`asg017/sqlite-vec` issues #13 and #45 document the precompiled extension
+failing to load from Python on Windows 10/11 ("The specified module could not be
+found"), including cases where `enable_load_extension()` succeeds and the
+subsequent load fails — meaning the failure is not reliably detectable up front.
+Some Python builds also ship with extension loading disabled entirely.
+
+**Consequences.** numpy brute force remains the MVP path. A `sqlite-vec` spike
+stays on the stretch list and must include a native-Windows load test as its
+first step. Also noted for whenever it is revisited: SQLite's 1 GB blob limit
+bounds any single-blob vector layout.
+
+---
+
+## ADR-0015 — Reposition on reviewable memory, not agent memory
+**Status:** accepted · 2026-11-07 · *evidence in `docs/COMPETITIVE_LANDSCAPE.md`*
+
+**Context.** A competitive scan on 2026-11-07 — the first one done for this
+project, since the kickoff guide only screened the *name* — found the product
+thesis already occupied. `projectmem` (arXiv:2606.12329, Jun 2026) is an
+open-source, local-first, typed, provenance-keeping, MCP-served project memory
+layer for coding agents. `Codified Context` is plain-text, no-vector-DB,
+MCP-served, and ships a drift detector. Lane A (agent memory servers) also holds
+agentmemory, AI-Memory, ByteRover, mem0, Zep, Letta and others, mostly free.
+Meanwhile Claude Code now ships native per-project memory and a
+`/doctor prompt-audit` that flags contradictory instruction files, and Cursor
+removed its Memories feature in v2.1.
+
+Separately, `MemoryAgentBench` evaluates retention, **update**, retrieval and
+**conflict resolution**, and the published finding is that no current
+architecture masters all four.
+
+**Decision.**
+1. Headline becomes **reviewable project memory with visible evidence and human
+   approval** — an audit/review workspace. MCP becomes an output, not the pitch.
+2. **F8 Knowledge Conflict Detection: `Should` → `Must`.** It is an unmastered
+   capability, an afterthought for the nearest competitors, and nearly free on
+   the `findings` table already designed.
+3. **F3 Ask Your Project: hero → supporting**, rescoped as *cited evidence
+   retrieval*, not a chat competitor. Competing on answer fluency against
+   frontier-LLM products while ADR-0006 forbids an LLM in the core loop is a
+   comparison we lose.
+4. Drift granularity becomes the technical claim: per-source-ref content hash
+   **plus diff-hunk/line-range overlap**, finer than session-start commit
+   divergence.
+5. Evaluation axes adopt MemoryAgentBench's four competencies.
+
+**Alternatives.** *Proceed unchanged* — risks shipping a late, LLM-less entrant
+into the most crowded lane. *Abandon* — unwarranted: the under-served capability
+is real and reachable in the remaining 23 days. *Pivot to the agent-side gate*
+(projectmem's "warn before repeating a failed fix") — interesting, but it is
+their occupied differentiator and needs session capture we have not designed.
+
+**Consequences.** Applied 2026-11-07 to `PRODUCT_SPEC.md` §2/§4/§5/§7/§9,
+`ROADMAP.md`, `README.md` and `ARCHITECTURE.md` §9. `ROADMAP.md` Days 18–20 absorbs
+conflict detection as a `Must`, which is the milestone most at risk of slipping;
+F3's acceptance criterion changes from answer quality to citation correctness and
+abstention rate. The name screen must be re-run against the competitor names
+found (none of which is "Kernote"). `projectmem` is open source, so per ADR-0010
+its event schema and MCP surface should be read before ours is finalized.
+
+---
+
+## ADR-0016 — The roadmap, structure and architecture are ours; prior art is reference only
+**Status:** accepted · 2026-11-07 · *constrains how ADR-0010 is applied*
+
+**Context.** ADR-0010 committed us to borrowing proven libraries for everything
+outside the core, and the 2026-11-07 competitive scan surfaced close prior art
+(`projectmem`, `Codified Context`) plus useful technique (`Aider`'s repomap,
+`cased/kit`'s query layout). Borrowing *code* and borrowing a *plan* are
+different acts, and the second one is dangerous: a competitor's roadmap encodes
+a competitor's priorities, and the scan showed theirs aim at a different lane.
+
+**Decision.** Kernote's stage plan, repository structure, schema and module
+boundaries are designed here, from scratch, and recorded as our own ADRs with
+alternatives considered. Prior art is read as reference — for approach,
+technique and pitfalls — and every borrowing states what we took and what we
+rejected. No competitor's roadmap, stage breakdown or module layout is adopted
+as a template. If a plan step exists only because another project does it that
+way, it gets cut.
+
+**Alternatives.** *Clone a working design* — fastest to something runnable, but
+it inherits someone else's priorities and produces a late, worse copy in a lane
+we already decided not to compete in (ADR-0015). *Pure invention, no reading* —
+wastes the deadline rediscovering solved problems and contradicts ADR-0010.
+
+**Consequences.** Slower design decisions, each needing a recorded rationale,
+and a standing obligation to justify structure on our own terms rather than by
+precedent. In exchange the roadmap stays aimed at our wedge — knowledge update
+and conflict resolution — and the ADR log stays a genuine decision record rather
+than a list of imitations. ADR-0012 is the model: it seeds tree-sitter queries
+from Aider's while keeping our own extraction design and attribution.

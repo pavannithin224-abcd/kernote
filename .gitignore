@@ -1,0 +1,42 @@
+# WSL / Windows copy artifacts
+*:Zone.Identifier
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Kernote local data — never commit a project's memory database
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+data/
+models/           # vendored ONNX artifacts, fetched by hash
+eval/reports/
+
+# Secrets — belt and braces; Kernote must never ingest or commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+credentials*
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
