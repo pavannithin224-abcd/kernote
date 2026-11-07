@@ -5,6 +5,46 @@ Newest entry first.
 
 ---
 
+## 2026-11-07 — Day 2 (cont.): contract aligned with ADR-0015
+
+### What changed
+- `CLAUDE.md` scope item 3: "Ask Your Project" → "Cited evidence retrieval".
+- `CLAUDE.md` scope item 6: now marked the differentiating feature, ref ADR-0015.
+- Nothing else in `CLAUDE.md` touched. 2 insertions, 2 deletions.
+
+### Verification performed
+- Both edits applied by assertion-guarded script (exactly one match required
+  each); `git diff` confirms 2 lines changed and no collateral edits.
+- Full cross-check of the remaining `CLAUDE.md` clauses against all 17 ADRs.
+  Compliant: the MiniLM baseline (ADR-0011 runs the same model via ONNX;
+  ADR-0014 keeps MiniLM as the baseline unless our own numbers justify a swap),
+  the vector-index clause (ADR-0003a validated and deferred on evidence — the
+  clause working as intended), PyTorch confinement (ADR-0004), conditional MCP
+  (scope 7 vs the F9 cut order — the kickoff guide itself made MCP conditional),
+  and untested-language claims (ADR-0012 is structurally compliant).
+- **One phrase left deliberately unedited:** scope item 8's "polished
+  desktop-quality application screens" against ADR-0001, which ships a localhost
+  app rather than a packaged desktop binary. Read as a claim about UI craft, not
+  distribution, and already disclosed in README "Known limitations". Raise it if
+  you meant a packaged binary — that would reopen ADR-0001 and cost Stage 8–9 time.
+
+**Not verified:** still no application code, so no tests, lint, type or build
+checks were run, and none are claimed.
+
+### Known issues / blockers
+1. **Node.js still not installed** — the only remaining Stage 2 blocker.
+2. ADR-0009 (Windows target) and open questions Q1, Q2, Q4 unanswered.
+3. Stage 6 carries the product wedge and sits second-to-last.
+
+### Next safe task
+**Stage 2 (Days 3–5), slice S1**, on a feature branch: install Node 20 LTS →
+re-run the toolchain probe → `backend/` skeleton with migration 0001 applied →
+`frontend/` Vite shell routing the seven screens → `justfile` + `Procfile` →
+then S1 end to end: register a project, scan README and config, save one memory
+with provenance, see it in Memory Explorer, restart, prove it persisted.
+
+---
+
 ## 2026-11-07 — Day 2 (cont.): planning set committed
 
 ### What changed

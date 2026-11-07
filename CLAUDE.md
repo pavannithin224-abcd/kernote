@@ -14,10 +14,10 @@ Build Kernote, a complete local-first developer application that maintains usefu
 ## Initial product scope
 1. Repository scanner for supported documentation, source and configuration files.
 2. Structured project knowledge vault with memory types, source provenance and revision history.
-3. Ask Your Project using hybrid retrieval and source citations.
+3. Cited evidence retrieval using hybrid retrieval and source citations.
 4. Memory consolidation suggestions with before/after preview and approval.
 5. Git-based freshness/drift detection using source hashes and diffs.
-6. Knowledge conflict review.
+6. Knowledge conflict review (differentiating feature; see ADR-0015).
 7. Context export and a minimal MCP server for agent access.
 8. Polished desktop-quality application screens: Dashboard, Memory Explorer, Project Intelligence, Memory Intelligence Center, Change Impact, Agent Integrations, Settings/Evaluation.
 
