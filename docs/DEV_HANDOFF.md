@@ -5,6 +5,49 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Stage 2 fix: `honcho start` was broken on a clean PATH
+
+### What changed
+- `Procfile` web process now prepends `$HOME/.local/bin` itself, so Node is
+  found without the caller exporting PATH.
+- `frontend/vite.config.ts`: `strictPort: true`.
+
+### Why
+Pre-flighting the exact command the README tells you to run found two faults
+that separate-process testing had hidden:
+
+1. **`backend/.venv/bin/honcho start` failed** with `/bin/sh: 1: npm: not
+   found`. Stage 2 verification had started uvicorn and npm as separate
+   commands with PATH already exported, so the documented single command was
+   never actually exercised. Reproduced with a sanitised PATH, then fixed.
+2. **Vite was silently sliding to the next free port** (it reported 5175 while
+   something else held 5173), which would make the documented URL wrong and
+   point the API proxy at the wrong place. `strictPort` now fails loudly.
+
+While checking, two **orphaned Vite processes from earlier test runs** (pids
+10953, 12208, up 25 minutes) were found squatting 5173/5174. They made the
+first fixed-Procfile check ambiguous, because curl to 5173 was being answered
+by a stale server rather than the one just started. Both were terminated and
+the check re-run against free ports.
+
+### Verification performed
+Re-run with a sanitised PATH, no stale listeners and an empty database:
+Vite bound to 5173 (not a fallback port), `/` served HTTP 200 with
+`<title>Kernote</title>`, `/health` ok at schema 1, the `/api` proxy returned
+`[]` then completed register → scan (4 files, 4 captures, 11 memories) →
+detail with citation `README.md:6-11` → re-scan creating 0 and 0. Ports were
+released on shutdown.
+
+Also re-run after the change: **37 tests passed**, ruff clean, frontend
+typecheck and build clean.
+
+### Lesson worth keeping
+Verifying the components separately is not verifying the command in the
+README. Pre-flight the documented entry point itself, on a PATH that does not
+already have your fixes in it.
+
+---
+
 ## 2026-11-08 — Stage 2 complete: application foundation, slice S1 proven
 
 ### What changed

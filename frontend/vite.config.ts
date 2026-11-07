@@ -6,6 +6,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
+    // Fail instead of silently sliding to 5174+. A moving port would make the
+    // documented URL wrong and leave the API proxy pointing somewhere else.
+    strictPort: true,
     // Proxy to the FastAPI service so the browser only ever talks to one
     // origin. Keeps CORS out of the dev loop entirely.
     proxy: {
