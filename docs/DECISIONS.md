@@ -537,3 +537,41 @@ lets readers run concurrently with the writer. Any future long-running write
 must be chunked rather than held open, or it will block other writers for its
 duration. A concurrency test with four threads × eight writes asserts every
 memory ends with exactly one revision and one source ref.
+
+---
+
+## ADR-0019 — Drift diffs come from the stored capture, not `git diff`
+**Status:** accepted · 2026-11-08 · *refines ADR-0005; implements proposal P4*
+
+**Context.** `ARCHITECTURE.md` describes the drift pipeline as running
+`git diff` between two blobs to obtain hunks. Implementing the Stage 3
+feasibility spike exposed a problem with that: `git diff` can only compare
+objects Git knows about, so it produces nothing for an untracked file, nothing
+in a directory that is not a repository, and nothing for uncommitted working-tree
+edits against a hash we pinned mid-session. Those are not edge cases — they are
+the normal state of a project someone is actively working on, which is exactly
+when freshness matters most.
+
+**Decision.** Generate the unified diff with `difflib` from **the stored L1
+capture** (the text we pinned, keyed by `content_hash`) against the bytes
+currently on disk, then parse it with `unidiff` to obtain hunks in the new
+file's line numbering. Git metadata is still recorded for attribution
+(`git_blob_hash`, `git_commit`) and remains available for commit-range views in
+Stage 6, but it is not on the critical path for detecting drift.
+
+`n=0` context is used deliberately: with context lines, a hunk spans unchanged
+lines either side of the edit and the overlap test reports false positives for
+citations that merely sit near a change.
+
+**Alternatives.** *`git diff` as specified* — rejected for the coverage holes
+above, and it would make drift silently useless outside a repository.
+*Hash comparison only* — tells you a file changed but cannot say where, so every
+finding degrades to "something moved", which is risk R10 realised.
+*`pygit2`* — a native dependency, which ADR-0003/0004 exist to avoid.
+
+**Consequences.** Drift works in a plain directory with no Git at all, which a
+test asserts. Storage cost: L1 capture text must be retained for any file with
+live source refs — already true by design, since L1 is immutable. Deletions
+need care: a pure deletion has `target_length` 0, so it is normalised to span
+the line it was removed from, or a removed setup step would never raise a
+finding. A test covers that specific case.

@@ -5,6 +5,73 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Drift and conflict feasibility spikes (proposals P4, P5)
+
+Detection only, test level, no UI. Full implementation stays in Stage 6. The
+point was to prove the two mechanisms before the milestone that carries the
+product wedge depends on them.
+
+### What changed
+- `maintain/findings.py` — the single review queue (ADR-0007), with a
+  `dedupe_key` so re-running a detector cannot pile up duplicate findings.
+- `maintain/drift.py` — hash change, then diff, then **hunk/line-range overlap**.
+  High severity only when changed regions overlap the cited lines.
+- `maintain/conflicts.py` — two deterministic signals: *same task, different
+  commands* and *same question, different answer with overlapping validity*.
+  The second is only possible because ADR-0017 made validity reachable.
+- `unidiff` promoted from commented-out to installed in `requirements.txt`.
+- ADR-0019 added (20 ADRs). `ROADMAP.md` Stage 3 and Stage 4 now carry the
+  feasibility gates; a note records that both are already met.
+
+### Verification performed
+- **73 tests pass** (was 53). 20 new: 10 drift, 10 conflict.
+- `ruff check` clean, `ruff format --check` clean (44 files).
+- Demonstrated on the real `samples/demo-repo`: editing README line 10 produced
+  **exactly 1 high finding** (the memory citing lines 6-11) and **6 low** for
+  the other memories in that same file. A naive file-changed detector would
+  have raised 7 false alarms. This is the single most important number in the
+  spike.
+- Conflict, on the same repo with a CONTRIBUTING.md added:
+  `README.md:26-29 -> ['pytest -q', 'ruff check .']` versus
+  `CONTRIBUTING.md:7-9 -> ['tox -e py312']`, one finding holding both claims,
+  neither record touched.
+
+### Two findings that changed the design
+1. **A file conflicted with itself.** `## Testing` yields both a section memory
+   and a commands memory, and "commands" is a filler word, so both normalised
+   to the same task. My guard compared full citations, which differ by line
+   range. Fixed two ways: only extractors that produce an actual command list
+   participate (`rule:markdown_commands`, `manual`), and comparison is now per
+   **file**, not per citation. This is exactly what a spike is for.
+2. **`git diff` is the wrong source for hunks** (ADR-0019). It yields nothing
+   for untracked files, nothing outside a repository, and nothing for
+   working-tree edits against a mid-session hash — which is the normal state of
+   a project someone is actively editing, precisely when freshness matters.
+   Diffs now come from the stored L1 capture via `difflib` + `unidiff`, with
+   `n=0` context so neighbouring unchanged lines do not create false overlaps.
+   A test asserts drift works in a directory with no Git at all.
+
+### Known issues / blockers
+1. Conflict title normalisation is literal: "Setup" and "How to set up" do not
+   match. Acceptable for heading-derived titles, but Stage 6 should widen it,
+   and that will trade false negatives for false positives — needs the
+   evaluation set to tune against, not guesswork.
+2. Neither detector is wired to an endpoint or the UI. Deliberate: Stage 6.
+3. Severity is binary (overlap or not). Medium is unused for `stale_risk`.
+4. `_decisions` only fires when a `decision` payload exists, and no extractor
+   produces one yet — only manual memories do. `rule:adr` in Stage 3 will feed it.
+5. Proposal items P3, P6-P13 remain unapplied.
+6. ADR-0009 (Windows) and open questions Q1, Q2, Q4 still unanswered.
+
+### Next safe task
+**Stage 3 proper.** `detect-secrets` content scanning to replace the path
+deny-list (ADR-0013), `rule:adr` extraction to feed the decision-conflict
+signal, tree-sitter symbols with per-language `tags.scm` (ADR-0012), and the
+allowlist widened to source files. Gate: slice S2, plus the Stage 3 drift gate
+which is already met.
+
+---
+
 ## 2026-11-08 — Backend hardening: write integrity, supersession, temporal validity
 
 Scope chosen by the user: strengthen the backend and eliminate bugs before

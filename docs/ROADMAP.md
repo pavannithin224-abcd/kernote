@@ -13,8 +13,8 @@ target, **not** a claim of enterprise readiness.
 |---|---|---|---|---|
 | 1–2 | Nov 6–7 | Product & architecture foundation | Scope, flows, schema draft, API boundaries, wireframes, repo setup, CLAUDE.md | Six docs approved; Git repo initialized; toolchain verified |
 | 3–5 | Nov 8–10 | Application foundation | React shell, FastAPI service, SQLite init+migrations, project selection, navigation, dashboard skeleton | `scripts/dev.sh` brings up both processes; a project can be registered and survives restart |
-| 6–9 | Nov 11–14 | Repository ingestion | Safe scanner, parsing, Git metadata, source refs, deterministic extraction | Fixture repo scans twice with zero duplicate captures; skipped files explained |
-| 10–13 | Nov 15–18 | Core memory engine | Schema, CRUD, revisions, classification, dedupe candidates, evidence storage | Memory CRUD persists across restart with full lineage; evidence visible in UI |
+| 6–9 | Nov 11–14 | Repository ingestion | Safe scanner, parsing, Git metadata, source refs, deterministic extraction, **+ drift feasibility spike (P4)** | Fixture repo scans twice with zero duplicate captures; skipped files explained; **an edit inside cited lines yields a high finding and an edit elsewhere in the same file yields a low one** |
+| 10–13 | Nov 15–18 | Core memory engine | Schema, CRUD, revisions, classification, dedupe candidates, evidence storage, **+ conflict feasibility spike (P5)** | Memory CRUD persists across restart with full lineage; evidence visible in UI; **two disagreeing sources yield one finding holding both claims, and agreeing sources yield none** |
 | 14–17 | Nov 19–22 | Recall & evidence retrieval | FTS5, embeddings, hybrid retrieval, evidence composer, citation panel, retrieval tests | Fixed question set passes; citation correctness and abstention measured with `ranx` |
 | 18–20 | Nov 23–25 | **Memory maintenance intelligence** — the differentiating milestone | Drift detection with hunk-overlap, **conflict detection (now `Must`)**, consolidation review, approval controls | A real file edit produces a reviewable finding naming the overlapping hunk; two contradicting sources produce a finding holding both claims; merge preserves lineage |
 | 21–22 | Nov 26–27 | Agent delivery | Context bundle export, MCP server, Claude Code / Codex smoke tests | An agent retrieves project context through MCP in a live session |
@@ -41,6 +41,13 @@ overwrite.
 
 **S4 — Prove grounded answers (14–17).** Ask a question, get cited evidence; ask
 an unanswerable question, get an explicit "evidence not found."
+
+**Feasibility spikes (done 2026-11-08, ahead of schedule).** Detection for both
+halves of S5 is proven at test level: `maintain/drift.py` and
+`maintain/conflicts.py` with 20 tests. Stage 6 now builds the review flow on a
+mechanism that already works, rather than discovering the mechanism late. Both
+false-positive guards hold: an edit outside the cited lines stays low severity,
+and agreeing sources produce no conflict.
 
 **S5 — Prove maintenance (18–20).** The differentiating slice, in two halves:
 *(a) drift* — edit a referenced file, rescan, see the finding naming the
