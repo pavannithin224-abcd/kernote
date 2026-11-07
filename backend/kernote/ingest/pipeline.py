@@ -1,7 +1,7 @@
 """Scan orchestration: capture -> normalize -> understand -> curate -> store.
 
 Read-only with respect to the project tree. The only writes are to Kernote's
-own database.
+own database, and each file is one transactional unit of work.
 """
 
 from __future__ import annotations
@@ -11,15 +11,16 @@ from pathlib import Path
 
 import structlog
 
+from ..db.connection import transaction
 from ..db.repositories import memories as memory_repo
 from ..db.repositories import sources as source_repo
 from ..domain.models import ScanResult, SkippedFile
 from . import gitmeta
-from .capture import capture_file
+from .capture import Capture, capture_file
 from .extract import manifests
 from .extract import markdown as md_extract
 from .normalize import split_markdown
-from .walker import walk
+from .walker import Found, walk
 
 log = structlog.get_logger(__name__)
 
@@ -42,79 +43,37 @@ def scan_project(
     run_id = source_repo.start_scan(conn, project_id, commit)
     captures_created = 0
     memories_created = 0
-    found: list = []
+    found: list[Found] = []
     skipped: list = []
 
     try:
         found, skipped = walk(root, max_file_bytes=max_file_bytes, max_files=max_files)
-        for skip in skipped:
-            source_repo.record_skip(
-                conn, run_id, SkippedFile(rel_path=skip.rel_path, reason=skip.reason)
-            )
+        with transaction(conn):
+            for skip in skipped:
+                source_repo.record_skip(
+                    conn, run_id, SkippedFile(rel_path=skip.rel_path, reason=skip.reason)
+                )
 
         for item in found:
             cap = capture_file(item.abs_path)
             if cap.text is None:
                 continue
-            if source_repo.upsert_capture(
-                conn, project_id, cap.content_hash, cap.text, cap.byte_size, cap.encoding
-            ):
-                captures_created += 1
-
-            blob = blobs.get(item.rel_path)
-            file_id = source_repo.record_file(
-                conn,
-                project_id=project_id,
-                rel_path=item.rel_path,
-                content_hash=cap.content_hash,
-                language=cap.language,
-                run_id=run_id,
-                git_blob_hash=blob,
-                git_commit=commit,
-            )
-
-            candidates = []
-            suffix = Path(item.rel_path).suffix.lower()
-            if suffix in _MARKDOWN_SUFFIXES:
-                sections = split_markdown(cap.text)
-                for ordinal, sec in enumerate(sections):
-                    source_repo.add_chunk(
-                        conn,
-                        project_id=project_id,
-                        source_file_id=file_id,
-                        ordinal=ordinal,
-                        line_start=sec.line_start,
-                        line_end=sec.line_end,
-                        heading_path=sec.heading_path,
-                        text=sec.text,
-                    )
-                shared = {
-                    "project_id": project_id,
-                    "rel_path": item.rel_path,
-                    "content_hash": cap.content_hash,
-                    "sections": sections,
-                    "git_blob_hash": blob,
-                    "git_commit": commit,
-                }
-                candidates += md_extract.extract_sections(**shared)
-                candidates += md_extract.extract_commands(**shared)
-            else:
-                candidates += manifests.extract(
+            # One file is one unit of work. Without this, a failure partway
+            # through a file leaves its capture committed but its chunks and
+            # memories missing -- and the next scan sees the capture as already
+            # known, so the extraction is never retried.
+            with transaction(conn):
+                new_captures, new_memories = _ingest_one_file(
+                    conn,
                     project_id=project_id,
-                    rel_path=item.rel_path,
-                    content_hash=cap.content_hash,
-                    text=cap.text,
-                    git_blob_hash=blob,
-                    git_commit=commit,
+                    item=item,
+                    cap=cap,
+                    run_id=run_id,
+                    blobs=blobs,
+                    commit=commit,
                 )
-
-            for mem in candidates:
-                # Curate before store: identical claim from identical content is
-                # not a new memory. This is what keeps a re-scan idempotent.
-                if memory_repo.exists_same_claim(conn, project_id, mem.title, cap.content_hash):
-                    continue
-                memory_repo.create(conn, mem)
-                memories_created += 1
+            captures_created += new_captures
+            memories_created += new_memories
 
         source_repo.finish_scan(
             conn,
@@ -159,3 +118,80 @@ def scan_project(
         memories_created=memories_created,
         skipped=source_repo.skipped_for_run(conn, run_id),
     )
+
+
+def _ingest_one_file(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    item: Found,
+    cap: Capture,
+    run_id: str,
+    blobs: dict[str, str],
+    commit: str | None,
+) -> tuple[int, int]:
+    """Capture, chunk and extract one file. The caller owns the transaction."""
+    captures_created = 0
+    memories_created = 0
+
+    if source_repo.upsert_capture(
+        conn, project_id, cap.content_hash, cap.text, cap.byte_size, cap.encoding
+    ):
+        captures_created = 1
+
+    blob = blobs.get(item.rel_path)
+    file_id = source_repo.record_file(
+        conn,
+        project_id=project_id,
+        rel_path=item.rel_path,
+        content_hash=cap.content_hash,
+        language=cap.language,
+        run_id=run_id,
+        git_blob_hash=blob,
+        git_commit=commit,
+    )
+
+    candidates = []
+    suffix = Path(item.rel_path).suffix.lower()
+    if suffix in _MARKDOWN_SUFFIXES:
+        sections = split_markdown(cap.text)
+        for ordinal, sec in enumerate(sections):
+            source_repo.add_chunk(
+                conn,
+                project_id=project_id,
+                source_file_id=file_id,
+                ordinal=ordinal,
+                line_start=sec.line_start,
+                line_end=sec.line_end,
+                heading_path=sec.heading_path,
+                text=sec.text,
+            )
+        shared = {
+            "project_id": project_id,
+            "rel_path": item.rel_path,
+            "content_hash": cap.content_hash,
+            "sections": sections,
+            "git_blob_hash": blob,
+            "git_commit": commit,
+        }
+        candidates += md_extract.extract_sections(**shared)
+        candidates += md_extract.extract_commands(**shared)
+    else:
+        candidates += manifests.extract(
+            project_id=project_id,
+            rel_path=item.rel_path,
+            content_hash=cap.content_hash,
+            text=cap.text,
+            git_blob_hash=blob,
+            git_commit=commit,
+        )
+
+    for mem in candidates:
+        # Curate before store: an identical claim from identical content is not
+        # a new memory. This is what keeps a re-scan idempotent.
+        if memory_repo.exists_same_claim(conn, project_id, mem.title, cap.content_hash):
+            continue
+        memory_repo.create(conn, mem)
+        memories_created += 1
+
+    return captures_created, memories_created

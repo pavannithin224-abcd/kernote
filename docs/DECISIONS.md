@@ -439,3 +439,101 @@ precedent. In exchange the roadmap stays aimed at our wedge — knowledge update
 and conflict resolution — and the ADR log stays a genuine decision record rather
 than a list of imitations. ADR-0012 is the model: it seeds tree-sitter queries
 from Aider's while keeping our own extraction design and attribution.
+
+---
+
+## ADR-0017 — `superseded_by` is the authoritative supersession edge; validity is first-class
+**Status:** accepted · 2026-11-08 · *implements proposal P1/P2*
+
+**Context.** The 0001 schema carried `valid_from`, `valid_until`,
+`superseded_by` and `decision_json` on `memories`, and `memory_links` carried a
+`supersedes` kind. An audit on 2026-11-07 found that **no application code read
+or wrote any of them**: the columns existed, the domain model did not expose
+them, and no endpoint could reach them. Temporal validity and supersession were
+documented capabilities with no implementation. Worse, supersession was modelled
+twice — as a column and as a link kind — with nothing stating which wins.
+
+This matters beyond tidiness: conflict detection (F8, the product wedge under
+ADR-0015) is specified as finding "decisions on the same subject with
+overlapping validity windows", which is unimplementable while validity is
+unreachable.
+
+**Decision.**
+1. `memories.superseded_by` is the **single authoritative** supersession edge.
+2. `supersedes` is **derived** by inverse lookup and never stored on the record.
+   The `memory_links` row of kind `supersedes` is written as a convenience for
+   graph traversal only; it is not a second source of truth.
+3. `valid_from` / `valid_until` are first-class fields on the domain model,
+   meaning *when the claim was true of the project* — which is not when the row
+   was written.
+4. Invariants enforced in the domain layer, not merely documented: a validity
+   window may not end before it starts; a record may not supersede itself; a
+   record with `superseded_by` set may not remain `active`; a decision payload
+   is only legal on `type='decision'`.
+5. Supersession is one operation (`supersede()`), atomic, which closes the old
+   record's validity window, sets its status, writes a closing revision and
+   keeps every byte it had. Double supersession is refused.
+6. `Memory.is_current` combines all three: active, not replaced, and inside its
+   validity window.
+
+**Alternatives.** *Keep the columns unused* — leaves a documented capability
+undelivered and F8 unbuildable. *Make `memory_links` authoritative* — a graph
+edge is the wrong place for a 1:1 relation and makes every "is this current?"
+check a join. *Add a `supersedes` column too* — two writable representations of
+one relation is precisely the drift this ADR removes.
+
+**Consequences.** Migration 0002 adds indexes on `superseded_by` and
+`(project_id, valid_until)`, since both are now queried per project. The old
+record is never destroyed, so a project's decision history grows monotonically —
+acceptable and intended, and the reason `superseded_by` sits outside the project
+CASCADE. Thirteen tests in `tests/integration/test_write_integrity.py` cover the
+invariants.
+
+---
+
+## ADR-0018 — Multi-statement writes are one transactional unit of work, with a single writer
+**Status:** accepted · 2026-11-08
+
+**Context.** The connection was opened with `isolation_level=None`
+(autocommit) and no application code opened a transaction. `memories.create()`
+issued three statements — the memory, its first revision, its source refs — each
+committing independently. A reproduction on 2026-11-08 confirmed the
+consequence: simulating a failure on the second statement left a **committed
+memory row with no revision and no provenance**, violating MEMORY_MODEL
+invariant 3 at the storage layer rather than the validation layer.
+
+A second reproduction showed `ix_source_files_current` was a plain partial
+index, so two rows for one path could both be `is_current=1`. The rule was
+maintained in Python, which is not the same as the database refusing to break it.
+
+**Decision.**
+1. A `transaction()` context manager wraps every multi-statement write.
+   `BEGIN IMMEDIATE` takes the write lock up front rather than upgrading a read
+   lock later, which turns a lock conflict into a clean wait instead of an
+   intermittent "database is locked".
+2. It is **re-entrant**: a nested call joins the caller's unit of work, so a
+   repository write composes inside a larger scan without either side knowing
+   about the other, and rolls back with it.
+3. One process-wide `threading.RLock` serialises writers. SQLite's serialized
+   mode protects the C layer but cannot keep a *logical* multi-statement write
+   indivisible across Python threads.
+4. A scan treats **one file as one unit of work**, so a mid-scan failure cannot
+   leave a capture committed without its chunks and memories — which would be
+   worse than failing outright, because the next scan would see the capture as
+   already known and never retry the extraction.
+5. Migration 0002 makes `ix_source_files_current` UNIQUE, repairing any existing
+   violation first by demoting all but the most recently seen row per path.
+
+**Alternatives.** *Per-statement autocommit* — the status quo, which the
+reproduction shows corrupts lineage. *A connection per request* — more
+concurrency, but SQLite's single-writer model makes it contention, not
+throughput, and it would break the one-writer assumption WAL is tuned for.
+*Enforce uniqueness only in Python* — already tried; the database accepted the
+violation.
+
+**Consequences.** Writes serialise, which is correct for a local single-user
+tool and bounded by the performance budgets in `ARCHITECTURE.md` §8; WAL still
+lets readers run concurrently with the writer. Any future long-running write
+must be chunked rather than held open, or it will block other writers for its
+duration. A concurrency test with four threads × eight writes asserts every
+memory ends with exactly one revision and one source ref.

@@ -19,9 +19,19 @@ def _register_and_scan(client, root):
 
 
 def test_health_reports_schema_version(client):
+    """Asserts against the migration files, not a hardcoded number, so adding
+    a migration does not require editing this test."""
+    import pathlib as _p
+
+    migrations = sorted(
+        (_p.Path(__file__).resolve().parents[2] / "kernote" / "db" / "migrations").glob(
+            "[0-9][0-9][0-9][0-9]_*.sql"
+        )
+    )
+    expected = str(int(migrations[-1].name[:4]))
     body = client.get("/health").json()
     assert body["status"] == "ok"
-    assert body["schema_version"] == "1"
+    assert body["schema_version"] == expected
 
 
 def test_register_rejects_a_path_that_is_not_a_directory(client):

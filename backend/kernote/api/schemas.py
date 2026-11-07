@@ -36,3 +36,26 @@ class CreateMemory(BaseModel):
     content: str = Field(min_length=1)
     summary: str | None = None
     user_note: str = Field(default="asserted by user in the UI", max_length=500)
+    # Temporal validity is optional but first-class: when this was true of the
+    # project, not when the row was written.
+    valid_from: str | None = None
+    valid_until: str | None = None
+    # Decision payload: chosen option, alternatives, status. Only for decisions.
+    decision: dict | None = None
+
+
+class SupersedeMemory(BaseModel):
+    """Replace a memory with a newer claim, keeping the old one intact."""
+
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1)
+    summary: str | None = None
+    reason: str = Field(min_length=1, max_length=500)
+    valid_from: str | None = None
+    decision: dict | None = None
+
+
+class SupersedeResult(BaseModel):
+    superseded: Memory
+    replacement: Memory
+    note: str = "the superseded record is retained and stays fetchable by id"

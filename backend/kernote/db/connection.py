@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import contextlib
 import sqlite3
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import structlog
@@ -32,6 +34,43 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
+
+
+# One process-wide writer. SQLite's serialized mode protects the C layer, but it
+# cannot protect a multi-statement unit of work: without this lock two threads
+# can interleave inside one logical write and leave a memory without its
+# revision. WAL still lets readers run concurrently with the writer.
+_write_lock = threading.RLock()
+
+
+@contextlib.contextmanager
+def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """Run a block as one atomic unit of work.
+
+    The connection is in autocommit mode (``isolation_level=None``), so without
+    this every statement commits on its own and a failure halfway through a
+    multi-statement write leaves the earlier rows permanently committed. That
+    is how a memory ends up stored with no revision and no provenance.
+
+    Re-entrant: a nested call joins the outer transaction instead of starting a
+    second one, so repositories can be composed inside a larger scan without
+    either having to know about the other.
+
+    BEGIN IMMEDIATE takes the write lock up front rather than upgrading a read
+    lock later, which is what turns a lock conflict into a clean wait instead
+    of an intermittent "database is locked".
+    """
+    with _write_lock:
+        if conn.in_transaction:
+            yield conn  # join the caller's unit of work
+            return
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield conn
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
 
 
 def _current_version(conn: sqlite3.Connection) -> int:

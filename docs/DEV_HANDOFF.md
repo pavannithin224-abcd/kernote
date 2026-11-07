@@ -5,6 +5,92 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Backend hardening: write integrity, supersession, temporal validity
+
+Scope chosen by the user: strengthen the backend and eliminate bugs before
+adding features. UI work deferred to Stage 8.
+
+### Bugs found by auditing Stage 2's own code, each reproduced before fixing
+
+1. **Orphaned memories.** The connection runs in autocommit
+   (`isolation_level=None`) and no application code opened a transaction, so
+   `memories.create()` committed the memory row, then its revision, then its
+   source refs as three independent writes. Simulating a failure on the second
+   left a **committed memory with no lineage and no provenance** — MEMORY_MODEL
+   invariant 3 violated at the storage layer, below where validation can help.
+2. **Duplicate current source files.** `ix_source_files_current` was a plain
+   partial index, so two rows for one path could both be `is_current=1`. The
+   rule lived only in Python, and the database accepted the violation when
+   tested directly.
+3. **Non-atomic scans.** Hundreds of autocommitted writes meant a mid-scan
+   failure left captures committed without their chunks and memories — worse
+   than failing outright, because the next scan treats the capture as known and
+   never retries the extraction.
+
+### What changed
+- `db/connection.py`: `transaction()` context manager — `BEGIN IMMEDIATE`,
+  **re-entrant** (a nested call joins the outer unit of work and rolls back with
+  it), guarded by one process-wide `RLock` (ADR-0018).
+- `repositories/memories.py`: `create`, `update`, `archive` are now single units
+  of work; new `supersede()`.
+- `repositories/sources.py`: `record_file` demote-then-insert is atomic, which
+  it must be now that the index is UNIQUE.
+- `ingest/pipeline.py`: rewritten so **one file is one transaction**; extraction
+  split into `_ingest_one_file`.
+- **Migration 0002** (forward-only): makes `ix_source_files_current` UNIQUE,
+  repairing any existing violation first by demoting all but the most recently
+  seen row per path; adds indexes for `superseded_by` and `(project_id,
+  valid_until)`.
+- **Proposal P1/P2 implemented** (ADR-0017): `valid_from`, `valid_until`,
+  `superseded_by`, derived `supersedes` and the `decision` payload are now
+  reachable through the domain model, the repositories and the API. They were
+  columns no code touched.
+- New endpoint `POST /api/v1/memories/{id}/supersede`, and `Memory.is_current`.
+- Domain invariants now enforced, not documented: backwards validity window
+  rejected, self-supersession rejected, `superseded_by` + `active` rejected,
+  decision payload only on `type='decision'`.
+- ADR-0017 and ADR-0018 added (19 ADRs).
+
+### Verification performed
+- Both bugs **reproduced first**, then re-tested after the fix: the orphan case
+  now leaves 0 rows, and the duplicate-current insert is refused by the database
+  with `UNIQUE constraint failed`.
+- **53 tests pass** (was 37). 16 new in `tests/integration/test_write_integrity.py`
+  covering atomicity, re-entrancy, uniqueness, supersession, temporal validity
+  and a 4-thread × 8-write concurrency check asserting every memory ends with
+  exactly one revision and one source ref.
+- `ruff check` clean, `ruff format --check` clean, `tsc --noEmit` clean, frontend
+  builds.
+- Live end-to-end on the demo repo at schema v2: scan 4 files / 11 memories,
+  re-scan 0/0, supersede closes the old window and the old record stays
+  fetchable with 2 revisions and a derived inverse edge.
+
+### Process note
+One edit silently no-op'd because I used `replace` without an assertion — the
+anchor had changed when ruff removed a then-unused `import json`. It surfaced as
+a `NameError` in nine tests. Every edit in this session's scripts now asserts
+exactly one match before writing.
+
+### Known issues / blockers
+1. **Writes now serialise.** Correct for a local single-user tool, but any
+   future long-running write must be chunked rather than hold the lock.
+2. `list_for_project` still returns superseded records by default;
+   `MEMORY_MODEL.md` says they should be excluded unless asked. Deferred to
+   Stage 4 with the richer explorer, since it changes UI behaviour.
+3. The frontend does not yet surface validity, supersession or the decision
+   payload — the API returns them, nothing renders them. Stage 4.
+4. Proposal items **P3–P13 remain unapplied** and unreviewed.
+5. ADR-0009 (Windows) and open questions Q1, Q2, Q4 still unanswered.
+
+### Next safe task
+Either (a) apply proposal **P4/P5** — the drift and conflict feasibility spikes
+in Stages 3 and 4, which are now cheap because provenance and validity are both
+reachable; or (b) begin **Stage 3** ingestion proper: `detect-secrets` content
+scanning, `unidiff`, tree-sitter symbols, widened allowlist. P4 first is the
+better order: it de-risks Stage 6 before more surface area is added.
+
+---
+
 ## 2026-11-08 — Stage 2 fix: `honcho start` was broken on a clean PATH
 
 ### What changed

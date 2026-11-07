@@ -5,9 +5,11 @@ Nothing here deletes. Archive sets a status; an edit writes a new revision.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from ...domain.models import Memory, MemoryStatus, SourceRef, new_id, utc_now
+from ..connection import transaction
 
 
 def create(
@@ -17,12 +19,27 @@ def create(
     change_reason: str = "initial extraction",
     actor: str = "rule",
 ) -> Memory:
+    """Insert a memory with its first revision and its provenance, atomically.
+
+    These three writes are one fact. Committing the memory row without its
+    revision and source_refs would store a record with no lineage and no
+    provenance -- exactly what MEMORY_MODEL.md forbids -- so they share a
+    transaction and fail together.
+    """
+    with transaction(conn):
+        return _create_locked(conn, memory, change_reason, actor)
+
+
+def _create_locked(
+    conn: sqlite3.Connection, memory: Memory, change_reason: str, actor: str
+) -> Memory:
     revision_id = new_id()
     conn.execute(
         "INSERT INTO memories(id,project_id,type,title,content,summary,status,claim_kind,"
         "importance,importance_reason,confidence,confidence_reason,extraction_method,"
-        "created_at,updated_at,last_verified_at,current_revision) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "created_at,updated_at,last_verified_at,valid_from,valid_until,superseded_by,"
+        "decision_json,current_revision) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             memory.id,
             memory.project_id,
@@ -40,6 +57,10 @@ def create(
             memory.created_at,
             memory.updated_at,
             memory.last_verified_at,
+            memory.valid_from,
+            memory.valid_until,
+            memory.superseded_by,
+            json.dumps(memory.decision) if memory.decision is not None else None,
             revision_id,
         ),
     )
@@ -159,6 +180,13 @@ def update(
         "SELECT current_revision FROM memories WHERE id=?", (memory_id,)
     ).fetchone()["current_revision"]
 
+    with transaction(conn):
+        return _update_locked(
+            conn, memory_id, current, parent, title, content, summary, change_reason
+        )
+
+
+def _update_locked(conn, memory_id, current, parent, title, content, summary, change_reason):  # noqa: PLR0913
     updated = current.model_copy(
         update={
             "title": title if title is not None else current.title,
@@ -186,11 +214,77 @@ def update(
 
 def archive(conn: sqlite3.Connection, memory_id: str) -> bool:
     """Archive never deletes: the record stays fetchable by id forever."""
-    cur = conn.execute(
-        "UPDATE memories SET status=?,updated_at=? WHERE id=? AND status!=?",
-        (MemoryStatus.ARCHIVED.value, utc_now(), memory_id, MemoryStatus.ARCHIVED.value),
-    )
-    return cur.rowcount > 0
+    with transaction(conn):
+        cur = conn.execute(
+            "UPDATE memories SET status=?,updated_at=? WHERE id=? AND status!=?",
+            (MemoryStatus.ARCHIVED.value, utc_now(), memory_id, MemoryStatus.ARCHIVED.value),
+        )
+        return cur.rowcount > 0
+
+
+def supersede(
+    conn: sqlite3.Connection,
+    old_id: str,
+    replacement: Memory,
+    *,
+    reason: str,
+) -> tuple[Memory, Memory] | None:
+    """Replace a memory without destroying it (MEMORY_MODEL.md §4).
+
+    The old record keeps every byte it had, gains `superseded_by`, and moves to
+    status 'superseded'. It stays fetchable by id forever (invariant 5). This is
+    the difference between a maintained memory and an overwritten one.
+
+    Atomic: a half-applied supersession would either orphan the replacement or
+    leave two records both claiming to be current.
+    """
+    with transaction(conn):
+        old = get(conn, old_id)
+        if old is None:
+            return None
+        if old.superseded_by:
+            raise ValueError(f"memory {old_id} is already superseded by {old.superseded_by}")
+        if replacement.project_id != old.project_id:
+            raise ValueError("a replacement must belong to the same project")
+
+        new = _create_locked(conn, replacement, f"supersedes {old_id}: {reason}", "user")
+
+        conn.execute(
+            "UPDATE memories SET superseded_by=?,status=?,updated_at=?,valid_until=? "
+            "WHERE id=?",
+            (
+                new.id,
+                MemoryStatus.SUPERSEDED.value,
+                utc_now(),
+                old.valid_until or utc_now(),
+                old_id,
+            ),
+        )
+        # A typed edge as well, so graph queries do not need to know the column.
+        conn.execute(
+            "INSERT OR IGNORE INTO memory_links(src_id,dst_id,kind,reason,created_at) "
+            "VALUES(?,?,'supersedes',?,?)",
+            (new.id, old_id, reason, utc_now()),
+        )
+        parent = conn.execute(
+            "SELECT current_revision FROM memories WHERE id=?", (old_id,)
+        ).fetchone()["current_revision"]
+        closing_revision = new_id()
+        _write_revision(
+            conn,
+            old.model_copy(update={"superseded_by": new.id, "status": MemoryStatus.SUPERSEDED}),
+            closing_revision,
+            parent,
+            f"superseded by {new.id}: {reason}",
+            "user",
+        )
+        conn.execute(
+            "UPDATE memories SET current_revision=? WHERE id=?",
+            (closing_revision, old_id),
+        )
+        refreshed = get(conn, old_id)
+        assert refreshed is not None
+        return refreshed, new
 
 
 def _row(conn: sqlite3.Connection, row: sqlite3.Row) -> Memory:
@@ -199,6 +293,11 @@ def _row(conn: sqlite3.Connection, row: sqlite3.Row) -> Memory:
         "url,user_note FROM memory_source_refs WHERE memory_id=? ORDER BY line_start",
         (row["id"],),
     ).fetchall()
+    # `supersedes` is derived, never stored: superseded_by is the single
+    # authoritative edge (ADR-0017), so the inverse is a lookup.
+    inverse = conn.execute(
+        "SELECT id FROM memories WHERE superseded_by=? LIMIT 1", (row["id"],)
+    ).fetchone()
     return Memory(
         id=row["id"],
         project_id=row["project_id"],
@@ -216,5 +315,10 @@ def _row(conn: sqlite3.Connection, row: sqlite3.Row) -> Memory:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         last_verified_at=row["last_verified_at"],
+        valid_from=row["valid_from"],
+        valid_until=row["valid_until"],
+        superseded_by=row["superseded_by"],
+        supersedes=inverse["id"] if inverse else None,
+        decision=json.loads(row["decision_json"]) if row["decision_json"] else None,
         source_refs=[SourceRef(**dict(r)) for r in refs],
     )

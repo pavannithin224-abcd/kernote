@@ -91,6 +91,17 @@ class Memory(BaseModel):
     created_at: str = Field(default_factory=utc_now)
     updated_at: str = Field(default_factory=utc_now)
     last_verified_at: str | None = None
+    # Temporal validity: when this claim was true of the project, which is not
+    # the same as when the row was written. A `current_state` memory about work
+    # in progress stops being true long before anyone edits it.
+    valid_from: str | None = None
+    valid_until: str | None = None
+    # Supersession. `superseded_by` is the authoritative edge (ADR-0017);
+    # `supersedes` is derived by inverse lookup and never stored twice.
+    superseded_by: str | None = None
+    supersedes: str | None = None
+    # Decision-only payload: chosen option, alternatives, status, decided_on.
+    decision: dict | None = None
     source_refs: list[SourceRef] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -112,7 +123,34 @@ class Memory(BaseModel):
             )
         if not self.title.strip():
             raise ValueError("title is required")
+        # A validity window that ends before it starts is not a window.
+        if self.valid_from and self.valid_until and self.valid_until < self.valid_from:
+            raise ValueError(
+                f"valid_until ({self.valid_until}) precedes valid_from ({self.valid_from})"
+            )
+        # A record cannot replace itself.
+        if self.superseded_by == self.id:
+            raise ValueError("a memory cannot supersede itself")
+        # Supersession and active status are contradictory: if something has
+        # replaced this record it must not still be served as current.
+        if self.superseded_by and self.status is MemoryStatus.ACTIVE:
+            raise ValueError(
+                "memory has superseded_by set but status is 'active'; "
+                "a replaced record must be marked 'superseded'"
+            )
+        # Only decisions carry a decision payload.
+        if self.decision is not None and self.type is not MemoryType.DECISION:
+            raise ValueError(
+                f"decision payload is only valid on type='decision', not {self.type.value!r}"
+            )
         return self
+
+    @property
+    def is_current(self) -> bool:
+        """Active, not replaced, and inside its validity window if it has one."""
+        if self.status is not MemoryStatus.ACTIVE or self.superseded_by:
+            return False
+        return not (self.valid_until and self.valid_until < utc_now())
 
 
 class Project(BaseModel):
