@@ -1,0 +1,6 @@
+[project]
+name = "widgetly"
+version = "0.3.1"
+requires-python = ">=3.11"
+description = "Renders widgets as SVG"
+dependencies = ["fastapi>=0.110", "psycopg[binary]>=3.1", "pydantic>=2.0"]

@@ -1,0 +1,32 @@
+# Kernote runtime dependencies.
+# Staged deliberately: a package lands here in the stage that first uses it,
+# so an install is never heavier than the code that exists. See docs/TOOLING.md.
+
+# --- Stage 2: application foundation ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+structlog==24.4.0
+typer==0.15.1
+platformdirs==4.3.6
+
+# --- Stage 3: ingestion (ADR-0013) ---
+pathspec==0.12.1
+identify==2.6.3
+markdown-it-py==3.0.0
+
+# --- Stage 5: retrieval (ADR-0011) --- not yet installed
+# fastembed==0.5.1
+# numpy==2.2.1
+
+# --- Stage 3/4: code symbols (ADR-0012) --- not yet installed
+# tree-sitter==0.23.2
+# tree-sitter-language-pack==0.4.0
+
+# --- Stage 3: secrets + diffs (ADR-0013) --- not yet installed
+# detect-secrets==1.5.0
+# unidiff==0.7.5
+
+# --- Stage 7: agent delivery --- not yet installed
+# mcp==1.2.0

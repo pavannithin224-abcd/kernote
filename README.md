@@ -23,9 +23,14 @@ registry clearance — see `docs/PRODUCT_SPEC.md` §9.
 
 ## Status
 
-**Day 1 of a 25-day build (2026-11-06 → 2026-11-30). Planning only — no
-application code yet.** Read `docs/DEV_HANDOFF.md` for exactly where things
-stand and what the next safe task is.
+**Stage 2 of 9 complete** (Days 3–5 of a 25-day build ending 2026-11-30).
+The app runs: you can register a local project, scan it read-only, and browse
+typed memories with line-exact provenance and revision history in the Memory
+Explorer — and it all survives a restart.
+
+Four of the seven screens are deliberately empty placeholders that name the
+stage they arrive in, rather than showing mock data. Read
+`docs/DEV_HANDOFF.md` for exactly where things stand and what is next.
 
 ## What it does (planned MVP)
 
@@ -82,9 +87,39 @@ separated experiments.
 
 ## Setup
 
-Not yet available — there is no runnable code. Setup instructions arrive with the
-Day 3–5 application foundation. Prerequisites being targeted: Python 3.12+,
-Node 20 LTS, Git 2.40+.
+Requires Python 3.12+, Node 20 LTS and Git 2.40+.
+
+```bash
+python3 -m venv backend/.venv && backend/.venv/bin/pip install -r backend/requirements-dev.txt
+```
+
+```bash
+npm --prefix frontend install
+```
+
+Run both processes together, then open http://localhost:5173:
+
+```bash
+backend/.venv/bin/honcho start
+```
+
+With [`just`](https://github.com/casey/just) installed, `just dev` does the same,
+and `just ci` runs lint, tests and the frontend build. Without `just` or honcho,
+`./scripts/dev.sh` is a plain-bash fallback.
+
+The API serves `127.0.0.1:8787` and the web app proxies `/api` to it, so the
+browser only ever talks to one origin. The database lives in your platform data
+directory (`just where` prints the path); override it with `KERNOTE_DATA_DIR`.
+
+### Verify
+
+```bash
+backend/.venv/bin/python -m pytest backend/tests -q
+```
+
+`requirements-ml.txt` is optional and is **never** installed by CI or by the
+commands above — that is what keeps "works with no ML stack and no paid API"
+true rather than aspirational.
 
 ## Known limitations (kept honest from day one)
 

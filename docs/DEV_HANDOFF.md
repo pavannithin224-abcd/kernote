@@ -5,6 +5,92 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Stage 2 complete: application foundation, slice S1 proven
+
+### What changed
+- **Node 20.20.2 LTS installed** to `~/.local/opt/node` (tarball,
+  checksum-verified against `SHASUMS256.txt`) with symlinks in `~/.local/bin`.
+  No root needed: `sudo` requires a password here and apt only offered Node 18.
+- **Backend** (`backend/`): venv, staged `requirements*.txt`, `pyproject.toml`
+  with ruff + pytest config.
+  - `db/migrations/0001_init.sql` — **generated** from the schema block in
+    `ARCHITECTURE.md` §4, then extended with the 6 FTS5 synchronisation
+    triggers and the `schema_meta` seed the document did not need.
+  - `db/connection.py` — WAL, foreign keys ON, busy_timeout, forward-only
+    idempotent migration runner.
+  - `domain/models.py`, `domain/scoring.py` — pure; the MEMORY_MODEL rules are
+    enforced in code, not merely documented.
+  - `db/repositories/{projects,sources,memories}.py` — the only SQL writers.
+  - `ingest/{walker,capture,gitmeta,normalize,pipeline}.py`,
+    `ingest/extract/{markdown,manifests}.py`.
+  - `api/` with 10 endpoints + `/health`; `main.py` binds 127.0.0.1 only.
+- **Frontend** (`frontend/`): Vite + React + TS, Tailwind v4, react-router,
+  TanStack Query, hand-written typed client, 7 routed screens. Dashboard and
+  Memory Explorer are functional; the other five are explicit placeholders
+  naming their stage and gate.
+- **Orchestration**: `justfile`, `Procfile` (honcho), `scripts/dev.sh` fallback.
+- **`samples/demo-repo/`** plus `NOTE.md`, and the README setup section.
+
+### Verification performed
+All of the following were run, and these are the actual results:
+
+- **`ruff check backend`** → All checks passed. **`ruff format --check`** →
+  38 files already formatted.
+- **`pytest backend/tests`** → **37 passed**, 1 warning (a starlette/anyio
+  deprecation, not our code).
+- **`tsc --noEmit`** → clean. **`npm run build`** → built, 235 kB JS / 11.7 kB CSS.
+- **Live run with both servers up**, exercised over real HTTP *through the Vite
+  proxy*: register → scan (3 files, 3 captures, 10 memories, 1 refused) →
+  list → detail → re-scan → counts. `.env` refused as `secret_suspected`.
+- **S1 gate proven**: a second app instance against the same database file sees
+  the same project, all 10 memories, their provenance and their revisions.
+
+Invariants now covered by named tests: #1 idempotent re-scan (0 new captures,
+0 new memories), #3 no provenance unless manual, #4 FTS index rebuildable,
+#5 archived records stay fetchable, #7 secrets and gitignored files refused.
+Plus: the walker does not modify the project tree, CRLF files stay readable,
+and `0001_init.sql` cannot drift from `ARCHITECTURE.md` without a test failing.
+
+**Three real bugs found and fixed during the stage, worth remembering:**
+1. `executescript()` implicitly COMMITs, so an outer `BEGIN` was silently
+   discarded and a failed migration could have half-applied. The transaction
+   now lives *inside* the script.
+2. `check_same_thread` was documented but not set, so every request from
+   FastAPI's threadpool raised. Set, with the reasoning recorded in the code.
+3. Tailwind v4.0.0 build failed because `@tailwindcss/vite@4.0.0` bundles
+   `tailwindcss@4.3.5` internally — a version mismatch, not a CSS error as the
+   message suggested. Both pinned to 4.3.5.
+
+### Known issues / blockers
+1. **Node is not on your shell `PATH`.** Adding it to `~/.bashrc` was blocked
+   as unauthorised persistence, which is fair, so I kept it project-scoped: the
+   `justfile` and `scripts/dev.sh` prepend `~/.local/bin` themselves. To use
+   `node`/`npm` directly in your own terminal, add this yourself:
+   `export PATH="$HOME/.local/bin:$PATH"` in `~/.bashrc`.
+2. `samples/demo-repo/.env` is **intentionally not committed** (root
+   `.gitignore` refuses it). `NOTE.md` explains how to recreate it by hand;
+   tests use a generated hostile fixture instead of a committed fake secret.
+3. The frontend client is hand-written. It is replaced by
+   `openapi-typescript` in Stage 4, once the endpoint surface stops moving.
+4. shadcn/ui is **not** installed yet despite `CLAUDE.md` naming it. Stage 2
+   needed a shell and a table, not a component library; it lands in Stage 4
+   when the Memory Explorer gets rich. Flagging rather than quietly skipping.
+5. No Windows verification yet (ADR-0009 still `proposed`).
+6. ADR-0009 and open questions Q1, Q2, Q4 remain unanswered.
+7. Stage 6 still carries the product wedge and sits second-to-last.
+
+### Next safe task
+**Stage 3 (Days 6–9): repository ingestion.** In order: add `detect-secrets`,
+`unidiff`, `tree-sitter` + `tree-sitter-language-pack` to
+`requirements.txt`; replace the walker's path-based deny-list with
+`detect-secrets` content scanning (ADR-0013); add `ingest/extract/adr.py` and
+`ingest/extract/code_symbols.py` with per-language `tags.scm` (ADR-0012);
+widen the allowlist to source files; record git blob hashes for tracked files
+in `memory_source_refs`. Gate: slice S2 — the hostile fixture scans with every
+refusal explained, and a repeat scan still creates nothing.
+
+---
+
 ## 2026-11-07 — Day 2 (cont.): contract aligned with ADR-0015
 
 ### What changed

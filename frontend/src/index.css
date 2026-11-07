@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+/* Design tokens, defined once on :root and redefined for dark mode.
+   Deliberately un-nested: flat @media blocks are what the CSS pipeline
+   handles reliably. A compact, readable developer workspace -- evidence
+   must be legible, never decorative. */
+:root {
+  --bg: #fbfbfd;
+  --panel: #ffffff;
+  --border: #e3e3e9;
+  --text: #16161d;
+  --muted: #6b6b7b;
+  --accent: #3b5bdb;
+  --accent-soft: #edf0fd;
+  --warn: #b45309;
+  --warn-soft: #fef5e7;
+  --ok: #157f5a;
+  --ok-soft: #e8f6f0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1013;
+    --panel: #171920;
+    --border: #2a2d38;
+    --text: #e8e8ef;
+    --muted: #9a9aad;
+    --accent: #8ba2ff;
+    --accent-soft: #1d2234;
+    --warn: #f0b357;
+    --warn-soft: #2e2415;
+    --ok: #5ddbab;
+    --ok-soft: #13241d;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f1013;
+  --panel: #171920;
+  --border: #2a2d38;
+  --text: #e8e8ef;
+  --muted: #9a9aad;
+  --accent: #8ba2ff;
+  --accent-soft: #1d2234;
+  --warn: #f0b357;
+  --warn-soft: #2e2415;
+  --ok: #5ddbab;
+  --ok-soft: #13241d;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+pre,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
