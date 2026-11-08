@@ -158,3 +158,95 @@ def test_drift_works_without_git(conn, tmp_path):
     (tmp_path / "README.md").write_text(README.replace("Three components", "Nine components"))
     result = detect_drift(conn, project_id=project.id, root=tmp_path)
     assert result.findings_high >= 1
+
+
+# ------------------------------------------- cosmetic vs semantic (Problem 2)
+
+
+@pytest.mark.parametrize(
+    ("label", "old", "new", "expect_cosmetic"),
+    [
+        ("trailing whitespace", "# T\n\nClaim here.\n", "# T\n\nClaim here.   \n", True),
+        (
+            "reflow, same words",
+            "# T\n\nA sentence that wraps\nacross two lines.\n",
+            "# T\n\nA sentence that wraps across two lines.\n",
+            True,
+        ),
+        ("blank line inserted", "# T\n\nClaim.\n", "# T\n\n\nClaim.\n", True),
+        ("reindent", "# T\n\n    Claim.\n", "# T\n\nClaim.\n", True),
+        ("word changed", "# T\n\nUses Postgres.\n", "# T\n\nUses SQLite.\n", False),
+        ("sentence added", "# T\n\nClaim.\n", "# T\n\nClaim.\nAnd another.\n", False),
+        ("line deleted", "# T\n\nClaim.\nSecond.\n", "# T\n\nClaim.\n", False),
+    ],
+)
+def test_hunks_are_classified_cosmetic_or_semantic(label, old, new, expect_cosmetic):
+    hunks = parse_hunks(old, new, "f.md")
+    assert hunks, f"{label}: produced no hunk at all"
+    assert all(h.cosmetic for h in hunks) is expect_cosmetic, label
+
+
+def test_reformatting_cited_lines_is_medium_not_high(scanned, conn):
+    """Problem 2: the first time anyone runs a formatter over the docs, every
+    citation in the touched lines must not be flagged high."""
+    project, root = scanned
+    path = root / "README.md"
+    # Trailing whitespace on every non-empty line: exactly what an editor does
+    # on save, or a docs formatter in reverse.
+    reformatted = "\n".join(
+        (line + "   " if line.strip() else line) for line in path.read_text().splitlines()
+    )
+    path.write_text(reformatted + "\n")
+
+    result = detect_drift(conn, project_id=project.id, root=root)
+    assert result.findings_high == 0, (
+        "a whitespace-only reformat produced high-severity findings; "
+        "the queue would be full of false alarms after one formatter run"
+    )
+    assert result.findings_medium > 0, "the reformat produced no finding at all"
+
+    medium = [f for f in open_findings(conn, project.id) if f["severity"] == "medium"]
+    assert medium
+    f = medium[0]
+    assert f["evidence"]["cosmetic_only"] is True
+    assert f["evidence"]["substantive_hunks"] == []
+    assert "reformatted" in f["explanation"]
+    assert "wording is unchanged" in f["explanation"]
+
+
+def test_a_real_edit_is_still_high_after_the_change(scanned, conn):
+    """Guard against over-correcting: the medium band must not swallow real
+    edits."""
+    project, root = scanned
+    (root / "README.md").write_text(README.replace("Three components", "Four components"))
+    result = detect_drift(conn, project_id=project.id, root=root)
+    assert result.findings_high == 1, "a real word change must stay high"
+
+
+def test_mixed_cosmetic_and_semantic_in_one_file(scanned, conn):
+    """A reflowed paragraph plus a genuine edit elsewhere: each citation is
+    judged on its own lines, not on the file as a whole."""
+    project, root = scanned
+    text = README.replace(
+        "Three components exist: api, render and store.",
+        "Three  components   exist: api, render and store.",
+    )
+    text = text.replace("Run the suite before pushing:", "Run the full matrix before pushing:")
+    (root / "README.md").write_text(text)
+
+    detect_drift(conn, project_id=project.id, root=root)
+    sev = {f["severity"] for f in open_findings(conn, project.id, kind="stale_risk")}
+    assert "high" in sev, "the genuine edit was not flagged high"
+    assert "medium" in sev, "the whitespace-only change was not flagged medium"
+
+
+def test_whitespace_inside_a_code_fence_is_still_cosmetic():
+    """Honest limitation: indentation is significant in some languages, so this
+    classifier can under-report there. Documented rather than hidden."""
+    old = "# T\n\n```python\nif x:\n    go()\n```\n"
+    new = "# T\n\n```python\nif x:\n        go()\n```\n"
+    hunks = parse_hunks(old, new, "f.md")
+    assert all(h.cosmetic for h in hunks), (
+        "this asserts current behaviour, not desired behaviour -- see "
+        "DEV_HANDOFF known issues"
+    )

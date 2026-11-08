@@ -624,3 +624,58 @@ raises on read — acceptable because the fields were unreachable until ADR-0017
 landed the day before, so no such data exists. 29 tests in
 `tests/unit/test_temporal.py` cover the rejection matrix, the normalisation
 table, ordering across mixed formats, overlap and currency.
+
+---
+
+## ADR-0019a — Drift severity has three bands; cosmetic changes are not stale
+**Status:** accepted · 2026-11-08 · *amends ADR-0019, does not supersede it*
+
+**Context.** ADR-0019's drift detector had two bands: the cited lines changed
+(high) or they did not (low). Probing it during the spike review showed that
+any whitespace change inside a citation produced high severity — trailing
+spaces added on editor save, a paragraph rewrapped, a blank line inserted, a
+block reindented. On a real repository the first run of a docs formatter would
+flag every citation in every touched line as high.
+
+That is risk R10 arriving by a second route. The overlap test was added to stop
+"the file changed" becoming "everything is stale"; without a cosmetic band,
+"the line changed" becomes the same thing.
+
+**Decision.** Three bands, decided per citation:
+
+| Band | Condition |
+|---|---|
+| high | A changed region overlaps the cited lines **and** its text differs once whitespace is collapsed |
+| medium | A changed region overlaps the cited lines but the text is identical once whitespace is collapsed |
+| low | The file changed, but not within the cited lines |
+
+A hunk is classified by comparing its removed and added lines with all
+whitespace collapsed (`" ".join(text.split())`), which also neutralises reflow:
+a sentence rewrapped across two lines squashes to the same text as the
+single-line version. The evidence records `cosmetic_only` and
+`substantive_hunks` so a reviewer can see which judgement was made and why.
+
+A cosmetic change still produces a finding rather than silently re-pinning the
+hash, because re-pinning is a write to canonical memory and `CLAUDE.md` forbids
+doing that without approval. The medium explanation says what accepting it will
+do.
+
+**Alternatives.** *Normalise whitespace before diffing* — simpler, but it hides
+the change entirely, so the pinned hash stays stale forever with no record.
+*Keep two bands and tune later* — the failure is immediate and total on the
+first formatter run. *Ignore whitespace only outside code fences* — better in
+principle, see the consequence below.
+
+**Consequences.** On the demo repository a whole-file reformat now yields
+**0 high / 7 medium** where it previously yielded 7 high, while a genuine
+one-line edit is unchanged at **1 high / 6 low**, and a file containing both
+yields **1 high / 1 medium / 5 low** — each citation judged on its own lines.
+The previously unused `medium` severity now has a meaning.
+
+**Known limitation, deliberately not fixed:** indentation is significant in
+Python, YAML and Makefiles, so a reindent inside a fenced code block is
+classified cosmetic when it may be a real change. A test asserts this current
+behaviour and says in its message that it documents behaviour rather than
+intent. Fixing it means parsing fence languages and knowing which are
+whitespace-sensitive — Stage 6 work, and it should be measured against the P11
+evaluation set rather than guessed.

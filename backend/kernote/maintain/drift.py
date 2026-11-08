@@ -38,12 +38,28 @@ log = structlog.get_logger(__name__)
 DETECTOR = "rule:hash_and_hunk_overlap@1"
 
 
+def _squash(lines: list[str]) -> str:
+    """Collapse all whitespace so formatting differences vanish.
+
+    `str.split()` splits on any run of whitespace including newlines, so this
+    also neutralises reflow: a sentence rewrapped across two lines squashes to
+    the same text as the single-line version.
+    """
+    return " ".join("".join(lines).split())
+
+
 @dataclass(frozen=True)
 class Hunk:
-    """A changed region, in the *new* file's line numbering (1-based inclusive)."""
+    """A changed region, in the *new* file's line numbering (1-based inclusive).
+
+    `cosmetic` means the removed and added text are identical once whitespace
+    is collapsed: reindentation, rewrapping, trailing spaces, blank lines. The
+    bytes moved but no claim did.
+    """
 
     start: int
     end: int
+    cosmetic: bool = False
 
     def overlaps(self, line_start: int, line_end: int) -> bool:
         return self.start <= line_end and line_start <= self.end
@@ -73,7 +89,10 @@ def parse_hunks(old_text: str, new_text: str, rel_path: str) -> list[Hunk]:
             # from, otherwise deletions become invisible to the overlap test.
             start = hunk.target_start
             length = max(hunk.target_length, 1)
-            hunks.append(Hunk(start, start + length - 1))
+            removed = [line.value for line in hunk.source_lines()]
+            added = [line.value for line in hunk.target_lines()]
+            cosmetic = _squash(removed) == _squash(added)
+            hunks.append(Hunk(start, start + length - 1, cosmetic))
     return hunks
 
 
@@ -82,6 +101,7 @@ class DriftResult:
     checked: int = 0
     unchanged_files: int = 0
     findings_high: int = 0
+    findings_medium: int = 0
     findings_low: int = 0
 
 
@@ -177,16 +197,32 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
         line_start = row["line_start"] or 1
         line_end = row["line_end"] or line_start
         overlapping = [h for h in hunks if h.overlaps(line_start, line_end)]
+        substantive = [h for h in overlapping if not h.cosmetic]
 
-        severity = "high" if overlapping else "low"
-        if overlapping:
+        # Three bands, because "the cited lines were reformatted" and "the
+        # cited lines were rewritten" are different news. Without the middle
+        # band, one run of a formatter over the docs flags every citation in
+        # the touched lines as high, and the queue stops being believable --
+        # risk R10 arriving by a second route.
+        if substantive:
+            severity = "high"
             explanation = (
                 f"{rel} changed inside the lines this memory cites "
                 f"({line_start}-{line_end}). "
-                f"{len(overlapping)} changed region(s) overlap the citation."
+                f"{len(substantive)} changed region(s) overlap the citation."
             )
             result.findings_high += 1
+        elif overlapping:
+            severity = "medium"
+            explanation = (
+                f"{rel} was reformatted within the cited lines "
+                f"({line_start}-{line_end}) but the wording is unchanged once "
+                "whitespace is ignored. The claim almost certainly still holds; "
+                "accept to re-pin the source hash."
+            )
+            result.findings_medium += 1
         else:
+            severity = "low"
             explanation = (
                 f"{rel} changed, but not within the cited lines "
                 f"({line_start}-{line_end}). The claim may still hold."
@@ -209,6 +245,8 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
                     "current_hash": current_hash,
                     "hunks": [[h.start, h.end] for h in hunks],
                     "overlapping_hunks": [[h.start, h.end] for h in overlapping],
+                    "substantive_hunks": [[h.start, h.end] for h in substantive],
+                    "cosmetic_only": bool(overlapping) and not substantive,
                     "dedupe_key": f"stale:{row['ref_id']}:{current_hash}",
                 },
             ),
@@ -219,6 +257,7 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
         project_id=project_id,
         refs=result.checked,
         high=result.findings_high,
+        medium=result.findings_medium,
         low=result.findings_low,
     )
     return result

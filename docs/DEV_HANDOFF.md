@@ -5,6 +5,68 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Problem 2 fixed: cosmetic changes are no longer "stale"
+
+### The problem
+Drift severity had two bands, so **any** whitespace change inside a citation
+was high severity: trailing spaces added on editor save, a rewrapped
+paragraph, an inserted blank line, a reindented block. The first run of a docs
+formatter over a real repository would have flagged every citation in every
+touched line as high — risk R10 arriving by a second route, since the overlap
+test exists precisely to stop "the file changed" meaning "everything is stale".
+
+### What changed (ADR-0019a)
+A third band. Each hunk is now classified by comparing its removed and added
+lines with all whitespace collapsed, which also neutralises reflow. Then per
+citation: **high** if an overlapping hunk's text really differs, **medium** if
+overlapping but only formatting moved, **low** if the change missed the cited
+lines. Evidence gains `cosmetic_only` and `substantive_hunks`.
+
+A cosmetic change still raises a finding rather than silently re-pinning the
+hash, because re-pinning is a write to canonical memory and `CLAUDE.md`
+requires approval for that. The medium explanation says what accepting it does.
+
+### Verification performed
+Measured on the real `samples/demo-repo`:
+
+| Scenario | Before | After |
+|---|---|---|
+| Whole-file reformat (trailing whitespace everywhere) | 7 high | **0 high / 7 medium** |
+| Genuine one-line word change | 1 high / 6 low | **1 high / 6 low** (unchanged) |
+| Both together in one file | — | **1 high / 1 medium / 5 low** |
+
+The third row is the important one: each citation is judged on its own lines,
+so a reflowed section and a rewritten section in the same file get different
+verdicts.
+
+- **113 tests pass** (was 102). 11 new: a 7-case parametrised
+  cosmetic/semantic matrix, the formatter scenario, an over-correction guard
+  asserting a real edit is still high, the mixed-file case, and one test that
+  documents a limitation rather than a desire.
+- `ruff check` and `ruff format --check` clean.
+
+### Known issues / blockers
+1. **Indentation inside code fences is treated as cosmetic.** It is significant
+   in Python, YAML and Makefiles. A test asserts the current behaviour and says
+   in its failure message that it documents behaviour, not intent. Fixing it
+   needs fence-language awareness — Stage 6, measured against the P11 set.
+2. **Problem 3** (prose split into pseudo-commands for `manual` memories) and
+   **Problem 4** (literal task-name matching) remain open, both deferred to
+   Stage 6 because widening them trades false negatives for false positives and
+   needs the labelled evaluation set.
+3. Proposal items P3, P6-P13 remain unapplied. ADR-0009 and Q1/Q2/Q4 open.
+4. Neither detector is wired to an endpoint or the UI. Stage 6.
+
+### Next safe task
+**Stage 3 proper (Days 6-9).** `detect-secrets` content scanning to replace the
+path deny-list (ADR-0013); `rule:adr` extraction, which is what will finally
+feed the decision-conflict signal with real data instead of only manual
+memories; tree-sitter symbols with per-language `tags.scm` (ADR-0012); the
+allowlist widened to source files. Gate: slice S2, plus the Stage 3 drift gate
+which is already met.
+
+---
+
 ## 2026-11-08 — Spike review: fixed a latent wrong-answer bug in validity comparison
 
 Review of the P4/P5 spikes, by probing them adversarially rather than reading
