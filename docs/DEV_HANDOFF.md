@@ -5,6 +5,80 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Stage 3 part 2: tree-sitter symbols, widened allowlist
+
+Stage 3 is now complete.
+
+### What changed
+- **`ingest/extract/code_symbols.py`** + `queries/{python,typescript,tsx,
+  javascript}/tags.scm` — tree-sitter symbol extraction (ADR-0012, ADR-0012a).
+  One `architecture` memory per top-level definition, names qualified by their
+  enclosing class, private helpers skipped, test files excluded.
+- **Walker allowlist widened to source files**, derived from the same language
+  table as the extractor, so the allowlist cannot drift ahead of what we can
+  actually parse.
+- Source files are **chunked by symbol**, so each chunk has a real line range
+  and a name for Stage 5 retrieval.
+- **Two-tier secret policy** (ADR-0020a): format detectors refuse, keyword and
+  entropy detectors warn via a new `SecretWarning` on the scan result.
+- Path deny-list narrowed to configuration filenames.
+- **Refactor:** findings persistence moved to `db/repositories/findings.py`,
+  with `Finding`/`FindingKind`/`Severity` as domain types. `ingest/` needs to
+  raise findings and `ARCHITECTURE.md` forbids `ingest` depending on
+  `maintain`, so the repository is the only correct home.
+- ADR-0012a and ADR-0020a added (23 ADRs).
+
+### Verification performed
+- **183 tests pass** (was 146). 37 new: 23 code symbols, 14 secret policy.
+- `ruff check` / `format --check` clean. Frontend typechecks and builds.
+- Every shipped `tags.scm` is asserted to compile against its grammar, and
+  `supported_languages()` is asserted to equal exactly the set with query files.
+- Dogfood on this repository: **91 files, 285 memories, 320 chunks, 3.1s** —
+  133 symbol memories, 24 ADR memories, 117 section memories.
+
+### Four more bugs found by dogfooding
+1. **`secrets.py` was refused by the path deny-list.** `secrets.*` matched our
+   own module. A file named `secrets.py` is ordinary Python; the pattern is now
+   limited to config extensions.
+2. **`SECRET_SUSPECTED = "secret_suspected"` refused `domain/models.py`**, and
+   "possible secret" refused `Dashboard.tsx`. The keyword detector fires on the
+   *name*, not the value. Hence the two-tier policy — refusals on this repo
+   went from 6 files to 3, all 3 correct.
+3. **19 architecture memories from one test file.** Tests describe behaviour,
+   not module shape; test paths are now excluded, with the matcher anchored so
+   "latest" and "protest" are not caught.
+4. **TypeScript class methods were invisible.** The query captured the class
+   but had no `method_definition` pattern, so a class's whole surface was
+   missing. Caught by a test asserting `method Renderer.render`.
+
+### Process note
+My edit helper printed "ok" before writing to disk, so when a later assertion
+aborted the script, earlier edits that had reported success were silently
+discarded — and I chased a `NameError` twice as a result. The helper now writes
+after each edit, so "ok" means it is on disk.
+
+### Known issues / blockers
+1. **A real `password = "..."` with no recognisable format is now imported**
+   with a warning rather than refused. That is the deliberate cost of ADR-0020a
+   and the reason the warning exists.
+2. `SecretWarning` reaches the scan result but has no review-queue entry; that
+   needs a new `findings.kind` and therefore a migration. Stage 6.
+3. Four languages only. Adding one is a query file plus a test — by design.
+4. Symbol `content` is signature plus docstring, while the line range spans the
+   whole definition. Intentional (drift should fire on any change inside the
+   function) but it means `content` is not the full source.
+5. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open.
+6. No Windows verification of the tree-sitter wheels yet (risk R11); it loads
+   cleanly on Linux.
+
+### Next safe task
+**Stage 4 (Days 10-13): core memory engine.** Dedup candidate generation,
+importance refinement using the symbol graph, and the Memory Explorer work that
+surfaces validity, supersession and the decision payload the API already
+returns. The Stage 4 conflict feasibility gate is already met.
+
+---
+
 ## 2026-11-08 — Stage 3 part 1: secret scanning and ADR extraction
 
 ### What changed

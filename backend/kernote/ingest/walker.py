@@ -71,18 +71,44 @@ SECRET_PATTERNS: tuple[str, ...] = (
     "id_ed25519*",
     "*.ppk",
     "credentials",
-    "credentials.*",
+    # Config files named for credentials -- but NOT source modules. The
+    # pattern `secrets.*` refused Kernote's own `ingest/secrets.py`, and a
+    # module named `secrets.py` or `credentials.ts` is ordinary code. Found by
+    # dogfooding; content scanning (ADR-0020) covers the real risk in source.
+    "credentials.json",
+    "credentials.yaml",
+    "credentials.yml",
+    "credentials.toml",
+    "credentials.ini",
+    "credentials.cfg",
+    "credentials.txt",
     "*credentials*.json",
     ".npmrc",
     ".pypirc",
     ".netrc",
     "*.secret",
-    "secrets.*",
+    "secrets.json",
+    "secrets.yaml",
+    "secrets.yml",
+    "secrets.toml",
+    "secrets.ini",
+    "secrets.cfg",
+    "secrets.txt",
+    "secrets.env",
     ".htpasswd",
     "*.keytab",
 )
 
-# Stage 2 scope: documentation and configuration. Source files arrive Stage 3.
+# Source files are allowlisted only for languages where symbol extraction is
+# actually implemented and tested (ADR-0012). Widening this list beyond
+# `code_symbols.LANGUAGE_BY_SUFFIX` would import files Kernote cannot say
+# anything about, and would quietly start claiming support for a language that
+# has no query file -- which `CLAUDE.md` forbids.
+SOURCE_SUFFIXES: frozenset[str] = frozenset(
+    {".py", ".pyi", ".ts", ".mts", ".cts", ".tsx", ".js", ".mjs", ".cjs", ".jsx"}
+)
+
+# Documentation and configuration.
 ALLOWED_NAMES: frozenset[str] = frozenset(
     {
         "readme",
@@ -166,7 +192,12 @@ def _looks_secret(name: str) -> bool:
 
 
 def _allowlisted(path: Path) -> bool:
-    return path.name.lower() in ALLOWED_NAMES or path.suffix.lower() in ALLOWED_SUFFIXES
+    suffix = path.suffix.lower()
+    return (
+        path.name.lower() in ALLOWED_NAMES
+        or suffix in ALLOWED_SUFFIXES
+        or suffix in SOURCE_SUFFIXES
+    )
 
 
 def walk(

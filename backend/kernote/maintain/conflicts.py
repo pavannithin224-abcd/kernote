@@ -31,8 +31,8 @@ from datetime import UTC, datetime
 
 import structlog
 
-from ..domain.models import parse_temporal
-from .findings import Finding, record
+from ..domain.models import Finding, FindingKind, Severity, parse_temporal
+from .findings import record
 
 log = structlog.get_logger(__name__)
 
@@ -201,8 +201,8 @@ def _procedures(conn, project_id, rows, result: ConflictResult) -> None:
                     conn,
                     project_id,
                     Finding(
-                        kind="conflict",
-                        severity="high",
+                        kind=FindingKind.CONFLICT,
+                        severity=Severity.HIGH,
                         detector=DETECTOR_PROCEDURE,
                         memory_id=a["id"],
                         other_id=b["id"],
@@ -273,8 +273,8 @@ def _decisions(conn, project_id, rows, result: ConflictResult) -> None:
                 conn,
                 project_id,
                 Finding(
-                    kind="conflict",
-                    severity="high",
+                    kind=FindingKind.CONFLICT,
+                    severity=Severity.HIGH,
                     detector=DETECTOR_DECISION,
                     memory_id=a["id"],
                     other_id=b["id"],

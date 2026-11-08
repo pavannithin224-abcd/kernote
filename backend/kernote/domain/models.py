@@ -196,6 +196,33 @@ class Memory(BaseModel):
         return parse_temporal(self.valid_until, "valid_until") >= datetime.now(UTC)
 
 
+class FindingKind(StrEnum):
+    STALE_RISK = "stale_risk"
+    CONFLICT = "conflict"
+    DUPLICATE = "duplicate"
+    BROKEN_LINK = "broken_link"
+    MISSING_DOC = "missing_doc"
+
+
+class Severity(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class Finding(BaseModel):
+    """A request for review, never a verdict (ADR-0007)."""
+
+    id: str = Field(default_factory=new_id)
+    kind: FindingKind
+    severity: Severity
+    detector: str
+    explanation: str
+    memory_id: str | None = None
+    other_id: str | None = None
+    evidence: dict = Field(default_factory=dict)
+
+
 class Project(BaseModel):
     id: str = Field(default_factory=new_id)
     name: str
@@ -209,6 +236,17 @@ class SkippedFile(BaseModel):
     reason: SkipReason
 
 
+class SecretWarning(BaseModel):
+    """A low-precision secret signal: imported, but worth a human glance.
+
+    Carries no secret value, only where and which detector (ADR-0020).
+    """
+
+    rel_path: str
+    lines: list[int]
+    detectors: list[str]
+
+
 class ScanResult(BaseModel):
     scan_run_id: str
     project_id: str
@@ -220,3 +258,4 @@ class ScanResult(BaseModel):
     captures_created: int = 0
     memories_created: int = 0
     skipped: list[SkippedFile] = Field(default_factory=list)
+    secret_warnings: list[SecretWarning] = Field(default_factory=list)

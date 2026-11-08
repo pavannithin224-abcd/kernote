@@ -149,3 +149,79 @@ def test_path_and_content_refusal_both_report(conn, tmp_path):
     _project, result = _scan(conn, tmp_path)
     refused = {s.rel_path for s in result.skipped if s.reason.value == "secret_suspected"}
     assert refused == {".env", "DEPLOY.md"}
+
+
+# ------------------------------------------------- two-tier precision policy
+
+
+def test_keyword_only_hits_warn_instead_of_refusing(conn, tmp_path):
+    """Dogfooding refused Kernote's own `domain/models.py` because it contains
+    `SECRET_SUSPECTED = "secret_suspected"`, and `Dashboard.tsx` for the words
+    "possible secret". Any security-adjacent codebase would lose files."""
+    (tmp_path / "models.py").write_text(
+        'SECRET_SUSPECTED = "secret_suspected"\n'
+        'REASON = "refused as possible secret -- never read"\n'
+        "\n\ndef classify(value):\n    return value\n"
+    )
+    _project, result = _scan(conn, tmp_path)
+
+    refused = [s.rel_path for s in result.skipped if s.reason.value == "secret_suspected"]
+    assert "models.py" not in refused, "a keyword guess must not lose the file"
+    warned = {w.rel_path for w in result.secret_warnings}
+    assert "models.py" in warned, "a keyword guess must still be reported"
+    warning = next(w for w in result.secret_warnings if w.rel_path == "models.py")
+    assert warning.lines and warning.detectors
+    assert all("secret_suspected" not in d for d in warning.detectors)
+
+
+def test_format_hits_still_refuse(conn, tmp_path):
+    """The two-tier policy must not weaken refusal of real credentials."""
+    (tmp_path / "DEPLOY.md").write_text(LEAKY)
+    _project, result = _scan(conn, tmp_path)
+    assert [s.rel_path for s in result.skipped if s.reason.value == "secret_suspected"] == [
+        "DEPLOY.md"
+    ]
+    assert not result.secret_warnings
+
+
+def test_classify_splits_by_precision():
+    from kernote.ingest.secrets import SecretHit, classify
+
+    refuse, warn = classify(
+        [
+            SecretHit(1, "GitHub Token"),
+            SecretHit(2, "Private Key"),
+            SecretHit(3, "Secret Keyword"),
+            SecretHit(4, "Base64 High Entropy String"),
+        ]
+    )
+    assert [h.detector for h in refuse] == ["GitHub Token", "Private Key"]
+    assert [h.detector for h in warn] == ["Secret Keyword", "Base64 High Entropy String"]
+
+
+# -------------------------------------------------- path deny-list precision
+
+
+@pytest.mark.parametrize(
+    ("name", "refused"),
+    [
+        # Source modules named for secrets are ordinary code. `secrets.*`
+        # refused Kernote's own `ingest/secrets.py`.
+        ("secrets.py", False),
+        ("secrets.ts", False),
+        ("credentials.ts", False),
+        ("secret_scanning.py", False),
+        # Config files named for secrets are not.
+        ("secrets.json", True),
+        ("secrets.yaml", True),
+        ("credentials.json", True),
+        (".env", True),
+        (".env.local", True),
+        ("server.pem", True),
+        ("id_rsa", True),
+    ],
+)
+def test_path_deny_list_distinguishes_config_from_code(name, refused):
+    from kernote.ingest.walker import _looks_secret
+
+    assert _looks_secret(name) is refused

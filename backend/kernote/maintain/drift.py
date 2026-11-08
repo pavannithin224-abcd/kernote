@@ -31,7 +31,8 @@ from pathlib import Path
 import structlog
 from unidiff import PatchSet
 
-from .findings import Finding, record
+from ..domain.models import Finding, FindingKind, Severity
+from .findings import record
 
 log = structlog.get_logger(__name__)
 
@@ -142,8 +143,8 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
                 conn,
                 project_id,
                 Finding(
-                    kind="broken_link",
-                    severity="medium",
+                    kind=FindingKind.BROKEN_LINK,
+                    severity=Severity.MEDIUM,
                     detector=DETECTOR,
                     memory_id=row["memory_id"],
                     explanation=(
@@ -173,8 +174,8 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
                 conn,
                 project_id,
                 Finding(
-                    kind="stale_risk",
-                    severity="low",
+                    kind=FindingKind.STALE_RISK,
+                    severity=Severity.LOW,
                     detector=DETECTOR,
                     memory_id=row["memory_id"],
                     explanation=(
@@ -205,7 +206,7 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
         # the touched lines as high, and the queue stops being believable --
         # risk R10 arriving by a second route.
         if substantive:
-            severity = "high"
+            severity = Severity.HIGH
             explanation = (
                 f"{rel} changed inside the lines this memory cites "
                 f"({line_start}-{line_end}). "
@@ -213,7 +214,7 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
             )
             result.findings_high += 1
         elif overlapping:
-            severity = "medium"
+            severity = Severity.MEDIUM
             explanation = (
                 f"{rel} was reformatted within the cited lines "
                 f"({line_start}-{line_end}) but the wording is unchanged once "
@@ -222,7 +223,7 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
             )
             result.findings_medium += 1
         else:
-            severity = "low"
+            severity = Severity.LOW
             explanation = (
                 f"{rel} changed, but not within the cited lines "
                 f"({line_start}-{line_end}). The claim may still hold."
@@ -233,7 +234,7 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
             conn,
             project_id,
             Finding(
-                kind="stale_risk",
+                kind=FindingKind.STALE_RISK,
                 severity=severity,
                 detector=DETECTOR,
                 memory_id=row["memory_id"],

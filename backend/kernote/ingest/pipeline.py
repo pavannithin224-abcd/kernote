@@ -14,13 +14,13 @@ import structlog
 from ..db.connection import transaction
 from ..db.repositories import memories as memory_repo
 from ..db.repositories import sources as source_repo
-from ..domain.models import ScanResult, SkippedFile, SkipReason
+from ..domain.models import ScanResult, SecretWarning, SkippedFile, SkipReason
 from . import gitmeta
 from .capture import Capture, capture_file
-from .extract import adr, manifests
+from .extract import adr, code_symbols, manifests
 from .extract import markdown as md_extract
 from .normalize import split_markdown
-from .secrets import scan_path, scanning_session
+from .secrets import classify, scan_path, scanning_session
 from .walker import Found, walk
 
 log = structlog.get_logger(__name__)
@@ -45,6 +45,7 @@ def scan_project(
     captures_created = 0
     memories_created = 0
     secrets_refused = 0
+    secret_warnings: list[SecretWarning] = []
     found: list[Found] = []
     skipped: list = []
 
@@ -59,13 +60,28 @@ def scan_project(
         # One settings context for the whole run: entering it per file is
         # measurable overhead across a few thousand files.
         with scanning_session():
-            secret_hits = {
-                item.rel_path: hits for item in found if (hits := scan_path(item.abs_path))
-            }
+            refusals: dict[str, list] = {}
+            for item in found:
+                hits = scan_path(item.abs_path)
+                if not hits:
+                    continue
+                refuse, warn = classify(hits)
+                if refuse:
+                    refusals[item.rel_path] = refuse
+                elif warn:
+                    # A keyword or entropy guess does not refuse the file; it
+                    # is recorded so a human can glance at it.
+                    secret_warnings.append(
+                        SecretWarning(
+                            rel_path=item.rel_path,
+                            lines=sorted({h.line_number for h in warn}),
+                            detectors=sorted({h.detector for h in warn}),
+                        )
+                    )
 
         for item in found:
-            if item.rel_path in secret_hits:
-                hits = secret_hits[item.rel_path]
+            if item.rel_path in refusals:
+                hits = refusals[item.rel_path]
                 # Refuse the whole file. Redacting instead would make the
                 # stored capture differ from the bytes on disk, and every
                 # later drift diff would then report phantom hunks at the
@@ -148,6 +164,7 @@ def scan_project(
         captures_created=captures_created,
         memories_created=memories_created,
         skipped=source_repo.skipped_for_run(conn, run_id),
+        secret_warnings=secret_warnings,
     )
 
 
@@ -184,7 +201,32 @@ def _ingest_one_file(
 
     candidates = []
     suffix = Path(item.rel_path).suffix.lower()
-    if suffix in _MARKDOWN_SUFFIXES:
+    if code_symbols.language_for(item.rel_path):
+        symbols = code_symbols.extract(
+            project_id=project_id,
+            rel_path=item.rel_path,
+            content_hash=cap.content_hash,
+            text=cap.text,
+            git_blob_hash=blob,
+            git_commit=commit,
+        )
+        candidates += symbols
+        # Chunk source files by symbol rather than by arbitrary window: the
+        # chunk then has a real line range and a name, which is what makes it
+        # citable when retrieval lands in Stage 5.
+        for ordinal, mem in enumerate(symbols):
+            ref = mem.source_refs[0]
+            source_repo.add_chunk(
+                conn,
+                project_id=project_id,
+                source_file_id=file_id,
+                ordinal=ordinal,
+                line_start=ref.line_start or 1,
+                line_end=ref.line_end or 1,
+                heading_path=mem.title,
+                text=mem.content,
+            )
+    elif suffix in _MARKDOWN_SUFFIXES:
         sections = split_markdown(cap.text)
         for ordinal, sec in enumerate(sections):
             source_repo.add_chunk(

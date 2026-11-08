@@ -723,3 +723,89 @@ existing memories, whose pinned hash now goes stale, so drift flags them for
 review — coherent, though the UI should eventually explain that the source was
 withdrawn. Tests assert at the database level that a pasted token appears in
 neither `source_captures.text` nor `memories.content`.
+
+---
+
+## ADR-0012a — Symbol extraction scope: qualified names, no tests, four languages
+**Status:** accepted · 2026-11-08 · *implements ADR-0012*
+
+**Context.** ADR-0012 chose tree-sitter with per-language `tags.scm`. Building it
+raised three scope questions that the original ADR did not answer, all surfaced
+by scanning Kernote's own source.
+
+**Decision.**
+1. **One memory per top-level definition**, not one per file and not one per
+   line. A per-file memory cannot be cited precisely; a per-line memory is not
+   a memory.
+2. **Names are qualified by their enclosing class**, and a function inside a
+   class is labelled `method`. Unqualified, every `__init__` and every `render`
+   in a codebase becomes a separate record titled "function `__init__`" —
+   colliding on title and unreadable. `Hunk.overlaps` is a usable fact;
+   `overlaps` is not.
+3. **Private names are skipped** (leading underscore), except dunders, which
+   are part of a class's public contract.
+4. **Test files are excluded.** Dogfooding produced 19 `architecture` memories
+   from a single integration test file. Tests describe behaviour, not a
+   module's shape. Test *coverage* is a different question deserving a
+   different memory type, later. The path matcher is anchored so "latest",
+   "protest" and "contest" are not mistaken for tests.
+5. **Four languages: python, typescript, tsx, javascript** — chosen because
+   Kernote is written in them, so every query is exercised by dogfooding
+   rather than by a synthetic fixture. A language exists only when
+   `queries/<lang>/tags.scm` exists *and* has a passing test; the walker's
+   source allowlist is derived from the same table. That is how `CLAUDE.md`'s
+   rule against claiming untested language support becomes structural.
+
+**Alternatives.** *One memory per file listing its symbols* — cheaper, but
+drift then flags the whole module on any edit and citations lose precision.
+*Include tests* — more coverage, much more noise. *Ship all 300+ grammars from
+the language pack* — would claim support for languages with no query file and
+no test.
+
+**Consequences.** Source files are chunked by symbol, so each chunk carries a
+real line range and a name, which is what will make it citable when retrieval
+lands in Stage 5. On Kernote itself: 133 symbol memories across 91 files in
+~3s. Risk R11 is contained — a missing grammar or an uncompilable query logs a
+warning and degrades to "skip this language" rather than failing the scan, and
+a syntax error in a source file yields no symbols rather than an exception.
+
+---
+
+## ADR-0020a — Secret refusal is two-tier: formats refuse, keywords warn
+**Status:** accepted · 2026-11-08 · *amends ADR-0020*
+
+**Context.** ADR-0020 refused a file on *any* detect-secrets hit. Scanning
+Kernote with Kernote showed what that costs: `domain/models.py` was refused
+because it contains `SECRET_SUSPECTED = "secret_suspected"`, and
+`screens/Dashboard.tsx` because it contains the words "possible secret". Both
+are our own domain vocabulary. The `Secret Keyword` detector fires on any
+assignment whose name resembles a credential, regardless of whether the value
+does.
+
+Separately, the path deny-list pattern `secrets.*` refused
+`ingest/secrets.py` — and a module named `secrets.py` is ordinary Python.
+
+**Decision.**
+1. Detectors are split by precision. **Format detectors** — GitHub Token, AWS
+   Access Key, Private Key, Slack Token, JWT, Basic Auth and the rest of the
+   vendor-format list — essentially do not misfire, so a hit refuses the file.
+2. **Keyword and entropy detectors are guesses.** A hit from those alone
+   imports the file and records a `SecretWarning` on the scan result, carrying
+   the line numbers and detector names but never a value. The knowledge is
+   kept and a human can glance at it.
+3. The path deny-list is narrowed to **configuration** filenames
+   (`secrets.json`, `credentials.yaml`, …) rather than any `secrets.*`, because
+   content scanning already covers the real risk in source files.
+
+**Alternatives.** *Refuse on everything* — the status quo, which loses files in
+any security-adjacent codebase, including this one. *Warn on everything* —
+would store real credentials. *Require two independent signals* — plausible,
+but a lone GitHub token is a genuine leak and must still refuse.
+
+**Consequences.** Refusals on this repository dropped from 6 files to 3, and
+all 3 remaining are correct: two test fixtures containing deliberately fake
+credentials and the demo `.env`. A real `password = "hunter2…"` with no
+recognisable format is now imported with a warning rather than refused — the
+accepted cost, and the reason the warning exists. A review-queue entry for
+these warnings needs a new `findings.kind`, which needs a migration, so it is
+Stage 6 work; for now the signal reaches the UI through the scan result.

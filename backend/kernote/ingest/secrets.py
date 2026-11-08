@@ -40,6 +40,53 @@ class SecretHit:
     detector: str
 
 
+# Detectors that match a credential *format* and essentially do not misfire:
+# a string shaped like a GitHub token is a GitHub token.
+HIGH_PRECISION: frozenset[str] = frozenset(
+    {
+        "AWS Access Key",
+        "Azure Storage Account access key",
+        "Basic Auth Credentials",
+        "Cloudant Credentials",
+        "Discord Bot Token",
+        "GitHub Token",
+        "GitLab Token",
+        "IBM COS HMAC Credentials",
+        "IBM Cloud IAM Key",
+        "JSON Web Token",
+        "Mailchimp Access Key",
+        "NPM tokens",
+        "Private Key",
+        "SendGrid API Key",
+        "Slack Token",
+        "Softlayer Credentials",
+        "Square OAuth Secret",
+        "Stripe Access Key",
+        "Telegram Bot Token",
+        "Twilio API Key",
+    }
+)
+
+# Everything else -- "Secret Keyword", the entropy detectors -- is a guess.
+# Dogfooding Kernote on its own repository refused `domain/models.py` because
+# it contains `SECRET_SUSPECTED = "secret_suspected"`, and
+# `screens/Dashboard.tsx` because it contains the words "possible secret".
+# Any security-adjacent codebase would lose files to that. Low-precision hits
+# therefore warn instead of refusing.
+
+
+def classify(hits: list[SecretHit]) -> tuple[list[SecretHit], list[SecretHit]]:
+    """Split hits into (refuse, warn).
+
+    A format match refuses the file. A keyword or entropy guess does not,
+    because the false-positive rate on real code is high enough to make the
+    scanner useless -- see the dogfooding note above.
+    """
+    refuse = [h for h in hits if h.detector in HIGH_PRECISION]
+    warn = [h for h in hits if h.detector not in HIGH_PRECISION]
+    return refuse, warn
+
+
 @contextlib.contextmanager
 def scanning_session() -> Iterator[None]:
     """Load detect-secrets' default plugin and filter settings once per scan.
