@@ -141,7 +141,15 @@ def list_for_project(
     type_: str | None = None,
     status: str | None = None,
     limit: int = 200,
+    include_inactive: bool = False,
 ) -> list[Memory]:
+    """Memories for a project.
+
+    Superseded and archived records are excluded by default, per
+    MEMORY_MODEL.md: a replaced claim served alongside its replacement is
+    misleading. They remain fetchable by id forever (invariant 5), by an
+    explicit `status` filter, or with `include_inactive`.
+    """
     sql = "SELECT * FROM memories WHERE project_id=?"
     params: list[object] = [project_id]
     if type_:
@@ -150,6 +158,8 @@ def list_for_project(
     if status:
         sql += " AND status=?"
         params.append(status)
+    elif not include_inactive:
+        sql += " AND status NOT IN ('superseded','archived')"
     sql += " ORDER BY importance DESC, created_at DESC LIMIT ?"
     params.append(limit)
     return [_row(conn, r) for r in conn.execute(sql, params).fetchall()]

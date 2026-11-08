@@ -24,11 +24,22 @@ def list_memories(
     type: str | None = Query(default=None),
     status: str | None = Query(default=None),
     limit: int = Query(default=200, le=1000),
+    include_inactive: bool = Query(
+        default=False,
+        description="Include superseded and archived records, which are hidden by default.",
+    ),
 ) -> list[Memory]:
     conn = db()
     if project_repo.get(conn, project_id) is None:
         raise HTTPException(404, "project not found")
-    return repo.list_for_project(conn, project_id, type_=type, status=status, limit=limit)
+    return repo.list_for_project(
+        conn,
+        project_id,
+        type_=type,
+        status=status,
+        limit=limit,
+        include_inactive=include_inactive,
+    )
 
 
 @router.post("/projects/{project_id}/memories", response_model=Memory, status_code=201)

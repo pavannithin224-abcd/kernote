@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,18 @@ from .findings import record
 log = structlog.get_logger(__name__)
 
 DETECTOR = "rule:hash_and_hunk_overlap@1"
+
+
+def _squash_trailing(lines: list[str]) -> str:
+    """Normalise only trailing whitespace, preserving indentation.
+
+    Used inside fenced code blocks, where indentation is significant in
+    Python, YAML and Makefiles but trailing spaces never are. Collapsing all
+    whitespace there would call a reindent cosmetic; collapsing none would
+    call a stripped trailing space substantive and flag every citation in a
+    document the moment anyone saves it.
+    """
+    return "\n".join(line.rstrip() for line in "".join(lines).splitlines())
 
 
 def _squash(lines: list[str]) -> str:
@@ -66,6 +79,30 @@ class Hunk:
         return self.start <= line_end and line_start <= self.end
 
 
+_FENCE = re.compile(r"^\s*(?:```|~~~)")
+
+
+def _fenced_lines(text: str) -> set[int]:
+    """1-based line numbers inside a fenced code block.
+
+    Indentation is significant in Python, YAML and Makefiles, so a whitespace
+    change inside a fence cannot be dismissed as cosmetic. ADR-0019a shipped
+    with a test documenting that gap; this closes it conservatively by treating
+    every in-fence whitespace change as substantive rather than trying to
+    detect which fence languages care.
+    """
+    inside: set[int] = set()
+    open_fence = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if _FENCE.match(line):
+            open_fence = not open_fence
+            inside.add(number)
+            continue
+        if open_fence:
+            inside.add(number)
+    return inside
+
+
 def parse_hunks(old_text: str, new_text: str, rel_path: str) -> list[Hunk]:
     """Changed regions between two versions of a file.
 
@@ -82,6 +119,7 @@ def parse_hunks(old_text: str, new_text: str, rel_path: str) -> list[Hunk]:
         n=0,  # no context: only the lines that actually changed
     )
     patch = PatchSet("".join(diff_lines))
+    fenced = _fenced_lines(new_text)
     hunks: list[Hunk] = []
     for patched_file in patch:
         for hunk in patched_file:
@@ -92,8 +130,13 @@ def parse_hunks(old_text: str, new_text: str, rel_path: str) -> list[Hunk]:
             length = max(hunk.target_length, 1)
             removed = [line.value for line in hunk.source_lines()]
             added = [line.value for line in hunk.target_lines()]
-            cosmetic = _squash(removed) == _squash(added)
-            hunks.append(Hunk(start, start + length - 1, cosmetic))
+            end = start + length - 1
+            if fenced & set(range(start, end + 1)):
+                # Inside a code fence: indentation counts, trailing space does not.
+                cosmetic = _squash_trailing(removed) == _squash_trailing(added)
+            else:
+                cosmetic = _squash(removed) == _squash(added)
+            hunks.append(Hunk(start, end, cosmetic))
     return hunks
 
 

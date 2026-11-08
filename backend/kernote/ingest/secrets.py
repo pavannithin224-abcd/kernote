@@ -16,6 +16,7 @@ GitHub token and an AWS key with correct line numbers.
 from __future__ import annotations
 
 import contextlib
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,86 @@ from detect_secrets.core import scan
 from detect_secrets.settings import default_settings
 
 log = structlog.get_logger(__name__)
+
+
+# A keyword hit says the *name* looks like a credential. These decide whether
+# the *value* does, which is the part that matters. Without this,
+# `DB_PASSWORD = "Tr0ub4dor&3xKq9vZ"` was only warned about and stored, while
+# `SECRET_SUSPECTED = "secret_suspected"` was refused -- exactly backwards.
+_QUOTED = re.compile(r"""['"]([^'"\n]{0,200})['"]""")
+_PLACEHOLDER = re.compile(
+    r"^(?:your[-_ ]|my[-_ ]|some[-_ ]|an?[-_ ])|"
+    r"(?:example|placeholder|changeme|change[-_ ]me|redacted|removed|todo|fixme|"
+    r"xxx+|\.\.\.|dummy|sample|test|fake|none|null|undefined|insert|replace)",
+    re.IGNORECASE,
+)
+_TEMPLATE = re.compile(r"\$\{|\{\{|<[^>]{1,40}>|%\(|%s\b|\$[A-Z_]{3,}", re.IGNORECASE)
+# A value read from the environment or a config object is a reference, not a
+# literal. `PASSWORD = os.environ["DB_PASSWORD"]` quotes a *key name*.
+_INDIRECTION = re.compile(
+    r"\b(?:environ|getenv|env\.|process\.env|config(?:\.|\[)|settings(?:\.|\[)|"
+    r"secret(?:s)?(?:manager)?\.(?:get|fetch)|vault\.|keyring\.|"
+    r"get_secret|read_secret|lookup)",
+    re.IGNORECASE,
+)
+# The key is whatever precedes the first assignment separator, `=` or `:`.
+_ASSIGN = re.compile(r"[:=]")
+_WORDS = re.compile(r"[^a-z0-9]+")
+# Word count outside the quoted literal, above which a line reads as prose
+# rather than as an assignment.
+_PROSE_WORD_LIMIT = 8
+
+
+def _char_classes(value: str) -> int:
+    return sum(
+        (
+            any(c.islower() for c in value),
+            any(c.isupper() for c in value),
+            any(c.isdigit() for c in value),
+            any(not c.isalnum() for c in value),
+        )
+    )
+
+
+def value_looks_like_credential(line: str) -> bool:
+    """Does the assigned value on this line look like an actual secret?
+
+    Deliberately conservative in the *safe* direction: anything that plausibly
+    looks like a credential refuses the file. The cases it must NOT flag are
+    the ones dogfooding found -- a value that merely restates its own key, a
+    placeholder, or prose.
+    """
+    if _INDIRECTION.search(line):
+        return False
+    # A credential assignment is terse: `DB_PASSWORD = "..."` is three tokens.
+    # A sentence *about* credentials is not. Without this, documentation that
+    # discusses secret handling is refused for containing an example -- it
+    # cost us `docs/DECISIONS.md` and 23 decision memories, and it would cost
+    # every project that documents its own security decisions.
+    outside_quotes = _QUOTED.sub(" ", line)
+    if len(outside_quotes.split()) >= _PROSE_WORD_LIMIT:
+        return False
+    # Split on `=` or `:` so YAML-style `password: '...'` is handled too; using
+    # `=` alone made the whole line the "key", so the value always looked
+    # self-referential and a real secret was missed.
+    head = _ASSIGN.split(line, 1)[0]
+    key_words = set(_WORDS.split(head.lower())) - {""}
+    for raw in _QUOTED.findall(line):
+        value = raw.strip().strip("<>")
+        if len(value) < 8:
+            continue
+        if " " in value or "\t" in value:
+            continue  # prose, not a credential
+        if _PLACEHOLDER.search(value) or _TEMPLATE.search(raw):
+            continue
+        # `SECRET_SUSPECTED = "secret_suspected"`: the value just restates the
+        # key, which no real credential does.
+        value_words = set(_WORDS.split(value.lower())) - {""}
+        if value_words and value_words <= key_words:
+            continue
+        if _char_classes(value) >= 2 or len(value) >= 20:
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -75,15 +156,36 @@ HIGH_PRECISION: frozenset[str] = frozenset(
 # therefore warn instead of refusing.
 
 
-def classify(hits: list[SecretHit]) -> tuple[list[SecretHit], list[SecretHit]]:
+def classify(
+    hits: list[SecretHit], lines: list[str] | None = None
+) -> tuple[list[SecretHit], list[SecretHit]]:
     """Split hits into (refuse, warn).
 
-    A format match refuses the file. A keyword or entropy guess does not,
-    because the false-positive rate on real code is high enough to make the
-    scanner useless -- see the dogfooding note above.
+    Three rules, in order:
+
+    1. A credential *format* match refuses the file outright.
+    2. A keyword or entropy hit refuses it when the value on that line also
+       looks like a credential (`value_looks_like_credential`). This is what
+       stops a real `DB_PASSWORD = "..."` being stored.
+    3. Otherwise it only warns, because the keyword detector fires on the name
+       alone and would lose ordinary files in any security-adjacent codebase.
+
+    `lines` is optional so a caller with hits but no source can still get rule
+    1; without it, rule 2 cannot be evaluated and those hits only warn.
     """
-    refuse = [h for h in hits if h.detector in HIGH_PRECISION]
-    warn = [h for h in hits if h.detector not in HIGH_PRECISION]
+    refuse: list[SecretHit] = []
+    warn: list[SecretHit] = []
+    for hit in hits:
+        if hit.detector in HIGH_PRECISION:
+            refuse.append(hit)
+            continue
+        line = ""
+        if lines and 1 <= hit.line_number <= len(lines):
+            line = lines[hit.line_number - 1]
+        if line and value_looks_like_credential(line):
+            refuse.append(hit)
+        else:
+            warn.append(hit)
     return refuse, warn
 
 
@@ -114,3 +216,11 @@ def scan_path(path: Path) -> list[SecretHit]:
         {SecretHit(h.line_number, h.type) for h in hits},
         key=lambda h: (h.line_number, h.detector),
     )
+
+
+def read_lines(path: Path) -> list[str]:
+    """Source lines for value-shape evaluation, or empty if unreadable."""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []

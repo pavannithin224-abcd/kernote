@@ -164,6 +164,20 @@ def _citation(conn: sqlite3.Connection, memory_id: str) -> str:
 # "Testing" section conflicted with its own fenced block.
 _COMMAND_METHODS = ("rule:markdown_commands", "manual")
 
+# A `manual` procedure memory is free text, so its body is not necessarily a
+# command list. Comparing prose line-by-line as "commands" produced nonsense
+# like {"It handles concurrent writes.", "We decided to use Postgres."}.
+_SENTENCE_END = re.compile(r"[.!?]\s*$")
+
+
+def _looks_like_commands(content: str) -> bool:
+    """Command lists are short lines without sentence punctuation."""
+    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    command_like = [ln for ln in lines if len(ln) <= 200 and not _SENTENCE_END.search(ln)]
+    return len(command_like) >= max(1, len(lines) // 2)
+
 
 def _file_of(conn: sqlite3.Connection, memory_id: str) -> str | None:
     row = conn.execute(
@@ -179,6 +193,8 @@ def _procedures(conn, project_id, rows, result: ConflictResult) -> None:
         if row["type"] != "procedure":
             continue
         if not row["extraction_method"].startswith(_COMMAND_METHODS):
+            continue
+        if not _looks_like_commands(row["content"]):
             continue
         buckets.setdefault(_normalise(row["title"]), []).append(row)
 

@@ -809,3 +809,50 @@ recognisable format is now imported with a warning rather than refused — the
 accepted cost, and the reason the warning exists. A review-queue entry for
 these warnings needs a new `findings.kind`, which needs a migration, so it is
 Stage 6 work; for now the signal reaches the UI through the scan result.
+
+---
+
+## ADR-0020b — A keyword hit refuses the file when the *value* looks like a credential
+**Status:** accepted · 2026-11-08 · *amends ADR-0020a*
+
+**Context.** ADR-0020a split detectors by precision so that keyword and
+entropy hits warn instead of refusing. Probing that policy before Stage 4
+showed what it let through: `DB_PASSWORD = "Tr0ub4dor&3xKq9vZ"` produced only a
+`Secret Keyword` hit, so the file was **imported and the password stored**.
+Meanwhile `SECRET_SUSPECTED = "secret_suspected"` was warned about. The policy
+was discriminating on the detector, when the thing that actually distinguishes
+these is the **value**.
+
+Detector co-occurrence was tried first and is insufficient: that password
+produced no entropy hit at detect-secrets' default limits.
+
+**Decision.** A keyword or entropy hit refuses the file when
+`value_looks_like_credential(line)` holds. A quoted value qualifies when it is
+at least 8 characters, contains no whitespace, is not a placeholder or template
+(`your-…`, `example`, `changeme`, `${…}`, `<…>`), is not an indirection
+(`os.environ[…]`, `process.env`, `config.get`), does not merely restate its own
+key, and has either two character classes or 20+ characters.
+
+Two guards exist because the first implementations were wrong in both
+directions:
+
+* The key is split on `=` **or** `:`, because using `=` alone made the whole of
+  `password: 'Xk92Lm04Qp77Zr'` the "key", so the value looked self-referential
+  and a real secret was missed.
+* A line whose text **outside** the quoted literal runs to 8 or more words is
+  read as prose, not an assignment. Without that, documentation discussing
+  secret handling is refused for containing an example — it cost
+  `docs/DECISIONS.md` and 23 decision memories on the very next dogfood, and it
+  would cost the same to any project that documents its security decisions.
+
+**Alternatives.** *Require two detectors on one line* — misses real passwords,
+as measured. *Refuse on every keyword hit* — ADR-0020a already rejected that.
+*Entropy threshold alone* — `Tr0ub4dor&3xKq9vZ` is a strong password and a weak
+entropy signal.
+
+**Consequences.** On this repository, refusals are now exactly the four files
+that genuinely contain credential-format literals: three test fixtures with
+deliberately fake tokens and the demo `.env`. Our own source and docs that
+merely *discuss* secrets are imported with a warning. The heuristic is
+necessarily imperfect in both directions, so both directions are pinned by
+tests: 13 asserting detection, 12 asserting non-detection.

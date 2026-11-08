@@ -20,7 +20,7 @@ from .capture import Capture, capture_file
 from .extract import adr, code_symbols, manifests
 from .extract import markdown as md_extract
 from .normalize import split_markdown
-from .secrets import classify, scan_path, scanning_session
+from .secrets import classify, read_lines, scan_path, scanning_session
 from .walker import Found, walk
 
 log = structlog.get_logger(__name__)
@@ -65,7 +65,7 @@ def scan_project(
                 hits = scan_path(item.abs_path)
                 if not hits:
                     continue
-                refuse, warn = classify(hits)
+                refuse, warn = classify(hits, read_lines(item.abs_path))
                 if refuse:
                     refusals[item.rel_path] = refuse
                 elif warn:

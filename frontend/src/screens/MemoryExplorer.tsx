@@ -19,7 +19,13 @@ export default function MemoryExplorer() {
 
   const memories = useQuery({
     queryKey: ['memories', projectId, type, status],
-    queryFn: () => api.listMemories(projectId!, type || undefined, status || undefined),
+    queryFn: () =>
+      api.listMemories(
+        projectId!,
+        type || undefined,
+        status === 'all' ? undefined : status || undefined,
+        status === 'all',
+      ),
     enabled: !!projectId,
   })
   const detail = useQuery({
@@ -71,9 +77,11 @@ export default function MemoryExplorer() {
           className="rounded-md border px-2 py-1.5 text-[13px]"
           style={{ borderColor: 'var(--border)', background: 'var(--panel)', color: 'var(--text)' }}
         >
-          <option value="">All statuses</option>
+          <option value="">Current</option>
+          <option value="all">All, including replaced</option>
           <option value="active">Active</option>
           <option value="needs_review">Needs review</option>
+          <option value="superseded">Superseded</option>
           <option value="archived">Archived</option>
         </select>
       </div>

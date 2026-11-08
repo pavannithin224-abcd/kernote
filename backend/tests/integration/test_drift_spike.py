@@ -240,13 +240,25 @@ def test_mixed_cosmetic_and_semantic_in_one_file(scanned, conn):
     assert "medium" in sev, "the whitespace-only change was not flagged medium"
 
 
-def test_whitespace_inside_a_code_fence_is_still_cosmetic():
-    """Honest limitation: indentation is significant in some languages, so this
-    classifier can under-report there. Documented rather than hidden."""
+def test_reindent_inside_a_code_fence_is_semantic():
+    """Was a documented limitation, now fixed: indentation is significant in
+    Python, YAML and Makefiles, so a reindent inside a fence is a real change."""
     old = "# T\n\n```python\nif x:\n    go()\n```\n"
     new = "# T\n\n```python\nif x:\n        go()\n```\n"
     hunks = parse_hunks(old, new, "f.md")
-    assert all(h.cosmetic for h in hunks), (
-        "this asserts current behaviour, not desired behaviour -- see "
-        "DEV_HANDOFF known issues"
-    )
+    assert hunks and not any(h.cosmetic for h in hunks)
+
+
+def test_trailing_whitespace_inside_a_fence_is_still_cosmetic():
+    """The other half: trailing spaces are never significant, even in code, so
+    saving a file must not flag every citation in it."""
+    old = "# T\n\n```bash\npytest -q\n```\n"
+    new = "# T\n\n```bash\npytest -q   \n```\n"
+    hunks = parse_hunks(old, new, "f.md")
+    assert hunks and all(h.cosmetic for h in hunks)
+
+
+def test_prose_reflow_outside_a_fence_is_cosmetic():
+    old = "# T\n\nA line that\nwraps across two.\n"
+    new = "# T\n\nA line that wraps across two.\n"
+    assert all(h.cosmetic for h in parse_hunks(old, new, "f.md"))

@@ -106,10 +106,19 @@ export const api = {
   scan: (id: string) => call<ScanResult>(`/projects/${id}/scan`, { method: 'POST' }),
   skipped: (runId: string) =>
     call<{ total: number; by_reason: Record<string, string[]> }>(`/scans/${runId}/skipped`),
-  listMemories: (id: string, type?: string, status?: string) => {
+  // Superseded and archived records are hidden by default (MEMORY_MODEL.md):
+  // serving a replaced claim next to its replacement is misleading. Pass
+  // includeInactive to see them.
+  listMemories: (
+    id: string,
+    type?: string,
+    status?: string,
+    includeInactive?: boolean,
+  ) => {
     const q = new URLSearchParams()
     if (type) q.set('type', type)
     if (status) q.set('status', status)
+    if (includeInactive) q.set('include_inactive', 'true')
     const qs = q.toString()
     return call<Memory[]>(`/projects/${id}/memories${qs ? `?${qs}` : ''}`)
   },

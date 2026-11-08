@@ -5,6 +5,87 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Stage 3 defect sweep, before starting Stage 4
+
+Probed the Stage 3 code adversarially rather than working from the known-issue
+list, then fixed everything confirmed.
+
+### Probed and found sound (no change needed)
+- **Symlink directory loops** do not hang the walker: `Path.rglob` does not
+  follow directory symlinks. A child-to-parent loop returned in 0.00s.
+- **The cached tree-sitter parser is safe under threads** in practice: 6
+  threads x 12 parses produced one consistent symbol count and no errors.
+- **No ReDoS in the ADR regexes**: a 40x200-character alternatives block and a
+  5000-word decision line both parsed in under 0.01s.
+
+### Bugs found and fixed
+1. **A real credential was stored, only warned about** (ADR-0020b). The
+   two-tier policy discriminated on the *detector*, but what distinguishes
+   `DB_PASSWORD = "Tr0ub4dor&3xKq9vZ"` from `SECRET_SUSPECTED =
+   "secret_suspected"` is the *value*. A keyword hit now refuses the file when
+   the value is credential-shaped. Detector co-occurrence was tried first and
+   measured insufficient: that password produces no entropy hit.
+2. **Superseded and archived memories were served as current.**
+   `MEMORY_MODEL.md` says they are excluded unless asked; they were in every
+   listing. Now hidden by default, still reachable by id, by explicit status,
+   or with `include_inactive`. The Memory Explorer gained "Current" /
+   "All, including replaced" / "Superseded" options.
+3. **Prose was compared as a command list.** `manual` procedure memories had
+   their sentences split into pseudo-commands. Now gated on command shape.
+4. **Reindentation inside a code fence was called cosmetic** — the limitation
+   ADR-0019a shipped with a test documenting. Inside a fence, indentation is
+   compared but trailing whitespace is not, so a Python reindent is semantic
+   while saving a file is still cosmetic.
+
+### Three bugs in my own fixes, caught by my own tests
+- `password: 'Xk92Lm04Qp77Zr'` was missed because the key was split on `=`
+  only, making the whole line the "key" so the value looked self-referential.
+- `PASSWORD = "<your-password>"` was flagged: the template pattern required
+  `<lowercase>` and the value contained a hyphen.
+- `PASSWORD = os.environ["DB_PASSWORD"]` was flagged, because the quoted part
+  is a *key name*. An indirection guard now covers `environ`, `getenv`,
+  `process.env`, `config.get` and similar.
+
+### One regression I caused and caught by dogfooding
+The stricter heuristic refused `docs/DECISIONS.md`, dropping decision memories
+from 31 to **8** — our own decision log, lost for containing the example
+`password = "hunter2..."` inside a sentence. Fixed with a prose guard: a line
+whose text outside the quoted literal runs to 8+ words is read as prose, not an
+assignment. Any project that documents its security decisions would have hit
+this.
+
+### Verification performed
+- **217 tests pass** (was 183). 32 new in `test_stage3_fixes.py`, plus the
+  fence tests rewritten to assert the fix rather than the limitation.
+- `ruff check` / `format --check` clean; frontend typechecks and builds.
+- Dogfood: **91 files, 291 memories, 33 decisions**. Refusals are exactly the
+  four files that genuinely contain credential-format literals (three test
+  fixtures, the demo `.env`); our own docs and source that merely discuss
+  secrets are imported with a warning.
+- Drift on a clean tree: 0 high, 0 medium, 0 low across 260 source refs.
+
+### Known issues / blockers
+1. The value-shape heuristic is necessarily imperfect in both directions. Both
+   are pinned by tests (13 detection, 12 non-detection), and the escape hatch
+   is `# pragma: allowlist secret`, which detect-secrets honours in code files
+   but not reliably in Markdown.
+2. `SecretWarning` still has no review-queue entry; that needs a new
+   `findings.kind` and a migration. Stage 6.
+3. Task-name matching in conflict detection is still literal (`Setup` vs
+   `Set up`). Deferred to Stage 6 against the P11 evaluation set, because
+   widening it trades false negatives for false positives.
+4. Four languages only, by design. No Windows verification of the tree-sitter
+   wheels yet (risk R11); they load cleanly on Linux.
+5. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open.
+
+### Next safe task
+**Stage 4 (Days 10-13): core memory engine.** Dedup candidate generation,
+importance refinement over the symbol graph, and the Memory Explorer work that
+surfaces validity, supersession and the decision payload the API already
+returns. No known Stage 3 defects remain open.
+
+---
+
 ## 2026-11-08 — Stage 3 part 2: tree-sitter symbols, widened allowlist
 
 Stage 3 is now complete.
