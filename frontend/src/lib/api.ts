@@ -19,6 +19,53 @@ export interface SourceRef {
   user_note: string | null
 }
 
+export interface Finding {
+  id: string
+  kind: 'stale_risk' | 'conflict' | 'duplicate' | 'broken_link' | 'missing_doc'
+  severity: 'low' | 'medium' | 'high'
+  status: string
+  detector: string
+  explanation: string
+  memory_id: string | null
+  other_id: string | null
+  evidence: Record<string, unknown>
+  created_at: string
+}
+
+export interface ProposalSide {
+  memory_id: string
+  title: string
+  content: string
+  citations: string[]
+  importance: number
+  role: 'keep' | 'absorb'
+}
+
+export interface Proposal {
+  id: string
+  finding_id: string | null
+  input_ids: string[]
+  created_at: string
+  preview: {
+    before: ProposalSide[]
+    after: { title: string; content: string; citations: string[] }
+    guarantees: string[]
+  }
+}
+
+export interface AnalysisResult {
+  drift_high: number
+  drift_medium: number
+  drift_low: number
+  refs_checked: number
+  conflicts_procedure: number
+  conflicts_decision: number
+  duplicate_candidates: number
+  proposals_created: number
+  importance_adjusted: number
+  open_findings: number
+}
+
 export interface Memory {
   id: string
   project_id: string
@@ -35,6 +82,18 @@ export interface Memory {
   extraction_method: string
   created_at: string
   updated_at: string
+  // Temporal validity: when the claim was true of the project, which is not
+  // when the row was written.
+  valid_from: string | null
+  valid_until: string | null
+  superseded_by: string | null
+  supersedes: string | null
+  decision: {
+    status?: string
+    chosen?: string
+    alternatives?: string[]
+    decided_on?: string
+  } | null
   source_refs: SourceRef[]
 }
 
@@ -125,6 +184,16 @@ export const api = {
   getMemory: (id: string) => call<MemoryDetail>(`/memories/${id}`),
   archiveMemory: (id: string) =>
     call<{ archived: boolean }>(`/memories/${id}/archive`, { method: 'POST' }),
+  analyze: (id: string) =>
+    call<AnalysisResult>(`/projects/${id}/analyze`, { method: 'POST' }),
+  findings: (id: string, kind?: string) =>
+    call<Finding[]>(`/projects/${id}/findings${kind ? `?kind=${kind}` : ''}`),
+  proposals: (id: string) => call<Proposal[]>(`/projects/${id}/proposals`),
+}
+
+/** Date-only display for an ISO timestamp the backend normalised. */
+export function shortDate(iso: string | null): string {
+  return iso ? iso.slice(0, 10) : ''
 }
 
 export const TYPE_LABEL: Record<MemoryType, string> = {

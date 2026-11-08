@@ -38,8 +38,8 @@ def _create_locked(
         "INSERT INTO memories(id,project_id,type,title,content,summary,status,claim_kind,"
         "importance,importance_reason,confidence,confidence_reason,extraction_method,"
         "created_at,updated_at,last_verified_at,valid_from,valid_until,superseded_by,"
-        "decision_json,current_revision) "
-        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "decision_json,current_revision,importance_base) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
             memory.id,
             memory.project_id,
@@ -62,6 +62,9 @@ def _create_locked(
             memory.superseded_by,
             json.dumps(memory.decision) if memory.decision is not None else None,
             revision_id,
+            # The score before any fan-in refinement, so refinement stays
+            # idempotent (migration 0003).
+            memory.importance,
         ),
     )
     _write_revision(conn, memory, revision_id, None, change_reason, actor)

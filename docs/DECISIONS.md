@@ -856,3 +856,92 @@ deliberately fake tokens and the demo `.env`. Our own source and docs that
 merely *discuss* secrets are imported with a warning. The heuristic is
 necessarily imperfect in both directions, so both directions are pinned by
 tests: 13 asserting detection, 12 asserting non-detection.
+
+---
+
+## ADR-0021 — Duplicate candidates need a shared entity *and* body overlap; proposals never merge
+**Status:** accepted · 2026-11-08
+
+**Context.** F4 requires duplicate suggestions with a before/after preview and
+approval. Comparing every pair of memories is quadratic — 285 memories on this
+repository is 40k pairs — and most pairs are unrelated. Entity links
+(`entities`, `memory_entities`, dormant since migration 0001) give a cheap way
+to compare only plausibly related records.
+
+Three measurements on this repository shaped the thresholds:
+
+1. Title similarity alone produced **8 false candidates out of 8**: `function
+   create` in two repository modules, `function get`, `function extract`. Same
+   identifier, different function.
+2. Bucketing by shared entity alone **missed the obvious duplicate**: two
+   root-level files have no shared `module` entity, so an identical "Running
+   the tests" section in `README.md` and `CONTRIBUTING.md` was never compared.
+3. Every `## Setup` section was flagged against its own `## Setup` fenced
+   block — parent and child, not two independent claims.
+
+**Decision.**
+1. Candidates are bucketed by shared entity **and** by title-token signature,
+   so neither a shared file nor a matching title alone is required.
+2. A candidate needs title overlap (0.6 with a strong shared entity —
+   command, dependency, decision — or 0.8 when only a file or module is
+   shared) **and** body overlap of at least 0.35. A matching title with
+   unrelated content is not a duplicate.
+3. Memories whose line ranges nest inside one another in the same file are
+   never candidates.
+4. `rule:code_symbols` memories are excluded: they are keyed by (file,
+   qualified name), unique by construction.
+5. Detection writes a `duplicate` finding and a `pending` proposal. It changes
+   no memory. The merge preview keeps the higher-importance record's wording
+   verbatim and appends the other's citations, so **every citation from both
+   records survives** — asserted by a test — and the preview can be checked by
+   eye, which is the point of an approval step.
+
+**Alternatives.** *Compare all pairs* — quadratic and mostly noise.
+*Embedding cosine now* — the third signal, but it needs Stage 5's embeddings;
+the scoring structure already takes a score from any source, so adding it is a
+new signal rather than a rewrite. *Auto-merge above a threshold* — forbidden by
+`CLAUDE.md` and by ADR-0007.
+
+**Consequences.** On this repository: 1851 pairs compared, **2 candidates**,
+both genuine (the README setup commands and the demo repository's). On a
+fixture with a planted duplicate, 1 candidate; with same-title-different-body,
+0; with unrelated sections, 0. Approval is Stage 6, so a proposal currently
+previews and waits.
+
+---
+
+## ADR-0022 — Importance fan-in counts only non-incidental sharing, from a stored base
+**Status:** accepted · 2026-11-08 · *refines the scoring in MEMORY_MODEL.md*
+
+**Context.** `MEMORY_MODEL.md` lists entity fan-in as an importance signal. The
+first implementation weighted every entity kind and **adjusted 271 of 271
+memories** — every memory under `docs/` shares the `docs` module, so a signal
+that fires on everything ranks nothing.
+
+A second defect appeared immediately after: the bonus was applied to the
+*current* score, so a second analysis added it again and importance crept
+upward on every run.
+
+**Decision.**
+1. Only `command`, `dependency`, `decision` and `component` fan-in counts.
+   Files and modules are shared incidentally and are deliberately absent from
+   the weight table.
+2. Fan-in must reach 3 before it counts, at most the three strongest signals
+   are summed, and the total bonus is capped at 0.15.
+3. The bonus is applied to `importance_base`, a column added in migration 0003
+   and set at creation. Recovering the base by parsing the bonus back out of
+   `importance_reason` would make a numeric score depend on string formatting.
+4. The adjustment is appended to `importance_reason` in words naming the
+   entity and its reference count, because MEMORY_MODEL requires that a score
+   can always explain itself.
+
+**Alternatives.** *PageRank over the symbol graph* — the refinement ADR-0012a
+records as later work; a reference count is explainable in one sentence, which
+is the binding constraint. *Weight files and modules lower rather than zero* —
+tried; with hundreds of memories in a handful of directories the effect still
+swamps everything else.
+
+**Consequences.** Refinement is idempotent, asserted by a test. On this
+repository it currently adjusts **nothing**, because each command appears in
+one memory — an honest result rather than a flattering one, and the signal is
+exercised by a fixture with genuinely shared commands instead.

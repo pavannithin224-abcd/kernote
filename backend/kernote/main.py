@@ -15,7 +15,7 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
 from .api import deps
-from .api.routers import memories, projects
+from .api.routers import maintenance, memories, projects
 from .config import settings
 from .db.connection import open_db
 
@@ -60,6 +60,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(projects.router)
     app.include_router(memories.router)
+    app.include_router(maintenance.router)
 
     @app.exception_handler(ValueError)
     async def _value_error(request: Request, exc: ValueError) -> JSONResponse:

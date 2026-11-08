@@ -5,6 +5,85 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Stage 4: core memory engine
+
+### What changed
+- **`ingest/entities.py`** — entity derivation and linking. `entities` and
+  `memory_entities` were created in migration 0001 and never written to; they
+  are now populated during a scan from data already extracted (source paths,
+  manifest package names, the first bare word of a command, decision options).
+- **`maintain/duplicates.py`** — duplicate candidates and consolidation
+  proposals with a before/after preview (ADR-0021). Detection proposes;
+  nothing merges.
+- **`maintain/importance.py`** — fan-in refinement that explains itself in
+  `importance_reason` (ADR-0022).
+- **Migration 0003** — `memories.importance_base`, so refinement is idempotent.
+- **`api/routers/maintenance.py`** — `POST /projects/{id}/analyze`,
+  `GET /findings`, `GET /proposals`. Analysis is explicit rather than automatic
+  on scan: it writes findings, and a scan's meaning ("what is in the
+  repository") stays separate from analysis ("what looks wrong").
+- **Frontend** — Memory Explorer now renders **validity**, **supersession**
+  (with links in both directions) and the **decision payload**, all of which
+  the API had been returning and nothing displayed. New Memory Intelligence
+  Center with the review queue, severity, diff hunks and side-by-side
+  consolidation previews.
+- ADR-0021 and ADR-0022 added.
+
+### Verification performed
+- **236 tests pass** (was 217). 19 new in `test_stage4_memory_engine.py`.
+- `ruff check` / `format --check` clean; frontend typechecks and builds.
+- **Live over HTTP** on this repository: scan 95 files / 285 memories →
+  analyze → 285 refs checked, 1 conflict, 2 duplicate candidates, 2 proposals,
+  3 open findings. 29 decision memories, **27 with a parsed payload**. The
+  proposal preview was asserted to preserve every citation from both inputs.
+
+### Four measurements that set the thresholds
+Each is a defect found by running against our own repository, not a guess.
+
+1. **8 false duplicates out of 8** from title similarity alone: `function
+   create` in two repository modules, `function get`, `function extract` —
+   same identifier, different function. A candidate now also requires body
+   overlap, and symbol memories are excluded entirely since they are keyed by
+   (file, qualified name) and unique by construction.
+2. **The obvious duplicate was invisible** when bucketing by shared entity
+   alone: two root-level files have no shared `module`, so identical "Running
+   the tests" sections in `README.md` and `CONTRIBUTING.md` were never
+   compared. Title-signature bucketing was added.
+3. **Every `## Setup` section duplicated its own fenced block.** Parent and
+   child, not two claims — memories whose line ranges nest are now skipped.
+4. **Importance adjusted 271 of 271 memories.** Every memory under `docs/`
+   shares the `docs` module, so file and module fan-in ranks nothing. Those
+   kinds were removed from the weight table.
+
+Plus two bugs in my own Stage 4 code: entity derivation produced commands
+literally named ```` ``` ```` and ```` ```bash ```` from section-derived
+procedure memories (now only real command lists yield command entities), and
+fan-in was applied to the current score rather than a base, so importance crept
+upward on every analysis — caught by the idempotency test and fixed with
+migration 0003.
+
+### Known issues / blockers
+1. **Proposal approval is not implemented.** The preview exists and says so in
+   the UI; applying a merge is Stage 6, where it must write revisions and set
+   `superseded_by` using the existing `supersede()` path.
+2. Fan-in currently adjusts nothing on this repository because each command
+   appears in a single memory. Honest, and the signal is exercised by a fixture
+   instead. A larger repo will exercise it for real.
+3. Findings have no resolve/dismiss endpoint yet, so the queue only grows.
+   Stage 6, together with approval.
+4. `SecretWarning` still has no findings row (needs a new `findings.kind`).
+5. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open. No Windows
+   verification of the tree-sitter wheels.
+
+### Next safe task
+**Stage 5 (Days 14-17): recall and evidence retrieval.** FTS5 keyword search,
+`fastembed` embeddings (ADR-0011) with the four-way model benchmark (ADR-0014),
+hybrid fusion, and the extractive answer composer that labels evidence,
+inference and unknowns. The `embeddings` table and both FTS tables are wired
+and waiting; `chunks` is populated for both prose and code.
+
+---
+
 ## 2026-11-08 — Stage 3 defect sweep, before starting Stage 4
 
 Probed the Stage 3 code adversarially rather than working from the known-issue

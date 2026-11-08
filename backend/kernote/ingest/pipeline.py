@@ -15,7 +15,7 @@ from ..db.connection import transaction
 from ..db.repositories import memories as memory_repo
 from ..db.repositories import sources as source_repo
 from ..domain.models import ScanResult, SecretWarning, SkippedFile, SkipReason
-from . import gitmeta
+from . import entities, gitmeta
 from .capture import Capture, capture_file
 from .extract import adr, code_symbols, manifests
 from .extract import markdown as md_extract
@@ -284,6 +284,9 @@ def _ingest_one_file(
         if memory_repo.exists_same_claim(conn, project_id, mem.title, cap.content_hash):
             continue
         memory_repo.create(conn, mem)
+        # Entity links are what make duplicate candidates and importance
+        # fan-in possible; without them both features compare every pair.
+        entities.link(conn, project_id, mem)
         memories_created += 1
 
     return captures_created, memories_created

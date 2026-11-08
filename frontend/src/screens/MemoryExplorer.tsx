@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { TYPE_LABEL, api, citationOf, type MemoryType } from '../lib/api'
+import { TYPE_LABEL, api, citationOf, shortDate, type MemoryType } from '../lib/api'
 import { useProject } from '../lib/useProject'
 import { Badge, Citation, Empty, ErrorNote, Panel } from '../components/ui'
 
@@ -146,6 +146,91 @@ export default function MemoryExplorer() {
                   {detail.data.memory.content}
                 </pre>
               </Panel>
+
+              {(detail.data.memory.valid_from ||
+                detail.data.memory.valid_until ||
+                detail.data.memory.superseded_by ||
+                detail.data.memory.supersedes) && (
+                <Panel title="Validity">
+                  <div className="space-y-1.5 text-[12px]">
+                    <div>
+                      <span style={{ color: 'var(--muted)' }}>true of the project </span>
+                      {detail.data.memory.valid_from
+                        ? `from ${shortDate(detail.data.memory.valid_from)}`
+                        : 'from an unrecorded date'}
+                      {detail.data.memory.valid_until
+                        ? ` until ${shortDate(detail.data.memory.valid_until)}`
+                        : ' onwards'}
+                    </div>
+                    {detail.data.memory.superseded_by && (
+                      <div
+                        className="rounded-md px-2 py-1.5"
+                        style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}
+                      >
+                        Replaced by a newer claim. This record is kept as history and is
+                        never deleted.{' '}
+                        <button
+                          className="underline"
+                          onClick={() => setOpenId(detail.data!.memory.superseded_by)}
+                        >
+                          open the replacement
+                        </button>
+                      </div>
+                    )}
+                    {detail.data.memory.supersedes && (
+                      <div>
+                        <span style={{ color: 'var(--muted)' }}>replaces </span>
+                        <button
+                          className="underline"
+                          onClick={() => setOpenId(detail.data!.memory.supersedes)}
+                        >
+                          an earlier claim
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </Panel>
+              )}
+
+              {detail.data.memory.decision && (
+                <Panel title="Decision">
+                  <div className="space-y-1.5 text-[12px]">
+                    {detail.data.memory.decision.chosen ? (
+                      <div>
+                        <span style={{ color: 'var(--muted)' }}>chose </span>
+                        <strong>{detail.data.memory.decision.chosen}</strong>
+                      </div>
+                    ) : (
+                      <div style={{ color: 'var(--muted)' }}>
+                        The chosen option could not be read from this document, so it is
+                        not recorded rather than guessed.
+                      </div>
+                    )}
+                    {detail.data.memory.decision.alternatives?.length ? (
+                      <div>
+                        <span style={{ color: 'var(--muted)' }}>considered </span>
+                        {detail.data.memory.decision.alternatives.join(', ')}
+                      </div>
+                    ) : null}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {detail.data.memory.decision.status && (
+                        <Badge
+                          tone={
+                            detail.data.memory.decision.status === 'accepted' ? 'ok' : 'warn'
+                          }
+                        >
+                          {detail.data.memory.decision.status}
+                        </Badge>
+                      )}
+                      {detail.data.memory.decision.decided_on && (
+                        <span style={{ color: 'var(--muted)' }}>
+                          decided {detail.data.memory.decision.decided_on}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Panel>
+              )}
 
               <Panel title="Provenance">
                 {detail.data.memory.source_refs.map((r, i) => (
