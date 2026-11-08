@@ -575,3 +575,52 @@ live source refs — already true by design, since L1 is immutable. Deletions
 need care: a pure deletion has `target_length` 0, so it is normalised to span
 the line it was removed from, or a removed setup step would never raise a
 finding. A test covers that specific case.
+
+---
+
+## ADR-0017a — Temporal values are strict ISO-8601, parsed not compared as strings
+**Status:** accepted · 2026-11-08 · *amends ADR-0017, does not supersede it*
+
+**Context.** ADR-0017 made `valid_from` / `valid_until` first-class but typed
+them as plain strings, and both the ordering validator and the conflict
+detector's `_windows_overlap` compared them lexicographically. Probing the
+Stage 4 spike exposed the consequence: `"2026-1-1"` sorts **after**
+`"2026-01-01"` because `"1" > "0"`, so an unpadded date produced the wrong
+overlap verdict — silently, with no error anywhere. `"01/01/2026"` was worse:
+accepted and meaningless. Nothing validated the format, so this was reachable
+through the public API.
+
+A misread date here does not crash; it emits a confident, wrong conflict
+finding. That is the most damaging failure mode this product has, because the
+whole pitch is that findings can be trusted.
+
+**Decision.** Defence in depth, at three layers:
+1. **Boundary.** A Pydantic field validator parses both fields with
+   `datetime.fromisoformat` and rejects anything else, naming the field, showing
+   a valid example and quoting what was given. Python 3.12's parser already
+   rejects unpadded, non-ISO, impossible-month and impossible-day input.
+2. **Normalisation.** Accepted values are stored in one canonical form, so
+   `2026-03-11`, `20260311`, `2026-03-11 14:30:00` and `2026-03-11T14:30:00Z`
+   cannot sit in the database as four different spellings of the same instant.
+   Naive values are read as UTC.
+3. **Comparison.** The ordering check and `_windows_overlap` compare real
+   timezone-aware `datetime` objects. `_windows_overlap` additionally treats an
+   unparseable stored bound as open-ended **and logs it**, so a value
+   hand-edited into the database errs towards reporting a possible conflict
+   rather than hiding one.
+
+**Alternatives.** *A `datetime` field type on the model* — cleaner in Python,
+but SQLite stores text and the API is JSON, so a string field with a validator
+keeps one representation end to end instead of three. *Lenient parsing with
+`dateutil`* — accepting `01/01/2026` means guessing between day-first and
+month-first, which is how a silently wrong date gets in. *Leave it* — rejected:
+the failure is invisible and corrupts the product's core claim.
+
+**Consequences.** Stored temporal values change shape: `"2026-03-11"` is
+persisted as `"2026-03-11T00:00:00+00:00"`. One existing round-trip test was
+updated to assert the canonical form, which is the behaviour change made
+deliberate. Any value written before this validator existed, or by hand, now
+raises on read — acceptable because the fields were unreachable until ADR-0017
+landed the day before, so no such data exists. 29 tests in
+`tests/unit/test_temporal.py` cover the rejection matrix, the normalisation
+table, ordering across mixed formats, overlap and currency.

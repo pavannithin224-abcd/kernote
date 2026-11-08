@@ -27,9 +27,11 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import structlog
 
+from ..domain.models import parse_temporal
 from .findings import Finding, record
 
 log = structlog.get_logger(__name__)
@@ -77,12 +79,40 @@ def _commands(content: str) -> frozenset[str]:
     )
 
 
+_DISTANT_PAST = datetime.min.replace(tzinfo=UTC)
+_DISTANT_FUTURE = datetime.max.replace(tzinfo=UTC)
+
+
+def _bound(value: str | None, default: datetime) -> datetime:
+    """A stored bound as a real datetime, or the open-ended default.
+
+    Stored values are normalised by the domain layer, but a value written
+    before that validator existed, or by hand in the database, must not
+    silently become a wrong verdict -- so an unparseable bound is treated as
+    open-ended, which errs towards reporting a possible conflict rather than
+    hiding one.
+    """
+    if not value:
+        return default
+    try:
+        return parse_temporal(value)
+    except ValueError:
+        log.warning("conflicts.unparseable_validity_bound", value=value)
+        return default
+
+
 def _windows_overlap(
     a_from: str | None, a_until: str | None, b_from: str | None, b_until: str | None
 ) -> bool:
-    """Open-ended windows count as overlapping; ISO strings compare correctly."""
-    lo_a, hi_a = a_from or "", a_until or "9999"
-    lo_b, hi_b = b_from or "", b_until or "9999"
+    """Do two validity windows overlap? Open-ended windows always can.
+
+    Compared as datetimes, never as strings: "2026-1-1" sorts after
+    "2026-01-01" lexicographically, which produced wrong overlap answers.
+    """
+    lo_a = _bound(a_from, _DISTANT_PAST)
+    hi_a = _bound(a_until, _DISTANT_FUTURE)
+    lo_b = _bound(b_from, _DISTANT_PAST)
+    hi_b = _bound(b_until, _DISTANT_FUTURE)
     return lo_a <= hi_b and lo_b <= hi_a
 
 

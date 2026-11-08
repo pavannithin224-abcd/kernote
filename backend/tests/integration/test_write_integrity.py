@@ -21,6 +21,7 @@ from kernote.domain.models import (
     Project,
     SourceRef,
     new_id,
+    parse_temporal,
 )
 
 
@@ -219,7 +220,10 @@ def test_validity_and_decision_payload_round_trip(conn, project):
         ),
     )
     got = mrepo.get(conn, m.id)
-    assert got.valid_from == "2026-03-11"
+    # Stored canonically, not as typed: the domain layer normalises every
+    # accepted ISO spelling to one form so downstream comparisons are safe.
+    assert got.valid_from == "2026-03-11T00:00:00+00:00"
+    assert parse_temporal(got.valid_from) == parse_temporal("2026-03-11")
     assert got.decision["chosen"] == "Postgres"
     assert got.decision["alternatives"] == ["SQLite"]
 

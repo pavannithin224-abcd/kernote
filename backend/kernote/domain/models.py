@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def new_id() -> str:
@@ -20,6 +20,34 @@ def new_id() -> str:
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def parse_temporal(value: str, field: str = "value") -> datetime:
+    """Parse an ISO-8601 date or datetime into a timezone-aware datetime.
+
+    Temporal validity decides conflict verdicts, so these values cannot be
+    compared as raw strings. `"2026-1-1"` sorts *after* `"2026-01-01"`
+    lexicographically because `"1" > "0"`, which silently produced the wrong
+    overlap answer before this existed. Naive values are read as UTC.
+
+    Rejects non-ISO input loudly rather than guessing: a misread date here
+    becomes a wrong conflict finding, which is worse than an error message.
+    """
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{field} must be an ISO-8601 date or datetime "
+            f'(e.g. "2026-03-11" or "2026-03-11T14:30:00+00:00"), got {value!r}'
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def normalise_temporal(value: str, field: str = "value") -> str:
+    """Canonical ISO-8601 form, so stored values are uniform on disk too."""
+    return parse_temporal(value, field).isoformat()
 
 
 class MemoryType(StrEnum):
@@ -104,6 +132,13 @@ class Memory(BaseModel):
     decision: dict | None = None
     source_refs: list[SourceRef] = Field(default_factory=list)
 
+    @field_validator("valid_from", "valid_until")
+    @classmethod
+    def _temporal_must_be_iso(cls, v: str | None, info) -> str | None:
+        if v is None:
+            return None
+        return normalise_temporal(v, info.field_name)
+
     @model_validator(mode="after")
     def _enforce_memory_model_rules(self) -> Memory:
         # MEMORY_MODEL.md §4: a score the UI cannot explain is a bug.
@@ -124,10 +159,16 @@ class Memory(BaseModel):
         if not self.title.strip():
             raise ValueError("title is required")
         # A validity window that ends before it starts is not a window.
-        if self.valid_from and self.valid_until and self.valid_until < self.valid_from:
-            raise ValueError(
-                f"valid_until ({self.valid_until}) precedes valid_from ({self.valid_from})"
-            )
+        # Compared as datetimes: string comparison gets this wrong for any
+        # input that is not already zero-padded ISO.
+        if self.valid_from and self.valid_until:
+            start = parse_temporal(self.valid_from, "valid_from")
+            end = parse_temporal(self.valid_until, "valid_until")
+            if end < start:
+                raise ValueError(
+                    f"valid_until ({self.valid_until}) precedes "
+                    f"valid_from ({self.valid_from})"
+                )
         # A record cannot replace itself.
         if self.superseded_by == self.id:
             raise ValueError("a memory cannot supersede itself")
@@ -150,7 +191,9 @@ class Memory(BaseModel):
         """Active, not replaced, and inside its validity window if it has one."""
         if self.status is not MemoryStatus.ACTIVE or self.superseded_by:
             return False
-        return not (self.valid_until and self.valid_until < utc_now())
+        if not self.valid_until:
+            return True
+        return parse_temporal(self.valid_until, "valid_until") >= datetime.now(UTC)
 
 
 class Project(BaseModel):

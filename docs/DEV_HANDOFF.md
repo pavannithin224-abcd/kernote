@@ -5,6 +5,67 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Spike review: fixed a latent wrong-answer bug in validity comparison
+
+Review of the P4/P5 spikes, by probing them adversarially rather than reading
+them. Four weaknesses found; the user chose to fix the first.
+
+### The bug
+`_windows_overlap` and the ADR-0017 ordering validator compared `valid_from` /
+`valid_until` as **raw strings**. `"2026-1-1"` sorts after `"2026-01-01"`
+because `"1" > "0"`, so an unpadded date gave the wrong overlap verdict with no
+error. `"01/01/2026"` was accepted and compared as nonsense. Nothing validated
+the format, and the fields are writable through the public API.
+
+This is the worst failure shape available to this product: not a crash, but a
+confident and wrong conflict finding, in the feature ADR-0015 made the wedge.
+
+### What changed (ADR-0017a)
+Three layers, in `domain/models.py` and `maintain/conflicts.py`:
+1. A field validator parses with `datetime.fromisoformat` and rejects the rest,
+   naming the field, showing an example and quoting the bad input.
+2. Accepted values are normalised to one canonical form, so four spellings of
+   the same instant cannot coexist on disk.
+3. Ordering and overlap compare timezone-aware `datetime` objects. An
+   unparseable **stored** bound is treated as open-ended and logged, erring
+   towards reporting a possible conflict rather than hiding one.
+
+### Verification performed
+- **102 tests pass** (was 73). 29 new in `tests/unit/test_temporal.py`:
+  rejection matrix (9 bad formats × 2 fields), normalisation table (5 forms),
+  ordering across mixed formats, overlap (6 cases incl. touching windows),
+  currency.
+- Confirmed at the boundary: all of `2026-1-1`, `01/01/2026`, `2026-13-01`,
+  `2026-02-30`, `yesterday`, `""` are now rejected before storage.
+- `ruff check` and `ruff format --check` clean.
+- Drift re-verified on the real demo repo after the change: still HIGH=1,
+  LOW=6 on a one-line edit, so the fix did not disturb the overlap test.
+
+### Known issues / blockers
+1. **Problem 2 (not fixed, user deferred):** whitespace-only edits and prose
+   reflow produce hunks, so a formatter run across the docs would flag every
+   citation in the touched lines as high severity. Proposed fix was a `medium`
+   band for "changed, but only whitespace within the cited lines", which also
+   puts the currently-unused `medium` severity to work.
+2. **Problem 3 (deferred to Stage 6):** `manual` is in `_COMMAND_METHODS`, so a
+   hand-written procedure memory has its prose split into pseudo-commands.
+   Harmless today because no UI creates them.
+3. **Problem 4 (deferred to Stage 6, needs the eval set):** task normalisation
+   is literal — `Setup`/`Set up`, `Testing`/`Tests`, `Build`/`Building` all
+   miss. Widening it trades false negatives for false positives and should be
+   tuned against the P11 labelled set, not by guesswork.
+4. Stored temporal values changed shape (`"2026-03-11"` →
+   `"2026-03-11T00:00:00+00:00"`). One round-trip test updated deliberately.
+5. Proposal items P3, P6-P13 remain unapplied. ADR-0009 and Q1/Q2/Q4 open.
+
+### Next safe task
+Either Problem 2 (small, prevents a false-positive wave on the first formatter
+run) or **Stage 3 proper**: `detect-secrets` content scanning, `rule:adr`
+extraction to feed the decision-conflict signal, tree-sitter symbols, widened
+allowlist.
+
+---
+
 ## 2026-11-08 — Drift and conflict feasibility spikes (proposals P4, P5)
 
 Detection only, test level, no UI. Full implementation stays in Stage 6. The
