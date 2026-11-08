@@ -5,6 +5,87 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Stage 3 part 1: secret scanning and ADR extraction
+
+### What changed
+- **`ingest/secrets.py`** — content-level secret refusal via `detect-secrets`
+  (ADR-0013), wired into the pipeline before any capture is persisted. A file
+  with a credential is refused whole and recorded as `secret_suspected`.
+- **`ingest/extract/adr.py`** — `rule:adr`, handling three conventions:
+  `adr-tools` / MADR one-decision-per-file, a combined log, and a plain
+  `## Decision:` heading. Produces `status`, `chosen`, `alternatives`,
+  `decided_on`, and sets `valid_from` from the decision date (ADR-0017).
+- `extract/markdown.py` — heading classification now matches on word
+  boundaries with optional plurals, not substrings.
+- ADR-0020 added (21 ADRs).
+
+### Verification performed
+- **146 tests pass** (was 113). 19 new: 10 secret scanning, 9 ADR extraction.
+- `ruff check` / `format --check` clean. Frontend typechecks and builds.
+- **End-to-end payoff:** two opposing `adr-tools` files scanned from disk now
+  produce a decision conflict — `0001-use-sqlite.md` chose SQLite,
+  `0004-use-postgresql.md` chose PostgreSQL, both valid, one finding holding
+  both claims with citations. Before this the signal could only fire on
+  hand-written memories.
+- Secret refusal asserted at the database level: after scanning a file with a
+  pasted GitHub token, `source_captures.text` and `memories.content` contain
+  zero occurrences of it.
+
+### Four bugs found by dogfooding Kernote on its own repository
+Scanning our own repo was worth more than any synthetic fixture.
+
+1. **`scan_line` would have refused every file.** The obvious detect-secrets
+   entry point bypasses the library's filters and reports high-entropy hits on
+   ordinary prose, on `pip install -r requirements.txt` and on
+   `fastapi==0.115.6`. `scan_file` applies the filter chain and returned zero
+   hits on a benign documentation fixture while catching a GitHub token and an
+   AWS key with correct line numbers.
+2. **Numbered headings are not ADRs.** `## 1. Shape` and
+   `## 2. Repository structure` in `ARCHITECTURE.md` were extracted as
+   decisions — **44 false records out of 66**. The bare `N. Title` form is now
+   only trusted inside a path that already looks like a decision document.
+3. **One decision per file is the document, not a section.** The first
+   implementation treated `## Status` / `## Decision` as candidate ADRs and so
+   extracted *nothing* from `adr-tools` and MADR files, because no sub-section
+   carries both a decision heading and a long enough body.
+4. **`"adr"` was matched as a substring**, so "Quadratic scoring" and
+   "Squadron layout" classified as decisions. Fixing it with a bare `\b`
+   boundary then broke plurals — "Conventions" stopped matching "convention",
+   which substring matching had handled by accident. Both are now covered by
+   tests.
+
+Also: the ADR extractor now owns its document, suppressing the generic section
+extractor for it. Without that, every `## Decision` sub-heading produced a
+second payload-less "Decision" memory duplicating the real record.
+
+### Known issues / blockers
+1. **`chosen` parses from 2 of 22 of our own ADRs.** Our house style states the
+   decision as a paragraph ("Ship a Vite frontend plus…"), which is not
+   reliably parseable. The extractor declines rather than guessing, because a
+   fabricated option produces a fabricated conflict. `adr-tools` and MADR
+   conventions parse correctly. This limits the decision-conflict signal to
+   repos using a structured ADR format — worth stating plainly rather than
+   claiming broad coverage.
+2. A file containing one credential is refused **whole**, so a README with an
+   example token loses its real content. `# pragma: allowlist secret` is the
+   escape hatch in code files; it is unreliable in Markdown, where
+   detect-secrets does not recognise `#` as a comment.
+3. If a previously clean file gains a credential, its existing memories stay
+   and their pinned hash goes stale, so drift flags them. Coherent, but the
+   review UI should eventually say why the source vanished.
+4. **Stage 3 is not finished:** tree-sitter symbol extraction (ADR-0012) and
+   the widened source-file allowlist are still to do. That is the larger and
+   riskier half — a native wheel (risk R11) plus per-language `tags.scm`.
+5. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open.
+
+### Next safe task
+**Stage 3 part 2:** `tree-sitter` + `tree-sitter-language-pack` with
+per-language `tags.scm` seeded from Aider's queries (ADR-0012, attributed),
+and the allowlist widened to source files. Gate: slice S2 on a repository with
+real code, plus a Windows note for risk R11.
+
+---
+
 ## 2026-11-08 — Problem 2 fixed: cosmetic changes are no longer "stale"
 
 ### The problem

@@ -7,6 +7,8 @@ pipeline would give; that trade is stated in the README.
 
 from __future__ import annotations
 
+import re
+
 from ...domain.models import ClaimKind, Memory, MemoryType, SourceRef
 from ...domain.scoring import score_confidence, score_importance
 from ..normalize import Section
@@ -50,6 +52,20 @@ _CONVENTION_WORDS = ("convention", "style", "guideline", "standard", "contributi
 _DECISION_WORDS = ("decision", "adr", "rationale", "why we", "trade-off", "tradeoff")
 
 
+def _matches(heading: str, words: tuple[str, ...]) -> bool:
+    """Word-boundary match, not substring.
+
+    Plain `"adr" in heading` classifies "Quadratic scoring" and "Squadron
+    layout" as decisions, because they contain the letters a-d-r. Found while
+    dogfooding Kernote on its own repository.
+
+    The optional trailing `s` matters: a bare `\b` boundary stops "Conventions"
+    from matching "convention", which substring matching had handled by
+    accident. Tightening without it traded one bug for another.
+    """
+    return any(re.search(rf"\b{re.escape(w)}s?\b", heading) for w in words)
+
+
 def _classify(heading: str | None) -> MemoryType:
     h = (heading or "").lower()
     for words, mtype in (
@@ -59,7 +75,7 @@ def _classify(heading: str | None) -> MemoryType:
         (_GOTCHA_WORDS, MemoryType.GOTCHA),
         (_CONVENTION_WORDS, MemoryType.CONVENTION),
     ):
-        if any(w in h for w in words):
+        if _matches(h, words):
             return mtype
     return MemoryType.PROJECT_FACT
 

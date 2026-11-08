@@ -14,12 +14,13 @@ import structlog
 from ..db.connection import transaction
 from ..db.repositories import memories as memory_repo
 from ..db.repositories import sources as source_repo
-from ..domain.models import ScanResult, SkippedFile
+from ..domain.models import ScanResult, SkippedFile, SkipReason
 from . import gitmeta
 from .capture import Capture, capture_file
-from .extract import manifests
+from .extract import adr, manifests
 from .extract import markdown as md_extract
 from .normalize import split_markdown
+from .secrets import scan_path, scanning_session
 from .walker import Found, walk
 
 log = structlog.get_logger(__name__)
@@ -43,6 +44,7 @@ def scan_project(
     run_id = source_repo.start_scan(conn, project_id, commit)
     captures_created = 0
     memories_created = 0
+    secrets_refused = 0
     found: list[Found] = []
     skipped: list = []
 
@@ -54,7 +56,35 @@ def scan_project(
                     conn, run_id, SkippedFile(rel_path=skip.rel_path, reason=skip.reason)
                 )
 
+        # One settings context for the whole run: entering it per file is
+        # measurable overhead across a few thousand files.
+        with scanning_session():
+            secret_hits = {
+                item.rel_path: hits for item in found if (hits := scan_path(item.abs_path))
+            }
+
         for item in found:
+            if item.rel_path in secret_hits:
+                hits = secret_hits[item.rel_path]
+                # Refuse the whole file. Redacting instead would make the
+                # stored capture differ from the bytes on disk, and every
+                # later drift diff would then report phantom hunks at the
+                # redacted lines, forever.
+                source_repo.record_skip(
+                    conn,
+                    run_id,
+                    SkippedFile(rel_path=item.rel_path, reason=SkipReason.SECRET_SUSPECTED),
+                )
+                # Log locations and detector names only -- never the value.
+                log.warning(
+                    "scan.secret_refused",
+                    project_id=project_id,
+                    rel_path=item.rel_path,
+                    hits=[{"line": h.line_number, "detector": h.detector} for h in hits],
+                )
+                secrets_refused += 1
+                continue
+
             cap = capture_file(item.abs_path)
             if cap.text is None:
                 continue
@@ -81,7 +111,7 @@ def scan_project(
             status="completed",
             seen=len(found),
             new=captures_created,
-            skipped=len(skipped),
+            skipped=len(skipped) + secrets_refused,
         )
         status = "completed"
     except Exception as exc:  # never swallow: record and re-raise
@@ -104,6 +134,7 @@ def scan_project(
         captures_new=captures_created,
         memories_new=memories_created,
         skipped=len(skipped),
+        secrets_refused=secrets_refused,
     )
 
     return ScanResult(
@@ -111,9 +142,9 @@ def scan_project(
         project_id=project_id,
         status=status,
         git_commit=commit,
-        files_seen=len(found),
+        files_seen=len(found) - secrets_refused,
         files_new=captures_created,
-        files_skipped=len(skipped),
+        files_skipped=len(skipped) + secrets_refused,
         captures_created=captures_created,
         memories_created=memories_created,
         skipped=source_repo.skipped_for_run(conn, run_id),
@@ -174,8 +205,27 @@ def _ingest_one_file(
             "git_blob_hash": blob,
             "git_commit": commit,
         }
-        candidates += md_extract.extract_sections(**shared)
-        candidates += md_extract.extract_commands(**shared)
+        # ADR extraction runs on the same sections but needs the whole
+        # document too, because a one-decision-per-file ADR *is* the document.
+        adr_memories = adr.extract(
+            project_id=project_id,
+            rel_path=item.rel_path,
+            content_hash=cap.content_hash,
+            text=cap.text,
+            sections=sections,
+            git_blob_hash=blob,
+            git_commit=commit,
+        )
+        candidates += adr_memories
+        if adr_memories:
+            # The ADR extractor owns this document. Letting the generic section
+            # extractor run as well produced a second, payload-less "Decision"
+            # memory for every `## Decision` sub-heading -- a duplicate of the
+            # record that already carries the chosen option and alternatives.
+            candidates += md_extract.extract_commands(**shared)
+        else:
+            candidates += md_extract.extract_sections(**shared)
+            candidates += md_extract.extract_commands(**shared)
     else:
         candidates += manifests.extract(
             project_id=project_id,

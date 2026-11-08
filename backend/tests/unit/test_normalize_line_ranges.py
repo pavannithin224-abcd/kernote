@@ -1,5 +1,7 @@
 """Line anchors are provenance. An off-by-one here corrupts every citation."""
 
+import pytest
+
 from kernote.ingest.normalize import split_markdown
 
 DOC = """# Title
@@ -67,3 +69,37 @@ def test_crlf_document_keeps_correct_line_numbers():
     for section in split_markdown(crlf):
         if section.heading:
             assert section.heading in crlf.splitlines()[section.line_start - 1]
+
+
+# ------------------------------------------- classifier word boundaries
+
+
+@pytest.mark.parametrize(
+    ("heading", "expected"),
+    [
+        # These three contain the letters a-d-r and were classified as
+        # decisions by substring matching. Found by dogfooding.
+        ("Quadratic scoring", "project_fact"),
+        ("Squadron layout", "architecture"),
+        # "Padre" must not trigger the a-d-r decision words; "configuration"
+        # legitimately makes this a procedure.
+        ("Padre configuration", "procedure"),
+        ("Padre notes", "project_fact"),
+        # Plurals must still match: a bare word boundary broke these.
+        ("Conventions", "convention"),
+        ("Decisions", "decision"),
+        ("Gotchas", "gotcha"),
+        # Genuine signals must still work.
+        ("ADR-0015 applied", "decision"),
+        ("Decision: use Postgres", "decision"),
+        ("Setup", "procedure"),
+        ("Architecture", "architecture"),
+        ("Known gotcha", "gotcha"),
+        ("Conventions", "convention"),
+        ("Overview of parts", "architecture"),
+    ],
+)
+def test_heading_classification_uses_word_boundaries(heading, expected):
+    from kernote.ingest.extract.markdown import _classify
+
+    assert _classify(heading).value == expected

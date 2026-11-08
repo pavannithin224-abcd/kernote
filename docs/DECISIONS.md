@@ -679,3 +679,47 @@ behaviour and says in its message that it documents behaviour rather than
 intent. Fixing it means parsing fence languages and knowing which are
 whitespace-sensitive — Stage 6 work, and it should be measured against the P11
 evaluation set rather than guessed.
+
+---
+
+## ADR-0020 — A file containing a credential is refused whole, and `scan_file` is the entry point
+**Status:** accepted · 2026-11-08 · *implements the content half of ADR-0013*
+
+**Context.** `walker.py` refuses `.env`, `*.pem` and `id_rsa*` by filename.
+That misses the harder case: a credential pasted into a file whose name looks
+innocent, which is how most accidental commits happen.
+
+Two non-obvious findings shaped this:
+
+1. **`detect_secrets.core.scan.scan_line` is unusable here.** It is a
+   primitive that bypasses the library's filter chain, so it reports
+   Base64/Hex "high entropy" hits on ordinary prose, on `pip install -r
+   requirements.txt`, and on `fastapi==0.115.6`. Wiring it in would have
+   refused effectively every file in every repository — a scanner that imports
+   nothing. `scan_file` applies the filters: zero hits on a benign
+   documentation fixture, correct detection of a GitHub token and an AWS key
+   with line numbers.
+2. **Redaction poisons drift.** Storing a redacted capture while hashing the
+   real bytes makes the stored text differ permanently from the file, so every
+   later drift diff reports phantom hunks at the redacted lines, forever.
+
+**Decision.** Scan with `scan_file` inside one `default_settings()` context per
+scan run. If a file has any hit, refuse the whole file: record
+`skipped_files.reason = 'secret_suspected'`, persist no capture, no chunks and
+no memories. Log the line numbers and detector names only — never the value,
+because that log and the review UI would otherwise recreate the leak.
+
+**Alternatives.** *Redact the offending lines* — rejected above. *Import the
+file and flag it* — the credential would be in the database, which is the
+thing being prevented. *Refuse only the offending chunk* — the line ranges of
+every later chunk shift, so provenance for the rest of the file becomes
+unstable.
+
+**Consequences.** A README with one example credential loses its real content.
+`# pragma: allowlist secret` is the escape hatch, and it works in code files;
+in Markdown it is unreliable because detect-secrets does not treat `#` as a
+comment there. A file that was clean and later gains a credential keeps its
+existing memories, whose pinned hash now goes stale, so drift flags them for
+review — coherent, though the UI should eventually explain that the source was
+withdrawn. Tests assert at the database level that a pasted token appears in
+neither `source_captures.text` nor `memories.content`.
