@@ -342,3 +342,100 @@ def test_analyze_unknown_project_is_404(client):
 @pytest.mark.parametrize("path", ["findings", "proposals"])
 def test_maintenance_reads_unknown_project_are_404(client, path):
     assert client.get(f"/api/v1/projects/nope/{path}").status_code == 404
+
+
+# ===================== Stage 4 defect sweep regressions =====================
+
+
+def test_filler_only_titles_are_still_compared(conn, tmp_path):
+    """ "Overview" and "Commands" are entirely filler words, so the stripped
+    token set was empty: the bucket signature was empty and Jaccard returned
+    0.0. 120 files sharing an "Overview" heading produced zero comparisons."""
+    files = {
+        f"d{index}.md": f"# D{index}\n\n## Overview\n\n"
+        "This module does something useful for the system.\n"
+        for index in range(8)
+    }
+    project = _scan(conn, tmp_path, files)
+    result = detect_duplicates(conn, project_id=project.id)
+    assert result.compared > 0, "filler-only titles were never bucketed"
+    assert result.candidates > 0, "identical sections were not flagged"
+
+
+@pytest.mark.parametrize("title", ["Overview", "Commands", "This is it"])
+def test_signature_and_scoring_tokens_agree(title):
+    """Bucketing and scoring must use the same fallback, or a pair is bucketed
+    and then scored 0.0."""
+    from kernote.maintain.duplicates import _signature, _title_tokens
+
+    assert _signature(title), f"{title!r} has no bucket signature"
+    assert _title_tokens(title), f"{title!r} has no scoring tokens"
+
+
+def test_large_buckets_use_a_canonical_comparison(conn, tmp_path):
+    """Twenty-five identical sections are 300 pairs but only 24 useful
+    statements. Pairwise findings would make the queue unusable."""
+    files = {
+        f"d{index}.md": f"# D{index}\n\n## Overview\n\n"
+        "This module does something useful for the system.\n"
+        for index in range(12)
+    }
+    project = _scan(conn, tmp_path, files)
+    result = detect_duplicates(conn, project_id=project.id)
+    # Star, not clique: n-1 rather than n(n-1)/2.
+    assert result.compared == 11, result.compared
+
+
+def test_very_large_bucket_is_truncated_not_unbounded(conn, tmp_path):
+    files = {
+        f"d{index}.md": f"# D{index}\n\n## Overview\n\nShared body text here for all.\n"
+        for index in range(60)
+    }
+    project = _scan(conn, tmp_path, files)
+    result = detect_duplicates(conn, project_id=project.id)
+    assert result.compared <= 25, "bucket cap did not apply"
+    assert result.candidates <= 200
+
+
+def test_different_extractors_are_not_compared(conn, tmp_path):
+    """A section in one file and a command block in another shared a title and
+    an overlapping body, giving 4 candidates where only 2 were real."""
+    block = "# {t}\n\n## Setup\n\nInstall first:\n\n```bash\npip install -e .\n```\n"
+    project = _scan(
+        conn,
+        tmp_path,
+        {"README.md": block.format(t="A"), "GUIDE.md": block.format(t="G")},
+    )
+    detect_duplicates(conn, project_id=project.id)
+    pairs = conn.execute(
+        "SELECT m1.extraction_method AS a, m2.extraction_method AS b "
+        "FROM findings f JOIN memories m1 ON m1.id=f.memory_id "
+        "JOIN memories m2 ON m2.id=f.other_id WHERE f.kind='duplicate'"
+    ).fetchall()
+    assert pairs, "no duplicate findings at all"
+    for row in pairs:
+        assert row["a"] == row["b"], f"cross-granularity pair: {row['a']} vs {row['b']}"
+
+
+def test_entity_derivation_is_bounded(conn):
+    """A 400-dependency manifest derived 401 entities and, at two queries
+    each, 800 statements for one memory."""
+    manifest = "\n".join(f"package-{index}>=1.0" for index in range(400))
+    memory = _memory(
+        "p",
+        type=MemoryType.PROJECT_FACT,
+        title="Python dependencies (400)",
+        content=manifest,
+        extraction_method="rule:manifests",
+        source_refs=[SourceRef(rel_path="requirements.txt", content_hash="h")],
+    )
+    pairs = entities.derive(memory)
+    assert len(pairs) <= 60, len(pairs)
+    # The cap must not drop the path entities, which other features rely on.
+    assert ("file", "requirements.txt") in pairs
+
+
+def test_no_dead_fan_in_helper():
+    """`entities.fan_in()` was defined and never called; importance.py has its
+    own query."""
+    assert not hasattr(entities, "fan_in")

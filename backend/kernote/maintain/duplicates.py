@@ -59,6 +59,15 @@ _BODY_THRESHOLD = 0.35
 # construction, so two of them are never the same claim -- only the same
 # identifier in different places.
 _STRUCTURAL_METHODS = ("rule:code_symbols",)
+# Bounds. A repository where 120 files share an "Overview" heading has 7140
+# pairs in that one bucket; a finding for each would make the review queue
+# unusable and is no more informative than the first few. Both limits log when
+# they bite, so truncation is never silent.
+_MAX_BUCKET = 25
+_MAX_CANDIDATES = 200
+# Above this many members, compare against the canonical record rather than
+# every pair.
+_CLIQUE_LIMIT = 5
 # A shared file is weak evidence (many memories share a README); a shared
 # command or dependency is stronger.
 _WEAK_ENTITY_KINDS = {"file", "module"}
@@ -66,6 +75,34 @@ _WEAK_ENTITY_KINDS = {"file", "module"}
 
 def _tokens(text: str) -> frozenset[str]:
     return frozenset(w for w in _NOISE.sub(" ", text.lower()).split() if w and w not in _FILLER)
+
+
+def _title_tokens(title: str) -> frozenset[str]:
+    """Tokens for *scoring* a title pair.
+
+    Must use the same fallback as `_signature`: with filler-only titles like
+    "Overview" the stripped set is empty, Jaccard returns 0.0, and a bucket of
+    120 identical sections produced zero candidates even though it had been
+    bucketed correctly.
+    """
+    stripped = _tokens(title)
+    if stripped:
+        return stripped
+    return frozenset(_NOISE.sub(" ", title.lower()).split())
+
+
+def _signature(title: str) -> str:
+    """Bucket key for a title.
+
+    Falls back to the raw normalised words when filler-stripping leaves
+    nothing. "Overview" and "Commands" are entirely filler, so they produced
+    an empty signature and were never bucketed -- 120 files sharing an
+    "Overview" heading yielded zero comparisons.
+    """
+    stripped = " ".join(sorted(_tokens(title)))
+    if stripped:
+        return stripped
+    return " ".join(sorted(_NOISE.sub(" ", title.lower()).split()))
 
 
 def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
@@ -144,7 +181,7 @@ def detect_duplicates(
         # module entity, so without this a "Running the tests" section in
         # README.md and the identical one in CONTRIBUTING.md were never
         # compared at all -- the obvious duplicate was invisible.
-        signature = " ".join(sorted(_tokens(row["title"])))
+        signature = _signature(row["title"])
         if signature:
             buckets.setdefault((row["type"], "title", signature), []).append(row)
 
@@ -152,64 +189,104 @@ def detect_duplicates(
     for (mem_type, kind, name), members in buckets.items():
         if len(members) < 2:
             continue
-        for index, first in enumerate(members):
-            for second in members[index + 1 :]:
-                pair = (min(first["id"], second["id"]), max(first["id"], second["id"]))
-                if pair in judged:
-                    continue
-                judged.add(pair)
-                result.compared += 1
-
-                if _is_nested(conn, first["id"], second["id"]):
-                    # A section memory and the fenced block inside it are
-                    # parent and child, not two independent claims. Without
-                    # this, every "Setup" section duplicates its own
-                    # "Setup: commands".
-                    continue
-
-                title_score = _jaccard(_tokens(first["title"]), _tokens(second["title"]))
-                body_score = _jaccard(
-                    _tokens(first["content"][:2000]), _tokens(second["content"][:2000])
+        if len(members) > _MAX_BUCKET:
+            log.warning(
+                "duplicates.bucket_truncated",
+                project_id=project_id,
+                bucket=f"{mem_type}/{kind}/{name}",
+                size=len(members),
+                limit=_MAX_BUCKET,
+            )
+            # Rows arrive ordered by importance, so the kept slice is what a
+            # reviewer would look at first.
+            members = members[:_MAX_BUCKET]
+        # Small bucket: compare every pair. Large bucket: compare each member
+        # against the highest-importance one only. Twenty-five identical
+        # sections are 300 pairs but only 24 useful statements -- "this
+        # duplicates the canonical record" -- and a reviewer can act on those.
+        if len(members) > _CLIQUE_LIMIT:
+            canonical = members[0]
+            pairs = [(canonical, other) for other in members[1:]]
+        else:
+            pairs = [
+                (first, second)
+                for index, first in enumerate(members)
+                for second in members[index + 1 :]
+            ]
+        for first, second in pairs:
+            if result.candidates >= _MAX_CANDIDATES:
+                log.warning(
+                    "duplicates.candidate_limit_reached",
+                    project_id=project_id,
+                    limit=_MAX_CANDIDATES,
                 )
-                shared = entities.get(first["id"], set()) & entities.get(second["id"], set())
-                strong_shared = {k for k, _ in shared} - _WEAK_ENTITY_KINDS
+                return result
+            pair = (min(first["id"], second["id"]), max(first["id"], second["id"]))
+            if pair in judged:
+                continue
+            judged.add(pair)
+            result.compared += 1
 
-                # A shared README alone is not evidence of duplication, so a
-                # weak-only overlap needs a strong title match to qualify.
-                threshold = _TITLE_THRESHOLD if strong_shared else 0.8
-                if title_score < threshold or body_score < _BODY_THRESHOLD:
-                    continue
+            # Different extractors produce different granularity: a
+            # section and the fenced block inside it are not two claims.
+            # Same-file nesting is caught below, but a section in one file
+            # and a command block in another shared a title and an
+            # overlapping body, giving 4 candidates where 2 were real.
+            if first["extraction_method"] != second["extraction_method"]:
+                continue
 
-                result.candidates += 1
-                score = round((title_score * 0.6) + (body_score * 0.4), 3)
-                severity = Severity.HIGH if score >= 0.75 else Severity.MEDIUM
-                finding_id = record(
-                    conn,
-                    project_id,
-                    Finding(
-                        kind=FindingKind.DUPLICATE,
-                        severity=severity,
-                        detector=DETECTOR,
-                        memory_id=first["id"],
-                        other_id=second["id"],
-                        explanation=(
-                            f"Two {mem_type} memories look like the same claim "
-                            f"(title overlap {title_score:.0%}, body {body_score:.0%}), "
-                            f"both referring to {kind} “{name}”. "
-                            "Nothing is merged without your approval."
-                        ),
-                        evidence={
-                            "signal": "title_and_entity_overlap",
-                            "title_score": title_score,
-                            "body_score": body_score,
-                            "score": score,
-                            "shared_entities": sorted(f"{k}:{v}" for k, v in shared),
-                            "dedupe_key": f"dup:{pair[0]}:{pair[1]}",
-                        },
+            if _is_nested(conn, first["id"], second["id"]):
+                # A section memory and the fenced block inside it are
+                # parent and child, not two independent claims. Without
+                # this, every "Setup" section duplicates its own
+                # "Setup: commands".
+                continue
+
+            title_score = _jaccard(
+                _title_tokens(first["title"]), _title_tokens(second["title"])
+            )
+            body_score = _jaccard(
+                _tokens(first["content"][:2000]), _tokens(second["content"][:2000])
+            )
+            shared = entities.get(first["id"], set()) & entities.get(second["id"], set())
+            strong_shared = {k for k, _ in shared} - _WEAK_ENTITY_KINDS
+
+            # A shared README alone is not evidence of duplication, so a
+            # weak-only overlap needs a strong title match to qualify.
+            threshold = _TITLE_THRESHOLD if strong_shared else 0.8
+            if title_score < threshold or body_score < _BODY_THRESHOLD:
+                continue
+
+            result.candidates += 1
+            score = round((title_score * 0.6) + (body_score * 0.4), 3)
+            severity = Severity.HIGH if score >= 0.75 else Severity.MEDIUM
+            finding_id = record(
+                conn,
+                project_id,
+                Finding(
+                    kind=FindingKind.DUPLICATE,
+                    severity=severity,
+                    detector=DETECTOR,
+                    memory_id=first["id"],
+                    other_id=second["id"],
+                    explanation=(
+                        f"Two {mem_type} memories look like the same claim "
+                        f"(title overlap {title_score:.0%}, body {body_score:.0%}), "
+                        f"both referring to {kind} “{name}”. "
+                        "Nothing is merged without your approval."
                     ),
-                )
-                if propose and _create_proposal(conn, project_id, finding_id, first, second):
-                    result.proposals += 1
+                    evidence={
+                        "signal": "title_and_entity_overlap",
+                        "title_score": title_score,
+                        "body_score": body_score,
+                        "score": score,
+                        "shared_entities": sorted(f"{k}:{v}" for k, v in shared),
+                        "dedupe_key": f"dup:{pair[0]}:{pair[1]}",
+                    },
+                ),
+            )
+            if propose and _create_proposal(conn, project_id, finding_id, first, second):
+                result.proposals += 1
 
     log.info(
         "duplicates.checked",

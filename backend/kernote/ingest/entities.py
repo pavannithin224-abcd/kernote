@@ -44,12 +44,20 @@ def _command_of(line: str) -> str | None:
     return None
 
 
+# One memory's worth of entities. A 400-dependency manifest derived 401
+# entities and, at two queries each, 800 statements for a single memory --
+# and a dependency list that long is noise as a fan-in signal anyway.
+_MAX_ENTITIES = 60
+
+
 def derive(memory: Memory) -> list[tuple[str, str]]:
-    """(kind, name) pairs for a memory. Deterministic, order-stable."""
+    """(kind, name) pairs for a memory. Deterministic, order-stable, bounded."""
     out: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
     def add(kind: str, name: str) -> None:
+        if len(out) >= _MAX_ENTITIES:
+            return
         name = name.strip()
         if not name or len(name) > 120:
             return
@@ -120,20 +128,3 @@ def link(conn: sqlite3.Connection, project_id: str, memory: Memory) -> int:
             (memory.id, entity_id, kind),
         )
     return len(pairs)
-
-
-def fan_in(conn: sqlite3.Connection, project_id: str) -> dict[str, int]:
-    """entity_id -> how many memories reference it.
-
-    This is the raw signal behind importance fan-in. A PageRank over the symbol
-    graph (ADR-0012a, the Aider approach) is the refinement; a reference count
-    is the honest first version, and it is explainable in one sentence, which
-    importance scoring requires.
-    """
-    rows = conn.execute(
-        "SELECT e.id, COUNT(DISTINCT me.memory_id) AS n "
-        "FROM entities e JOIN memory_entities me ON me.entity_id = e.id "
-        "WHERE e.project_id=? GROUP BY e.id",
-        (project_id,),
-    ).fetchall()
-    return {r["id"]: int(r["n"]) for r in rows}

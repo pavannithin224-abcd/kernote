@@ -945,3 +945,53 @@ swamps everything else.
 repository it currently adjusts **nothing**, because each command appears in
 one memory — an honest result rather than a flattering one, and the signal is
 exercised by a fixture with genuinely shared commands instead.
+
+---
+
+## ADR-0021a — Duplicate detection: bounded work, canonical comparison, one granularity
+**Status:** accepted · 2026-11-08 · *amends ADR-0021*
+
+**Context.** Probing ADR-0021 before Stage 5 found four defects, three of them
+only visible at a scale this repository does not reach.
+
+1. **A filler-only title was never compared at all.** `_tokens` strips filler
+   words, and "Overview", "Commands" and "This is it" are *entirely* filler, so
+   the bucket signature was empty and the pair was never bucketed. A fixture of
+   120 files sharing an `## Overview` heading produced `compared=0`. Fixing the
+   bucketing alone was not enough: `title_score` used the same stripped tokens,
+   so Jaccard returned 0.0 and the now-correctly-bucketed pairs still scored
+   zero. Bucketing and scoring must share one fallback.
+2. **Unbounded pairwise work.** One bucket of 120 members is 7140 pairs, and a
+   finding for each would make the review queue unusable.
+3. **Cross-granularity pairs.** A `## Setup` section in one file and a
+   `## Setup` fenced block in *another* share a title and an overlapping body.
+   Same-file nesting was already excluded; this gave 4 candidates where 2 were
+   real.
+4. **Unbounded entity derivation.** A 400-dependency manifest produced 401
+   entities and, at two statements each, ~800 writes for a single memory.
+
+**Decision.**
+1. `_signature` and `_title_tokens` both fall back to the raw normalised words
+   when filler-stripping empties the set.
+2. Buckets above 5 members use a **canonical comparison** rather than a clique:
+   every member against the highest-importance one. Twenty-five identical
+   sections then yield 24 actionable statements ("this duplicates the canonical
+   record") instead of 300 pairs. Buckets above 25 members are truncated and
+   total candidates capped at 200; both log when they bite, so truncation is
+   never silent.
+3. Two memories are only compared when their `extraction_method` matches.
+   Different extractors produce different granularity, and a section is not a
+   duplicate of the code block inside it.
+4. Entity derivation is capped at 60 per memory, path entities first, since a
+   400-package dependency list is noise as a fan-in signal anyway.
+
+Also removed: `entities.fan_in()`, defined and never called — `importance.py`
+carries its own query.
+
+**Consequences.** On this repository comparisons fell from **1851 to 168** and
+candidates from 2 to **1**, the remaining one genuine. All five probe cases are
+now correct: 120 identical sections give 24 bounded candidates, cross-file
+section/commands gives 2, a planted duplicate gives 1, same-title-different-body
+gives 0, unrelated gives 0. The canonical-comparison rule means a reviewer sees
+"these 24 duplicate the canonical record" rather than a combinatorial list,
+which is the more useful statement as well as the cheaper one.

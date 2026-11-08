@@ -5,6 +5,60 @@ Newest entry first.
 
 ---
 
+## 2026-11-08 — Stage 4 defect sweep
+
+Probed Stage 4 adversarially before starting Stage 5, as with Stage 3.
+
+### Probed and found sound
+- **Scale.** 120 files scanned and analysed in well under a second; the
+  detectors are not the bottleneck.
+- **Importance refinement** is idempotent (migration 0003 holds).
+
+### Bugs found and fixed (ADR-0021a)
+1. **A filler-only title was never compared.** "Overview", "Commands" and
+   "This is it" are entirely filler words, so the bucket signature was empty
+   and 120 files sharing an `## Overview` heading gave `compared=0`. Fixing
+   bucketing alone was insufficient — `title_score` used the same stripped
+   tokens, so Jaccard returned 0.0 and correctly-bucketed pairs still scored
+   zero. Bucketing and scoring now share one fallback.
+2. **Unbounded pairwise work.** A 120-member bucket is 7140 pairs. Buckets
+   above 5 members now compare against the highest-importance record instead
+   of every pair: 24 actionable statements rather than 300. Buckets above 25
+   are truncated and candidates capped at 200, both logged.
+3. **Cross-granularity false positives.** A section in one file and a fenced
+   block in another share a title and an overlapping body — 4 candidates where
+   2 were real. Pairs now require matching `extraction_method`.
+4. **Unbounded entity derivation.** A 400-dependency manifest produced 401
+   entities and ~800 writes for one memory. Capped at 60, paths first.
+5. **Dead code**: `entities.fan_in()`, defined and never called.
+
+### Verification performed
+- **245 tests pass** (was 236). 9 new sweep regressions.
+- `ruff check` / `format --check` clean; frontend typechecks and builds.
+- All five probe cases correct: 120 identical sections → 24 bounded
+  candidates; cross-file section/commands → 2; planted duplicate → 1;
+  same-title-different-body → 0; unrelated → 0.
+- Dogfood: comparisons fell from **1851 to 168**, candidates from 2 to **1**,
+  and the remaining one is genuine with citations provably preserved.
+
+### Known issues / blockers
+1. Proposal approval and finding resolution are still unimplemented, so the
+   queue only grows. Stage 6, and the UI says so.
+2. Fan-in adjusts nothing on this repository (each command appears once).
+3. `SecretWarning` has no findings row (needs a new `findings.kind`).
+4. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open. No Windows
+   verification of the tree-sitter wheels.
+
+No known Stage 4 defects remain open.
+
+### Next safe task
+**Stage 5 (Days 14-17): recall and evidence retrieval.** FTS5 keyword search,
+`fastembed` embeddings (ADR-0011), the four-way model benchmark (ADR-0014),
+hybrid fusion, and the extractive composer that labels evidence, inference and
+unknowns. `chunks`, both FTS tables and `embeddings` are wired and waiting.
+
+---
+
 ## 2026-11-08 — Stage 4: core memory engine
 
 ### What changed
