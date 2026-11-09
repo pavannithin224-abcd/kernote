@@ -99,10 +99,108 @@ def test_bundle_respects_its_budget_and_says_what_it_dropped(conn, tmp_path):
     assert small.tokens_used <= 400
     assert len(small.included) < len(big.included)
     assert small.dropped, "a tight budget dropped nothing"
-    assert small.note and "did not fit" in small.note
-    assert "Not included (over budget)" in small.markdown
+    assert not small.over_budget
+    assert small.note and str(len(small.dropped)) in small.note
+    assert "Not included" in small.markdown
     # Dropped entries are named, not merely counted.
     assert small.dropped[0].title in small.markdown
+
+
+@pytest.mark.parametrize("budget", [200, 400, 700, 1500, 8000])
+def test_bundle_token_count_describes_the_whole_document(conn, tmp_path, budget):
+    """The stated figure must measure the document returned, not its parts.
+
+    Summing per-entry estimates and reserving a guess for the header was wrong
+    by up to 4x: the list of what did not fit *grows* as the budget shrinks, so
+    the tighter the budget, the larger the unmeasured footer. A bundle asked
+    for 200 tokens came back at 792 and said 187.
+    """
+    for index in range(40):
+        (tmp_path / f"topic{index}.md").write_text(
+            f"# Topic {index}\n\n## Subsystem {index}\n\nSubsystem {index} "
+            "handles a distinct concern, described at length so the entry "
+            "costs a meaningful number of tokens rather than a handful.\n"
+        )
+    project = _project(conn, tmp_path)
+    result = context_bundle.build(conn, project_id=project.id, token_budget=budget)
+
+    assert result.tokens_used == context_bundle.estimate_tokens(result.markdown)
+    if result.over_budget:
+        # Allowed only when even the smallest honest document overruns, and it
+        # must say so rather than understating itself.
+        assert not result.included
+        assert result.note and "over the" in result.note
+    else:
+        assert result.tokens_used <= budget
+
+
+def test_bundle_counts_memories_it_never_weighed(conn, tmp_path):
+    """Claiming "113 did not fit" while 260 more were never looked at is the
+    kind of confident wrong number this product exists to prevent."""
+    for index in range(30):
+        (tmp_path / f"topic{index}.md").write_text(
+            f"# Topic {index}\n\nSubsystem {index} is described here.\n"
+        )
+    project = _project(conn, tmp_path)
+    total = context_bundle._current_total(conn, project.id)
+    result = context_bundle.build(
+        conn, project_id=project.id, token_budget=600, max_candidates=5
+    )
+
+    assert result.not_considered > 0, "the cut-off left nothing out; raise the corpus"
+    assert len(result.included) + result.excluded_total == total
+    assert str(result.excluded_total) in result.markdown
+    assert "not weighed against the budget" in (result.note or "")
+
+
+def test_bundle_blames_the_budget_not_the_vault(conn, tmp_path):
+    """ "No memory matches" is false when records matched and none fitted."""
+    for index in range(12):
+        (tmp_path / f"topic{index}.md").write_text(
+            f"# Topic {index}\n\nSubsystem {index} is described at some length "
+            "here, long enough that it cannot fit a minimal budget.\n"
+        )
+    project = _project(conn, tmp_path)
+    # Below the header's own cost, so nothing can fit however small the entry.
+    result = context_bundle.build(conn, project_id=project.id, token_budget=120)
+
+    assert not result.included
+    assert "Nothing fitted the budget" in result.markdown
+    assert "No memory available" not in result.markdown
+
+
+def test_bundle_marks_a_truncated_body(conn, tmp_path):
+    """A body cut at the per-entry cap must say it was cut.
+
+    Driven through a stored memory rather than a scanned file: extraction fills
+    `summary`, which the bundle prefers, and a summary is never long enough to
+    reach the cap — so a file fixture would assert nothing.
+    """
+    from kernote.db.repositories import memories as repo
+    from kernote.domain.models import Memory, SourceRef
+
+    project = _project(conn, tmp_path)
+    repo.create(
+        conn,
+        Memory(
+            project_id=project.id,
+            type="gotcha",
+            title="A very long gotcha",
+            content="This sentence is repeated to exceed the per-entry cap. " * 40,
+            summary=None,
+            claim_kind="source_fact",
+            importance=0.99,
+            importance_reason="fixture",
+            confidence=0.9,
+            confidence_reason="fixture",
+            extraction_method="manual",
+            source_refs=[SourceRef(rel_path="LONG.md", user_note="fixture")],
+        ),
+    )
+    result = context_bundle.build(conn, project_id=project.id, token_budget=8000)
+    cut = [e for e in result.included if e.body.endswith("[…truncated]")]
+    assert cut, "nothing was long enough to truncate"
+    assert len(cut[0].body) < 1300
 
 
 def test_bundle_excludes_superseded_memories(conn, tmp_path):
@@ -361,3 +459,78 @@ def test_mcp_info_endpoint_states_it_is_read_only(client, demo_repo):
     assert body["transport"] == "stdio"
     assert "KERNOTE_PROJECT" in body["env"]
     assert body["claude_code_snippet"].startswith("claude mcp add kernote")
+
+
+# ─── the MCP tools' own contracts ──────────────────────────────────────────
+
+
+def _tools(conn, project_id):
+    from kernote.mcp import server as mcp_server
+
+    srv = mcp_server.build_server(conn, project_id)
+    return {t.name: t.fn for t in srv._tool_manager.list_tools()}
+
+
+def test_get_decision_matches_whole_words_only(conn, tmp_path):
+    """The Stage 3 `"adr"` matching "Quadratic" defect, reintroduced here.
+
+    Plain substring containment made `"it"` match "SQLite" and `"a"` match
+    every decision in the project.
+    """
+    (tmp_path / "ADR-001-sqlite.md").write_text(
+        "# ADR-001: Storage\n\nStatus: accepted\n\n"
+        "## Decision\n\nWe will use SQLite for local storage.\n"
+    )
+    project = _project(conn, tmp_path)
+    get_decision = _tools(conn, project.id)["kernote_get_decision"]
+
+    assert get_decision(subject="SQLite")["found"], "a real subject must match"
+    # "it" is a whole word inside no decision here, and is not a substring hit
+    # on "SQLite" any more.
+    assert not get_decision(subject="it")["found"]
+
+
+def test_get_decision_refuses_an_empty_or_too_common_subject(conn, tmp_path):
+    """An empty subject used to fall through the filter and return ten
+    arbitrary decisions as though they matched it."""
+    project = _project(conn, tmp_path)
+    get_decision = _tools(conn, project.id)["kernote_get_decision"]
+
+    for subject in ("", "   ", "a", "the", "it"):
+        result = get_decision(subject=subject)
+        assert result["found"] is False
+        assert result["decisions"] == []
+
+
+def test_search_memory_rejects_an_unknown_type(conn, tmp_path):
+    project = _project(conn, tmp_path)
+    search = _tools(conn, project.id)["kernote_search_memory"]
+
+    result = search(query="architecture", memory_type="not_a_real_type")
+    assert result["outcome"] == "invalid_request"
+    assert result["evidence"] == []
+    assert "project_fact" in result["statement"], "it must name the valid types"
+
+
+def test_search_memory_does_not_claim_records_its_filter_removed(conn, tmp_path):
+    """The composed statement counts what retrieval found, which becomes a lie
+    once the type filter empties the list: an agent must never read
+    "19 supporting records" beside zero records."""
+    project = _project(conn, tmp_path)
+    search = _tools(conn, project.id)["kernote_search_memory"]
+
+    result = search(query="architecture", memory_type="procedure", limit=8)
+    if not result["evidence"]:
+        assert result["outcome"] == "evidence_not_found"
+        assert "none of them are of type" in result["statement"]
+
+
+def test_mcp_info_tool_list_comes_from_the_live_registry(conn, tmp_path):
+    """Two hand-maintained copies of the same fact is the drift this product
+    exists to catch, so the screen derives its list from the real server."""
+    from kernote.mcp.server import tool_manifest
+
+    project = _project(conn, tmp_path)
+    advertised = {t["name"] for t in tool_manifest(conn, project.id)}
+    assert advertised == set(_tools(conn, project.id))
+    assert all(t["description"] for t in tool_manifest(conn, project.id))

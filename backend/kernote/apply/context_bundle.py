@@ -15,6 +15,11 @@ What distinguishes this from "dump the memories into a prompt":
 Token counts are a `len/4` estimate, not a tokenizer. That is honest for a
 budget check and avoids making the bundle depend on a model's vocabulary; the
 bundle says so rather than implying precision it does not have.
+
+The reported figure is measured from the **finished document**, not summed from
+its parts. Estimating the parts and reserving a guess for the header was wrong
+by up to 4x once the "did not fit" list grew, which made the one number the
+caller relies on the least trustworthy thing in the bundle.
 """
 
 from __future__ import annotations
@@ -30,6 +35,18 @@ from ..retrieval import hybrid
 log = structlog.get_logger(__name__)
 
 CHARS_PER_TOKEN = 4
+
+# How many dropped titles to list, tried in order. Listing what did not fit is
+# the point, but the list itself costs tokens, so a tight budget lists fewer
+# rather than overrunning. It never reaches zero: naming nothing would trade
+# one dishonesty for another, and four titles plus a count still tells the
+# reader what kind of thing is missing.
+_DROPPED_LIST_STEPS = (40, 12, 4)
+
+# A fixed-width placeholder so the document can be measured before the measured
+# figure is written into it. Substituting the real number changes the length by
+# at most a few characters, under one token.
+_USED_SLOT = "######"
 
 # Ordered by what orients a reader first.
 _SECTION_ORDER: tuple[tuple[MemoryType, str], ...] = (
@@ -68,7 +85,14 @@ class BundleResult:
     markdown: str
     included: list[BundleEntry] = field(default_factory=list)
     dropped: list[BundleEntry] = field(default_factory=list)
+    not_considered: int = 0
+    over_budget: bool = False
     note: str | None = None
+
+    @property
+    def excluded_total(self) -> int:
+        """Every current memory that did not make it in — listed or not."""
+        return len(self.dropped) + self.not_considered
 
     @property
     def dropped_tokens(self) -> int:
@@ -86,6 +110,14 @@ def _citation_for(conn: sqlite3.Connection, memory_id: str) -> str:
     if row["rel_path"] and row["line_start"]:
         return f"{row['rel_path']}:{row['line_start']}-{row['line_end']}"
     return row["rel_path"] or row["user_note"] or "no source recorded"
+
+
+def _current_total(conn: sqlite3.Connection, project_id: str) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) AS c FROM memories WHERE project_id=? "
+        "AND status NOT IN ('superseded','archived')",
+        (project_id,),
+    ).fetchone()["c"]
 
 
 def _candidates(
@@ -140,7 +172,8 @@ def build(
         body = (row["summary"] or row["content"] or "").strip()
         if not body:
             continue
-        body = body[:1200]
+        if len(body) > 1200:
+            body = body[:1200].rstrip() + " […truncated]"
         entry = BundleEntry(
             memory_id=row["id"],
             memory_type=row["type"],
@@ -153,53 +186,149 @@ def build(
         )
         entries.append(entry)
 
-    # Header and footer cost tokens too; reserve for them so the stated budget
-    # is the whole document, not just its body.
-    reserve = 160
-    budget = max(0, token_budget - reserve)
-    included: list[BundleEntry] = []
-    dropped: list[BundleEntry] = []
-    used = 0
-    for entry in entries:
-        if used + entry.tokens <= budget:
-            included.append(entry)
-            used += entry.tokens
-        else:
-            dropped.append(entry)
+    # Memories past `max_candidates` were never weighed against the budget.
+    # They are counted so the bundle can say so: claiming "113 did not fit"
+    # while 260 more were never looked at is the kind of confident wrong number
+    # this product exists to prevent.
+    not_considered = max(0, _current_total(conn, project_id) - len(rows))
 
-    markdown = _render(
-        project["name"],
-        project["root_path"],
-        task,
-        included,
-        dropped,
-        token_budget,
-        used + reserve,
+    included, dropped, markdown, used, shown = _fit(
+        project["name"], project["root_path"], task, entries, token_budget, not_considered
     )
+
+    over_budget = used > token_budget
     note = None
-    if dropped:
+    if dropped or not_considered:
+        total = len(dropped) + not_considered
+        listed = min(len(dropped), shown)
+        note = f"{total} current memory(ies) are not in this bundle"
+        if listed:
+            note += f"; {listed} listed by title at the end"
+        if not_considered:
+            note += (
+                f"; {not_considered} ranked below the top {max_candidates} and were "
+                "not weighed against the budget"
+            )
+        note += "."
+    if over_budget:
         note = (
-            f"{len(dropped)} memory(ies) did not fit the {token_budget}-token budget "
-            "and are listed by title at the end of the bundle."
-        )
+            f"This bundle is ~{used} tokens, over the {token_budget} requested: "
+            "the header and the list of what did not fit cannot be made smaller. "
+            "Raise the budget."
+        ) + (f" {note}" if note else "")
+
     log.info(
         "bundle.built",
         project_id=project_id,
         task=bool(task),
         included=len(included),
         dropped=len(dropped),
-        tokens=used + reserve,
+        not_considered=not_considered,
+        tokens=used,
+        budget=token_budget,
+        over_budget=over_budget,
     )
     return BundleResult(
         project_name=project["name"],
         task=task,
         token_budget=token_budget,
-        tokens_used=used + reserve,
+        tokens_used=used,
         markdown=markdown,
         included=included,
         dropped=dropped,
+        not_considered=not_considered,
+        over_budget=over_budget,
         note=note,
     )
+
+
+def _fit(
+    name: str,
+    root: str,
+    task: str | None,
+    entries: list[BundleEntry],
+    token_budget: int,
+    not_considered: int,
+) -> tuple[list[BundleEntry], list[BundleEntry], str, int, int]:
+    """Choose what fits by measuring the rendered document.
+
+    Packing by summing per-entry estimates and reserving a guess for the header
+    was wrong by up to 4x, because the "did not fit" list grows as the budget
+    shrinks — the tighter the budget, the more the footer cost, which the sum
+    never saw. So the document is rendered and measured, and entries come out
+    until the whole thing fits.
+
+    The list of what did not fit competes with the memory itself for the same
+    budget, and **content wins**: a bundle listing 78 titles it could not
+    include and no actual memory is useless. So each listing length is costed
+    and the pair that carries the most memory is chosen, preferring the longer
+    listing only on a tie.
+
+    Returns the chosen entries, what was dropped, the document, its measured
+    token count and how many dropped titles that document lists.
+    """
+
+    def measure(take: int, shown: int) -> int:
+        return estimate_tokens(
+            _render(
+                name,
+                root,
+                task,
+                entries[:take],
+                entries[take:],
+                token_budget,
+                _USED_SLOT,
+                shown,
+                not_considered,
+            )
+        )
+
+    # A cheap upper bound from the per-entry estimates keeps the measured
+    # search short on a large vault.
+    ceiling = 0
+    running = 0
+    for entry in entries:
+        if running + entry.tokens > token_budget:
+            break
+        running += entry.tokens
+        ceiling += 1
+
+    best = (-1, -1)  # (entries carried, titles listed)
+    for shown in _DROPPED_LIST_STEPS:
+        take = ceiling
+        while take > 0 and measure(take, shown) > token_budget:
+            take -= 1
+        if (take, shown) > best:
+            best = (take, shown)
+    take, shown = best
+    if take <= 0:
+        # Not even one memory fits. Produce the smallest honest document there
+        # is — the shortest listing — and report the overrun rather than
+        # pretending the document is smaller than it is.
+        take, shown = 0, 0
+
+    included, dropped = entries[:take], entries[take:]
+    used = measure(take, shown)
+    # Writing the measured figure in place of the fixed-width placeholder
+    # changes the document's own length, so settle on a figure that describes
+    # the document actually returned.
+    for _ in range(4):
+        markdown = _render(
+            name,
+            root,
+            task,
+            included,
+            dropped,
+            token_budget,
+            str(used),
+            shown,
+            not_considered,
+        )
+        settled = estimate_tokens(markdown)
+        if settled == used:
+            break
+        used = settled
+    return included, dropped, markdown, used, shown
 
 
 def _render(
@@ -209,7 +338,9 @@ def _render(
     included: list[BundleEntry],
     dropped: list[BundleEntry],
     budget: int,
-    used: int,
+    used_label: str,
+    dropped_shown: int,
+    not_considered: int,
 ) -> str:
     lines: list[str] = [
         f"# Project context: {name}",
@@ -224,7 +355,7 @@ def _render(
     if task:
         lines += [f"**Selected for task:** {task}", ""]
     lines += [
-        f"**Budget:** ~{used} of {budget} tokens (estimated at "
+        f"**Budget:** ~{used_label} of {budget} tokens (estimated at "
         f"{CHARS_PER_TOKEN} characters per token, not a tokenizer).",
         "",
     ]
@@ -249,25 +380,48 @@ def _render(
                 "",
             ]
 
-    if dropped:
+    if dropped or not_considered:
+        total = len(dropped) + not_considered
         lines += [
-            "## Not included (over budget)",
+            f"## Not included ({total})",
             "",
-            "These exist in project memory but did not fit. Raise the budget or "
-            "narrow the task to include them:",
+            "These exist in current project memory but are not above. Raise the "
+            "budget or narrow the task to include them:",
             "",
         ]
-        lines += [f"- {entry.title} — `{entry.citation}`" for entry in dropped[:40]]
-        if len(dropped) > 40:
-            lines.append(f"- …and {len(dropped) - 40} more")
+        listed = dropped[:dropped_shown] if dropped_shown else []
+        lines += [f"- {entry.title} — `{entry.citation}`" for entry in listed]
+        rest = total - len(listed)
+        if rest:
+            lines.append(
+                f"- …and {rest} more, not listed here"
+                + (
+                    " (the list was shortened to stay inside the budget)"
+                    if dropped_shown < len(dropped)
+                    else ""
+                )
+            )
         lines.append("")
 
     if not included:
-        lines += [
-            "## No memory available",
-            "",
-            "This project has no current memories matching the request. "
-            "Scan the repository first, or widen the task.",
-            "",
-        ]
+        total_excluded = len(dropped) + not_considered
+        if total_excluded:
+            # Saying "no memory matches" when 380 records matched and none fit
+            # would blame the vault for a budget problem.
+            lines += [
+                "## Nothing fitted the budget",
+                "",
+                f"This project has {total_excluded} current memory(ies), but the "
+                f"budget of {budget} tokens does not leave room for even one of "
+                "them alongside this header. Raise the budget.",
+                "",
+            ]
+        else:
+            lines += [
+                "## No memory available",
+                "",
+                "This project has no current memories matching the request. "
+                "Scan the repository first, or widen the task.",
+                "",
+            ]
     return "\n".join(lines)

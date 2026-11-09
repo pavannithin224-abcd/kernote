@@ -23,14 +23,20 @@ registry clearance — see `docs/PRODUCT_SPEC.md` §9.
 
 ## Status
 
-**Stage 2 of 9 complete** (Days 3–5 of a 25-day build ending 2026-11-30).
-The app runs: you can register a local project, scan it read-only, and browse
-typed memories with line-exact provenance and revision history in the Memory
-Explorer — and it all survives a restart.
+**Stage 7 of 9 complete** (Day 4 of a 25-day build ending 2026-11-30), each
+stage followed by a defect sweep against real data.
 
-Four of the seven screens are deliberately empty placeholders that name the
-stage they arrive in, rather than showing mock data. Read
-`docs/DEV_HANDOFF.md` for exactly where things stand and what is next.
+The app runs end to end: register a local project, scan it read-only, browse
+typed memories with line-exact provenance and revision history, ask questions
+and get cited evidence or an explicit "evidence not found", review drift and
+conflict findings, approve a consolidation with lineage preserved, and serve
+the result to a coding agent over a read-only MCP surface. All of it survives
+a restart.
+
+Still to come: Stage 8 (polish and evaluation — the labelled question set and
+retrieval metrics) and Stage 9 (the release candidate). Read
+`docs/DEV_HANDOFF.md` for exactly where things stand, what is verified and
+what is not.
 
 ## What it does (planned MVP)
 

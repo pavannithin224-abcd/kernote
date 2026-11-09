@@ -143,18 +143,32 @@ export default function AgentIntegrations() {
             <Stat
               label="Tokens"
               value={`~${bundle.data.tokens_used}`}
-              hint={`of ${bundle.data.token_budget} budget`}
+              hint={
+                bundle.data.over_budget
+                  ? `over the ${bundle.data.token_budget} budget`
+                  : `of ${bundle.data.token_budget} budget`
+              }
             />
             <Stat label="Included" value={bundle.data.included} hint="memories" />
             <Stat
-              label="Dropped"
-              value={bundle.data.dropped.length}
-              hint="over budget"
+              label="Left out"
+              value={bundle.data.excluded_total}
+              hint={
+                bundle.data.not_considered > 0
+                  ? `${bundle.data.dropped.length} over budget, ${bundle.data.not_considered} unranked`
+                  : 'over budget'
+              }
             />
           </div>
 
           {bundle.data.note && (
-            <p className="text-[12px]" style={{ color: 'var(--warn)' }}>{bundle.data.note}</p>
+            <p
+              className="text-[12px]"
+              style={{ color: 'var(--warn)' }}
+            >
+              {bundle.data.over_budget ? <strong>Over budget. </strong> : null}
+              {bundle.data.note}
+            </p>
           )}
 
           <Panel

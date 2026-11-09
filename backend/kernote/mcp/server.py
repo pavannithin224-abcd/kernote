@@ -19,6 +19,7 @@ Run it as the project's agent integration:
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from pathlib import Path
 
@@ -29,12 +30,27 @@ from ..config import settings
 from ..db.connection import open_db
 from ..db.repositories import memories as mrepo
 from ..db.repositories import projects as prepo
+from ..domain.models import MemoryType
 from ..logging import configure_logging
 from ..retrieval import answer as answer_mod
+from ..retrieval.answer import _STOPWORDS
 
 log = structlog.get_logger(__name__)
 
 SERVER_NAME = "kernote"
+
+MEMORY_TYPES = tuple(t.value for t in MemoryType)
+
+
+def _mentions(haystack: str, subject: str) -> bool:
+    """Whole-word containment, the way Stage 3 learned to do it.
+
+    Plain `in` made `"it"` match "SQLite" and `"a"` match everything — the same
+    defect as `"adr"` matching "Quadratic" in the ADR extractor. Word
+    boundaries fix that; a trailing `s?` keeps plurals matching, and a
+    multi-word subject is matched as a phrase.
+    """
+    return re.search(rf"\b{re.escape(subject)}s?\b", haystack, re.I) is not None
 
 
 class ProjectNotConfigured(RuntimeError):
@@ -89,6 +105,16 @@ def build_server(conn: sqlite3.Connection, project_id: str):
         `memory_type` filters to one of: project_fact, architecture, decision,
         procedure, convention, gotcha, current_state.
         """
+        if memory_type is not None and memory_type not in MEMORY_TYPES:
+            return {
+                "outcome": "invalid_request",
+                "statement": (
+                    f"{memory_type!r} is not a memory type. Use one of: "
+                    + ", ".join(MEMORY_TYPES)
+                ),
+                "evidence": [],
+                "not_supported_by_any_source": [],
+            }
         bundle = answer_mod.ask(
             conn,
             project_id=project_id,
@@ -121,9 +147,20 @@ def build_server(conn: sqlite3.Connection, project_id: str):
                 }
             )
         items = items[: max(1, min(limit, 20))]
+        outcome, statement = bundle.outcome, bundle.statement
+        if memory_type and not items:
+            # The composed statement counts what retrieval found, which is a
+            # lie once the type filter has emptied the list: an agent must not
+            # read "19 supporting records" beside zero records.
+            outcome = "evidence_not_found"
+            statement = (
+                f"Records matched {query!r}, but none of them are of type "
+                f"{memory_type!r}. Evidence was not found for that type — this "
+                "is not the same as there being none in the project."
+            )
         return {
-            "outcome": bundle.outcome,
-            "statement": bundle.statement,
+            "outcome": outcome,
+            "statement": statement,
             "evidence": items,
             "not_supported_by_any_source": bundle.unknowns,
         }
@@ -179,8 +216,32 @@ def build_server(conn: sqlite3.Connection, project_id: str):
         `chosen` is absent rather than guessed — Kernote never invents a
         rationale.
         """
+        needle = subject.strip()
+        if needle.lower() in _STOPWORDS:
+            # "a" and "it" are whole words in nearly every decision document,
+            # so they match everything and mean nothing. Short subjects that
+            # carry meaning — ML, UI, DB, Go — are not stopwords, so length is
+            # the wrong filter here.
+            return {
+                "found": False,
+                "statement": (
+                    f"{subject!r} is too common a word to search decisions by. "
+                    "Name a technology, component or constraint."
+                ),
+                "decisions": [],
+            }
+        if not needle:
+            # An empty subject used to fall through the filter and return ten
+            # arbitrary decisions as though they matched.
+            return {
+                "found": False,
+                "statement": (
+                    "No subject given. Name what the decision is about — a "
+                    "technology, a component or a constraint."
+                ),
+                "decisions": [],
+            }
         decisions = mrepo.list_for_project(conn, project_id, type_="decision", limit=200)
-        needle = subject.lower().strip()
         matches = []
         for memory in decisions:
             payload = memory.decision or {}
@@ -191,8 +252,8 @@ def build_server(conn: sqlite3.Connection, project_id: str):
                     str(payload.get("chosen") or ""),
                     " ".join(str(a) for a in payload.get("alternatives", []) or []),
                 ]
-            ).lower()
-            if needle and needle not in haystack:
+            )
+            if not _mentions(haystack, needle):
                 continue
             matches.append(
                 {
@@ -248,6 +309,22 @@ def build_server(conn: sqlite3.Connection, project_id: str):
         }
 
     return server
+
+
+def tool_manifest(conn: sqlite3.Connection, project_id: str) -> list[dict[str, str]]:
+    """The tools this server really advertises, name and one-line purpose.
+
+    The Agent Integrations screen used to carry its own hand-written copy of
+    this list, which would quietly start lying the moment a tool was renamed —
+    two sources of truth for the same fact, in a product built to catch exactly
+    that. It is derived from the live registry instead.
+    """
+    tools = build_server(conn, project_id)._tool_manager.list_tools()
+    manifest = []
+    for tool in tools:
+        first = (tool.description or "").strip().split("\n\n")[0]
+        manifest.append({"name": tool.name, "description": " ".join(first.split())})
+    return sorted(manifest, key=lambda t: t["name"])
 
 
 def main() -> None:

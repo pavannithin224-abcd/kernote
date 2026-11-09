@@ -1340,3 +1340,83 @@ found" rather than a guess. The `memory_type` filter originally contained an
 `or True` and silently did nothing — a parameter that lies is worse than no
 parameter, so it now looks the type up on the memory and a test asserts it
 filters.
+
+---
+
+## ADR-0027a — A bundle's token count is measured, not summed
+**Status:** accepted · 2026-11-09 · *amends ADR-0028's bundle contract*
+
+**Context.** The bundle's one promise is that its stated size is true. The
+Stage 7 sweep measured it: a bundle asked for 200 tokens came back at **792**
+and reported **187**. At 500 it reported 482 and was 1118. The sweep also found
+the count of what was left out was wrong in the other direction — the note said
+"113 did not fit" while **260 further memories had never been weighed against
+the budget at all**, because they ranked below `max_candidates`.
+
+Both errors came from the same habit: reporting a number derived from the parts
+instead of from the thing delivered. Per-entry estimates plus a fixed 160-token
+reserve for the header missed the "did not fit" list entirely — and that list
+*grows as the budget shrinks*, so the tighter the budget, the bigger the lie.
+
+**Decision.**
+1. The document is rendered and **measured**; `tokens_used` is the measured
+   figure. Fitting is a search over rendered sizes, not a sum.
+2. The listing of what did not fit competes for the same budget, and **content
+   wins**: each listing length is costed and the combination carrying the most
+   memory is chosen. It never falls to zero titles, because naming nothing
+   trades one dishonesty for another.
+3. Memories past the candidate cut-off are counted as `not_considered` and
+   reported separately from `dropped`. `excluded_total` is the number the UI
+   shows, and included + excluded always equals the project's current total — a
+   test asserts that identity.
+4. When even the smallest honest document exceeds the budget, `over_budget` is
+   set and the bundle says so. It does not shrink the number to match.
+5. A body cut at the per-entry cap is marked `[…truncated]`.
+6. "No memory available" is reserved for an empty vault. When records existed
+   and none fitted, the bundle says the budget was too small — blaming the
+   vault for a budget problem sends the reader to rescan for nothing.
+
+**Consequences.** Stated equals measured at every budget tested (200–32000),
+asserted by a parametrised test. Writing the measured figure into the document
+changes the document's length, so the figure is settled to a fixed point over a
+bounded number of renders. One regression surfaced during the fix and was
+caught by an existing test: maximising content made a 400-token bundle list
+*no* dropped titles, which is why the floor in point 2 exists.
+
+---
+
+## ADR-0028a — Agent-facing parameters must refuse what they cannot honour
+**Status:** accepted · 2026-11-09 · *amends ADR-0028*
+
+**Context.** Three defects in the MCP tools, all the same shape: a response
+that was confidently wrong rather than unavailable.
+
+`kernote_get_decision` matched its subject by plain substring, so `"it"`
+matched "SQLite" and returned six decisions, and `"a"` returned ten. This is
+precisely the `"adr"`-matches-"Quadratic" defect fixed in Stage 3 — the lesson
+had not travelled to a new module. An **empty** subject fell through the filter
+entirely and returned ten arbitrary decisions as though they matched.
+
+`kernote_search_memory` accepted any string as `memory_type`. An unknown type
+filtered everything out, and the tool then returned `outcome:
+"evidence_found"` with the statement *"19 supporting record(s) found"* beside
+an **empty** evidence list.
+
+The Agent Integrations screen listed the four tools from a **hand-written copy**
+in the API router. Rename a tool and the screen lies — two sources of truth for
+one fact, in a product built to catch exactly that.
+
+**Decision.** Whole-word subject matching with the Stage 3 `\b…s?\b` form, so
+plurals still match. A subject that is empty or a single stopword is refused
+with a reason: `"a"` and `"it"` are whole words in nearly every decision
+document, so they match everything and mean nothing, while short subjects that
+*do* carry meaning — ML, UI, DB, Go — are not stopwords, which is why length is
+the wrong filter. An unknown `memory_type` returns `invalid_request` naming the
+valid types. When a valid filter empties the result, the outcome becomes
+`evidence_not_found` and the statement says so rather than reporting
+retrieval's own count. The screen's tool list is derived from the live
+`FastMCP` registry.
+
+**Consequences.** Five regression tests, and the whole surface re-verified
+against a real client over stdio. A test asserts the advertised set equals the
+derived manifest, so the two can no longer drift.

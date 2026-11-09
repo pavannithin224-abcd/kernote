@@ -60,6 +60,9 @@ export interface ContextBundle {
   tokens_used: number
   included: number
   dropped: { title: string; citation: string }[]
+  not_considered: number
+  excluded_total: number
+  over_budget: boolean
   note: string | null
 }
 

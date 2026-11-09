@@ -5,6 +5,103 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 7 defect sweep: a stated number must describe what was delivered
+
+Every defect here is the same shape: **a confident number or claim that was
+wrong**, in the one place a caller has no way to check it. None of them crashed
+anything, which is why a sweep was needed rather than a bug report.
+
+### What changed
+- **`apply/context_bundle.py`** — the token count is now **measured from the
+  finished document** instead of summed from its parts, fitting is a search
+  over rendered sizes, memories past the candidate cut-off are counted and
+  reported, and `over_budget` is stated when the budget cannot be met
+  (ADR-0027a).
+- **`mcp/server.py`** — whole-word subject matching, refusal of an empty or
+  stopword subject, rejection of an unknown `memory_type`, an honest outcome
+  when a filter empties the result, and `tool_manifest()` so the UI's tool list
+  comes from the live registry (ADR-0028a).
+- **`api/routers/agents.py`** — the tool list is derived, not hand-written; the
+  bundle response carries `not_considered`, `excluded_total` and `over_budget`.
+- **Agent Integrations screen** — "Dropped" became **"Left out"** and shows the
+  true total, split into over-budget and unranked.
+- **README** — the status block said "Stage 2 of 9 complete", five stages
+  behind. Stale docs are this product's subject matter; ours should not be an
+  example.
+- ADR-0027a and ADR-0028a added (37 ADRs).
+
+### The six defects, measured before and after
+1. **The bundle lied about its own size.** Asked for 200 tokens it returned
+   **792** and reported **187**; at 500 it reported 482 and was 1118. The
+   per-entry sum never saw the "did not fit" list, which *grows as the budget
+   shrinks*. Now stated equals measured at every budget from 200 to 32000,
+   asserted by a parametrised test.
+2. **It under-reported what it left out by 260 records.** The note said "113
+   did not fit" while 260 more had never been weighed against the budget at
+   all. Now `included + dropped + not_considered` equals the project's current
+   total, and a test asserts that identity.
+3. **`get_decision` matched substrings.** `"it"` matched "SQLite" and returned
+   six decisions; `"a"` returned ten; an **empty** subject returned ten
+   arbitrary decisions as though they matched. This is the Stage 3
+   `"adr"`-matches-"Quadratic" defect in a new module — the fix had not
+   travelled with the lesson.
+4. **`search_memory` claimed records it had filtered away.** An unknown
+   `memory_type` was accepted silently, then returned `evidence_found` and
+   *"19 supporting record(s) found"* beside an empty list.
+5. **The Agent Integrations tool list was a hand-written copy** of the real
+   registry. Rename a tool and the screen lies. Now derived, with a test
+   asserting the two match.
+6. **"No memory available" when 380 memories existed.** None fitted a tight
+   budget, and the bundle blamed the vault for a budget problem — sending the
+   reader off to rescan for nothing.
+
+### Verification performed
+- **355 tests pass** (was 342). 13 new, each pinning one defect above.
+- `ruff check` and `ruff format --check` clean, `tsc --noEmit` clean,
+  `npm run build` succeeds.
+- Dogfooded on this repository at **380 memories**: the before/after numbers
+  quoted above are measured from that corpus, not from a fixture.
+- Re-verified against a **real MCP client over stdio**: four tools, none
+  mutating; `get_decision("it")` and `get_decision("")` now both decline;
+  `search_memory(memory_type="bogus")` returns `invalid_request`; and
+  `build_context` reported 200/200, 933/1000 and 3144/4000 tokens with the
+  stated figure equal to the measured one in every case.
+
+### One regression, caught by an existing test
+Making content win the budget made a 400-token bundle list **no** dropped
+titles at all — trading the size lie for a silence. The listing now has a
+floor of four titles. The test that caught it was the Stage 7 test asserting a
+dropped entry is *named* in the markdown, which is a good argument for
+asserting on behaviour rather than on wording.
+
+### Two probe faults worth recording
+The live MCP run hung with no output and looked exactly like the Stage 7 stdout
+bug returning. It was my harness: `KERNOTE_DATA_DIR` pointed at a directory
+whose database was not named `kernote.db`, so the server found no project,
+raised and exited — and **the client waits silently when the server dies during
+startup**. Worth knowing before blaming the protocol. Separately, a truncation
+test driven through a scanned file asserted nothing, because extraction fills
+`summary` and the bundle prefers it; a summary never reaches the 1200-character
+cap, so the test had to drive a stored memory directly.
+
+### Known issues / blockers
+1. **ADR-0014's four-way embedding benchmark remains the oldest open item**,
+   blocked on the labelled question set (P11).
+2. Approval still has no undo (Stage 6).
+3. `search_memory` silently rewrites a `limit` of 0 or a negative to 1. It is
+   clamping rather than lying, so it was left alone.
+4. The MCP server holds one SQLite connection for its lifetime; untested under
+   simultaneous use with the UI.
+5. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open. No Windows
+   verification of the native wheels.
+
+### Next safe task
+**Stage 8 (Days 23-24): polish and evaluation.** The labelled question set,
+`ranx` metrics (Recall@k, MRR, nDCG), citation-correctness and abstention-rate
+measurement, and ADR-0014's four-way embedding comparison.
+
+---
+
 ## 2026-11-09 — Stage 7: agent delivery
 
 ### What changed

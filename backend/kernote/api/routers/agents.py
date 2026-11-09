@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from ...apply import context_bundle
 from ...config import settings
 from ...db.repositories import projects as project_repo
-from ...mcp.server import SERVER_NAME
+from ...mcp.server import SERVER_NAME, tool_manifest
 from ..deps import db
 
 router = APIRouter(prefix="/api/v1", tags=["agents"])
@@ -56,6 +56,12 @@ def build_context(project_id: str, body: BundleRequest) -> dict:
         "dropped": [
             {"title": entry.title, "citation": entry.citation} for entry in result.dropped
         ],
+        # Memories ranked below the candidate cut-off were never weighed
+        # against the budget. Reporting only `dropped` would understate what
+        # the bundle leaves out.
+        "not_considered": result.not_considered,
+        "excluded_total": result.excluded_total,
+        "over_budget": result.over_budget,
         "note": result.note,
     }
 
@@ -83,30 +89,7 @@ def mcp_info(project_id: str) -> McpInfo:
         transport="stdio",
         command=command,
         env=env,
-        tools=[
-            {
-                "name": "kernote_search_memory",
-                "description": (
-                    "Search reviewed memory; returns cited evidence, " "or says none was found."
-                ),
-            },
-            {
-                "name": "kernote_project_summary",
-                "description": "Stack, layout, key decisions and current state, each cited.",
-            },
-            {
-                "name": "kernote_get_decision",
-                "description": (
-                    "Why a decision was made: chosen option, alternatives, " "status, source."
-                ),
-            },
-            {
-                "name": "kernote_build_context",
-                "description": (
-                    "Budgeted Markdown bundle for a task, reporting what it dropped."
-                ),
-            },
-        ],
+        tools=tool_manifest(conn, project_id),
         claude_code_snippet=snippet,
         writable=False,
         note=(
