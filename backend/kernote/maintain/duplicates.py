@@ -11,6 +11,7 @@ score from any source, so adding it is a new signal rather than a rewrite.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -315,6 +316,18 @@ def _citations(conn: sqlite3.Connection, memory_id: str) -> list[str]:
     return out
 
 
+def content_fingerprint(text: str) -> str:
+    """Hash of a record's wording when the preview was built.
+
+    A proposal is a contract: "approve this and *that* is what you get". The
+    merged content is computed at detection time, so if either input is edited
+    afterwards, applying the stored preview would silently overwrite the newer
+    wording -- losing a human's own edit. Recording the inputs' hashes lets
+    approval refuse instead of guessing.
+    """
+    return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
 def merge_preview(conn: sqlite3.Connection, keep: sqlite3.Row, absorb: sqlite3.Row) -> dict:
     """What approving this proposal would produce.
 
@@ -357,6 +370,12 @@ def merge_preview(conn: sqlite3.Connection, keep: sqlite3.Row, absorb: sqlite3.R
             "every citation from both records is retained",
             "no wording is paraphrased or dropped",
         ],
+        # Checked at approval: if either record was edited since, the preview
+        # no longer describes what would happen, so the merge is refused.
+        "input_fingerprints": {
+            keep["id"]: content_fingerprint(keep["content"]),
+            absorb["id"]: content_fingerprint(absorb["content"]),
+        },
     }
 
 

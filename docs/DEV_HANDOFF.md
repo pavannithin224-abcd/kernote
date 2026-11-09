@@ -5,6 +5,57 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 6 defect sweep
+
+### Probed and found sound
+- **Change Impact at width.** A 1,200-file commit range works: SQLite's
+  parameter limit here is **250,000**, not the 999 often assumed. Now pinned by
+  a test rather than assumed.
+- Merge chains cannot form by accident — an already-superseded record is
+  refused as a merge input.
+
+### Bugs found and fixed (ADR-0025a)
+1. **Approval silently reverted a human's edit.** The merged content is
+   computed when the duplicate is *detected*; editing the keeper and then
+   approving applied the stale preview over the newer wording. This is the
+   worst defect found in the project so far — everything else produces a bad
+   *suggestion*, this destroyed deliberate work under a button that promises
+   nothing is lost. The preview now carries a fingerprint of each input and
+   approval refuses when either has changed, leaving the proposal pending so a
+   fresh analysis replaces it.
+2. **Merging into an archived record succeeded.** `supersede_into` checked the
+   absorbed record's status but never the keeper's, so merged wording could
+   land somewhere hidden from every listing. Both sides must now be live.
+
+### Verification performed
+- **328 tests pass** (was 321). 7 new sweep regressions.
+- `ruff check` / `format --check` clean; frontend typechecks and builds.
+- Re-probed: an edit before approval is refused with the edit intact; an
+  archived keeper is refused; an untouched proposal still merges cleanly
+  (citations 1 → 2, 2 revisions).
+
+### Known issues / blockers
+1. **Approval is still not reversible.** The data supports an undo — the
+   absorbed record is byte-intact and the supersession is recorded — but there
+   is no endpoint. Worth adding before anyone relies on the merge button.
+2. Resolved findings are closed, not re-openable.
+3. **ADR-0014's four-way embedding benchmark remains the biggest gap**, and it
+   needs the labelled question set (P11). That plus `ranx` metrics is the
+   Stage 8 story and the oldest outstanding item in the project.
+4. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open. No Windows
+   verification of the native wheels.
+
+No known Stage 6 defects remain open.
+
+### Next safe task
+**Stage 8's evaluation work is the higher-value target** even though Stage 7
+comes first in the roadmap: F9 (MCP) is first on the scope-cut list, while the
+labelled question set, `ranx` metrics and the embedding benchmark have been
+deferred since Day 1 and are what the Day-25 acceptance criteria actually
+measure.
+
+---
+
 ## 2026-11-09 — Stage 6: the review flow
 
 The differentiating milestone. Detection was proven by the P4/P5 spikes; this

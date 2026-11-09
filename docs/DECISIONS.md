@@ -1214,3 +1214,46 @@ what changed between two commits.
 halves: the edited section is flagged `direct`, and the untouched section in
 the same file is flagged `same_file` — if every memory in a changed file were
 reported as affected, that test fails.
+
+---
+
+## ADR-0025a — A proposal is void once its inputs change
+**Status:** accepted · 2026-11-09 · *amends ADR-0025*
+
+**Context.** Probing Stage 6 found the worst defect in the project so far. The
+merged content in a proposal is computed when the duplicate is *detected*. If a
+human then edits the keeper and approves the proposal afterwards, the stored
+preview was applied — **silently overwriting their own wording with text from
+before the edit**.
+
+Everything else this product can get wrong produces a bad suggestion. This
+destroyed a human's deliberate edit, under a button labelled with a guarantee
+that nothing is lost.
+
+A second, smaller defect: `supersede_into` checked whether the *absorbed*
+record was already superseded but never checked the **keeper's** status, so a
+merge into an archived record succeeded and deposited the merged wording
+somewhere hidden from every listing.
+
+**Decision.**
+1. `merge_preview` records an `input_fingerprints` map — a SHA-256 of each
+   input's wording at preview time. Approval recompares and **refuses** when
+   either differs, naming the memory and telling the user to re-run analysis.
+   The proposal stays `pending`, so a fresh analysis replaces it.
+2. Consolidation requires two live records: approval refuses when either the
+   keeper or the absorbed record is `archived` or `superseded`.
+3. Proposals created before fingerprinting existed fall through the check
+   rather than failing, since there is nothing to compare against.
+
+**Alternatives.** *Recompute the merged content at approval* — avoids the data
+loss, but then what is applied is not what was shown, which breaks the only
+reason an approval step is meaningful. *Let the newer edit win silently* —
+indistinguishable from the bug. *Lock memories while a proposal is pending* —
+punishes the user for Kernote's suggestion.
+
+**Consequences.** Re-probed: an edit before approval is now refused with the
+edit intact, and merging into an archived keeper is refused. The normal path is
+unaffected — an untouched proposal still merges, taking citations 1 → 2 with 2
+revisions. Also pinned: SQLite's parameter limit here is 250,000, not the 999
+often assumed, so Change Impact over a 1,100-file range works; that is now a
+test rather than an assumption.

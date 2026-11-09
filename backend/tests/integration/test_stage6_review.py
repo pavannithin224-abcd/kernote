@@ -414,3 +414,107 @@ def test_resolve_rejects_a_bad_verdict(client, tmp_path):
         json={"verdict": "maybe"},
     )
     assert res.status_code == 422
+
+
+# ===================== Stage 6 defect sweep regressions =====================
+
+
+def test_approval_refuses_a_stale_proposal(conn, tmp_path):
+    """The worst bug in Stage 6: the merged content is computed at detection
+    time, so approving after someone edits the keeper silently overwrote their
+    wording. A proposal is a contract; if the inputs moved, it is void."""
+    project, proposal = _with_proposal(conn, tmp_path)
+    keep_id, _ = proposal["input_ids"]
+
+    mrepo.update(
+        conn,
+        keep_id,
+        title=None,
+        content="REVISED BY HAND: run pytest -q and ruff check before pushing.",
+        summary=None,
+        change_reason="clarified by hand",
+    )
+    with pytest.raises(ValueError, match="edited since this proposal"):
+        review.approve_proposal(conn, project_id=project.id, proposal_id=proposal["id"])
+    assert "REVISED BY HAND" in mrepo.get(conn, keep_id).content
+    # And the proposal is still pending, so a fresh analysis can replace it.
+    assert pending_proposals(conn, project.id)
+
+
+def test_editing_the_absorbed_record_also_invalidates_the_proposal(conn, tmp_path):
+    project, proposal = _with_proposal(conn, tmp_path)
+    _, absorb_id = proposal["input_ids"]
+    mrepo.update(
+        conn,
+        absorb_id,
+        title=None,
+        content="Different instruction now.",
+        summary=None,
+        change_reason="edited",
+    )
+    with pytest.raises(ValueError, match="edited since this proposal"):
+        review.approve_proposal(conn, project_id=project.id, proposal_id=proposal["id"])
+
+
+def test_an_untouched_proposal_still_approves(conn, tmp_path):
+    """The staleness guard must not block the normal path."""
+    project, proposal = _with_proposal(conn, tmp_path)
+    result = review.approve_proposal(conn, project_id=project.id, proposal_id=proposal["id"])
+    assert result is not None
+    assert result.citations_after > result.citations_before
+
+
+@pytest.mark.parametrize("state", ["archived", "superseded"])
+def test_merging_into_a_dead_record_is_refused(conn, tmp_path, state):
+    """Merging into a record nobody will see is not a merge: the merged wording
+    would land somewhere hidden from every listing."""
+    project, proposal = _with_proposal(conn, tmp_path)
+    keep_id, _ = proposal["input_ids"]
+    if state == "archived":
+        mrepo.archive(conn, keep_id)
+    else:
+        conn.execute("UPDATE memories SET status='superseded' WHERE id=?", (keep_id,))
+    with pytest.raises(ValueError, match=f"is {state}"):
+        review.approve_proposal(conn, project_id=project.id, proposal_id=proposal["id"])
+
+
+def test_merging_an_already_absorbed_record_is_refused(conn, tmp_path):
+    """Guards against a chain forming by accident."""
+    project, proposal = _with_proposal(conn, tmp_path)
+    keep_id, absorb_id = proposal["input_ids"]
+    review.approve_proposal(conn, project_id=project.id, proposal_id=proposal["id"])
+    with pytest.raises(ValueError, match="already superseded"):
+        mrepo.supersede_into(
+            conn,
+            absorb_id=absorb_id,
+            keep_id=keep_id,
+            merged_content="again",
+            reason="chain",
+        )
+
+
+def test_impact_handles_a_range_wider_than_the_variable_limit(conn, tmp_path):
+    """A wide commit range builds a long IN-list. SQLite's limit here is
+    250,000 parameters, not the 999 that is often assumed, so 1,200 files are
+    fine -- but the behaviour is pinned rather than assumed."""
+    git = _git_repo(tmp_path)
+    (tmp_path / "README.md").write_text("# A\n\n## Notes\n\nLong enough to index here.\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "init")
+    for index in range(1100):
+        (tmp_path / f"f{index}.md").write_text(
+            f"# F{index}\n\n## S{index}\n\nBody text for file {index}, long enough.\n"
+        )
+    git("add", "-A")
+    git("commit", "-q", "-m", "bulk add")
+
+    project = prepo.create(conn, Project(name="w", root_path=str(tmp_path)))
+    scan_project(
+        conn, project_id=project.id, root=tmp_path, max_file_bytes=1_000_000, max_files=5000
+    )
+    report = impact.analyse(
+        conn, project_id=project.id, root=tmp_path, base="HEAD~1", head="HEAD"
+    )
+    assert report.resolved
+    assert len(report.changed_files) >= 1100
+    assert report.affected

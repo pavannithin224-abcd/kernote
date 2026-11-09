@@ -17,7 +17,8 @@ import structlog
 
 from ..db.connection import transaction
 from ..db.repositories import memories as mrepo
-from ..domain.models import new_id, utc_now
+from ..domain.models import MemoryStatus, new_id, utc_now
+from .duplicates import content_fingerprint
 
 log = structlog.get_logger(__name__)
 
@@ -78,6 +79,31 @@ def approve_proposal(
         absorb_before = mrepo.get(conn, absorb_id)
         if keep_before is None or absorb_before is None:
             raise ValueError("a memory in this proposal no longer exists")
+
+        # A proposal is a contract. If either record was edited after the
+        # preview was built, applying the stored merged content would silently
+        # overwrite the newer wording -- losing a human's own edit, which is
+        # the worst thing this feature could do.
+        fingerprints = preview.get("input_fingerprints") or {}
+        for memory in (keep_before, absorb_before):
+            expected = fingerprints.get(memory.id)
+            if expected is None:
+                continue  # proposal predates fingerprinting; fall through
+            if content_fingerprint(memory.content) != expected:
+                raise ValueError(
+                    f"memory {memory.id} has been edited since this proposal was "
+                    "created, so the preview no longer describes the result. "
+                    "Re-run analysis to get a fresh proposal."
+                )
+
+        # Merging into a record nobody will see is not a merge.
+        for memory, role in ((keep_before, "keeper"), (absorb_before, "absorbed")):
+            if memory.status in (MemoryStatus.ARCHIVED, MemoryStatus.SUPERSEDED):
+                raise ValueError(
+                    f"the {role} memory {memory.id} is {memory.status.value}; "
+                    "consolidation needs two live records"
+                )
+
         citations_before = len(keep_before.source_refs)
 
         merged = mrepo.supersede_into(
