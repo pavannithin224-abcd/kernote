@@ -18,9 +18,11 @@ Run it as the project's agent integration:
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import sqlite3
+import sys
 from pathlib import Path
 
 import structlog
@@ -327,9 +329,32 @@ def tool_manifest(conn: sqlite3.Connection, project_id: str) -> list[dict[str, s
     return sorted(manifest, key=lambda t: t["name"])
 
 
+def _force_utf8_stdio() -> None:
+    """JSON-RPC over stdio is UTF-8; the locale does not get a vote.
+
+    On Windows `sys.stdout` defaults to the *locale* encoding -- cp1252 on the
+    machine this was found on. The first tool response containing an em-dash
+    was therefore written as cp1252 and the client, decoding UTF-8, died with
+    `UnicodeDecodeError: 'utf-8' codec can't decode byte 0x97`. Our own memory
+    content is full of em-dashes, so the agent surface was effectively unusable
+    on Windows for any real project (ADR-0009a).
+
+    `reconfigure` is guarded because under pytest's capture these streams are
+    not always `TextIOWrapper`.
+    """
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(encoding="utf-8", newline="")
+
+
 def main() -> None:
-    # Must come before anything that might log: on stdio, stdout is the
-    # JSON-RPC transport and one stray log line hangs the client.
+    # Both must come before anything that might log or write: on stdio, stdout
+    # is the JSON-RPC transport -- one stray log line hangs the client, and one
+    # mis-encoded byte kills it.
+    _force_utf8_stdio()
     configure_logging()
     conn = open_db(settings.db_path)
     project_id = _resolve_project(conn, os.environ.get("KERNOTE_PROJECT"))

@@ -58,7 +58,7 @@ def _project(conn, tmp_path):
     for name, text in DOCS.items():
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
     project = prepo.create(conn, Project(name="Widgetly", root_path=str(tmp_path)))
     scan_project(
         conn, project_id=project.id, root=tmp_path, max_file_bytes=1_000_000, max_files=100
@@ -90,7 +90,8 @@ def test_bundle_respects_its_budget_and_says_what_it_dropped(conn, tmp_path):
         (tmp_path / f"topic{index}.md").write_text(
             f"# Topic {index}\n\n## Subsystem {index}\n\n"
             f"Subsystem {index} handles a distinct concern and is described at "
-            f"length here so the entry costs a meaningful number of tokens.\n"
+            f"length here so the entry costs a meaningful number of tokens.\n",
+            encoding="utf-8",
         )
     project = _project(conn, tmp_path)
     big = context_bundle.build(conn, project_id=project.id, token_budget=8000)
@@ -119,7 +120,8 @@ def test_bundle_token_count_describes_the_whole_document(conn, tmp_path, budget)
         (tmp_path / f"topic{index}.md").write_text(
             f"# Topic {index}\n\n## Subsystem {index}\n\nSubsystem {index} "
             "handles a distinct concern, described at length so the entry "
-            "costs a meaningful number of tokens rather than a handful.\n"
+            "costs a meaningful number of tokens rather than a handful.\n",
+            encoding="utf-8",
         )
     project = _project(conn, tmp_path)
     result = context_bundle.build(conn, project_id=project.id, token_budget=budget)
@@ -139,7 +141,7 @@ def test_bundle_counts_memories_it_never_weighed(conn, tmp_path):
     kind of confident wrong number this product exists to prevent."""
     for index in range(30):
         (tmp_path / f"topic{index}.md").write_text(
-            f"# Topic {index}\n\nSubsystem {index} is described here.\n"
+            f"# Topic {index}\n\nSubsystem {index} is described here.\n", encoding="utf-8"
         )
     project = _project(conn, tmp_path)
     total = context_bundle._current_total(conn, project.id)
@@ -158,7 +160,8 @@ def test_bundle_blames_the_budget_not_the_vault(conn, tmp_path):
     for index in range(12):
         (tmp_path / f"topic{index}.md").write_text(
             f"# Topic {index}\n\nSubsystem {index} is described at some length "
-            "here, long enough that it cannot fit a minimal budget.\n"
+            "here, long enough that it cannot fit a minimal budget.\n",
+            encoding="utf-8",
         )
     project = _project(conn, tmp_path)
     # Below the header's own cost, so nothing can fit however small the entry.
@@ -479,7 +482,8 @@ def test_get_decision_matches_whole_words_only(conn, tmp_path):
     """
     (tmp_path / "ADR-001-sqlite.md").write_text(
         "# ADR-001: Storage\n\nStatus: accepted\n\n"
-        "## Decision\n\nWe will use SQLite for local storage.\n"
+        "## Decision\n\nWe will use SQLite for local storage.\n",
+        encoding="utf-8",
     )
     project = _project(conn, tmp_path)
     get_decision = _tools(conn, project.id)["kernote_get_decision"]

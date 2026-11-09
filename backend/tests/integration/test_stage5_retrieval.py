@@ -49,7 +49,7 @@ def _project(conn, tmp_path, docs=None):
     for name, text in (docs or PROJECT_DOCS).items():
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
     project = prepo.create(conn, Project(name="s", root_path=str(tmp_path)))
     scan_project(
         conn, project_id=project.id, root=tmp_path, max_file_bytes=1_000_000, max_files=200

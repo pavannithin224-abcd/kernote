@@ -108,7 +108,7 @@ def load(path: Path | None = None, *, validate_corpus: bool = True) -> QuestionS
     path = path or default_path()
     if not path.is_file():
         raise FileNotFoundError(f"question set not found: {path}")
-    question_set = QuestionSet.model_validate(json.loads(path.read_text()))
+    question_set = QuestionSet.model_validate(json.loads(path.read_text(encoding="utf-8")))
     question_set.source_path = path.resolve()
 
     ids = [q.id for q in question_set.questions]

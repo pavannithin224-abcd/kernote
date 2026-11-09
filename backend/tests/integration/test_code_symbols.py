@@ -76,7 +76,7 @@ def test_grammars_load():
 def test_every_shipped_query_compiles(language):
     scm = cs.QUERIES_DIR / language / "tags.scm"
     assert scm.is_file(), f"no tags.scm for {language}"
-    query = pack.get_language(language).query(scm.read_text())
+    query = pack.get_language(language).query(scm.read_text(encoding="utf-8"))
     assert query.pattern_count > 0
 
 
@@ -198,8 +198,8 @@ def test_non_test_paths_are_not_excluded(path):
 
 
 def test_scan_extracts_symbols_and_chunks(conn, tmp_path):
-    (tmp_path / "widget.py").write_text(PY_SRC)
-    (tmp_path / "widget.ts").write_text(TS_SRC)
+    (tmp_path / "widget.py").write_text(PY_SRC, encoding="utf-8")
+    (tmp_path / "widget.ts").write_text(TS_SRC, encoding="utf-8")
     project = prepo.create(conn, Project(name="s", root_path=str(tmp_path)))
     scan_project(
         conn, project_id=project.id, root=tmp_path, max_file_bytes=1_000_000, max_files=500

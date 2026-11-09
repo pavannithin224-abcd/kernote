@@ -1920,3 +1920,81 @@ Verified on the real repository: `exclude = ["datasets/**", "reports/**"]` skips
 ["data/manifests/**/*reference.json"]` recovers exactly the 12 reference
 manifests that matter without the 2906 generated ones — the precise outcome
 ADR-0020c's blanket rule could not express.
+
+---
+
+## ADR-0009a — Windows verified: three product bugs, two environmental limits
+**Status:** accepted · 2026-11-09 · *resolves ADR-0009 and open question Q3*
+
+**What was actually run.** Native Windows Python **3.12.10 AMD64** against a
+checkout on a native NTFS path (`C:\Users\Dell\AppData\Local\Temp`), driven
+through WSL interop. Full install, full test suite, and `scripts/demo.py` end
+to end. Not WSL, not a container.
+
+**The install risk was unfounded.** Risk R11 — native wheels on Windows, carried
+since day one and the main reason ADR-0009 stayed `proposed` — did not
+materialise at install:
+`tree-sitter-language-pack` and `onnxruntime 1.31.1` both came from prebuilt
+`win_amd64` wheels, nothing built from source, no MSVC toolchain needed, and
+`pip check` reported no broken requirements.
+
+**Three product bugs, all found only here, all fixed.**
+
+1. **Text I/O relied on the locale encoding.** Python defaults `open` and
+   `Path.read_text` to the locale encoding, cp1252 on this machine. Reading our
+   own `docs/ARCHITECTURE.md` raised `UnicodeDecodeError: 'charmap' codec can't
+   decode byte 0x90` — it contains box-drawing characters. Worse than the error
+   is the near miss: a byte cp1252 *can* map decodes silently into mojibake, so
+   a migration comment or an extracted memory would be quietly wrong. Every
+   read and write now names `encoding="utf-8"`, and
+   `tests/unit/test_text_io_is_explicit.py` fails with the offending location
+   if one does not. The scan path itself was already safe — `capture.py` reads
+   bytes and decodes UTF-8 explicitly — so this never corrupted a user's
+   content. It broke our own files. Fixing it took the suite from 24 failures
+   to 14.
+2. **The MCP server wrote cp1252 to a UTF-8 transport.** JSON-RPC over stdio is
+   UTF-8; `sys.stdout` is not. The first tool response containing an em-dash was
+   written as cp1252 and the client died with `UnicodeDecodeError: 'utf-8'
+   codec can't decode byte 0x97`. Our memory content is full of em-dashes, so
+   **the agent surface was unusable on Windows for any real project.** `main()`
+   now forces UTF-8 on the stdio streams before anything writes. 27 of 27 MCP
+   tests pass on Windows after the fix.
+3. **The release gate deadlocked.** `scripts/demo.py` launched the API with
+   `stderr=subprocess.PIPE` and never read it. Windows pipe buffers are small
+   enough that the server's own logs filled it mid-scan, uvicorn blocked on
+   write, and the next request timed out after two minutes with the process
+   still apparently alive. Server output goes to a file now, which is also
+   diagnosable when it dies. The demo also printed box-drawing characters to a
+   cp1252 console, which raised before the first step finished.
+
+**Two environmental limits remain, and they are not bugs in Kernote.**
+
+* **`tree-sitter-language-pack` grammars do not load** (10 tests). The wheel
+  installs, all 155 `.pyd` files are present, `tree_sitter` core imports, and
+  the MSVC runtime is on the machine — but `get_language("python")` raises
+  `ImportError: DLL load failed ... The specified module could not be found`,
+  so a dependent DLL is unresolved. This is the same shape as the `sqlite-vec`
+  evidence in ADR-0003a: installs cleanly, fails at load, not detectable up
+  front. **Kernote degrades correctly** — `code_symbols` catches it and a scan
+  completes without symbol memories (40 instead of 51 on the demo corpus).
+* **Git is not installed** (3 `test_impact_*` tests). It is a documented
+  prerequisite, and `gitmeta._git` catches `OSError`, logs `git.failed` and
+  returns `None`, so scanning, drift, conflict, retrieval and the agent surface
+  all work without it. **Drift still names the overlapping hunk**, because
+  ADR-0019 diffs the *stored capture* rather than calling `git diff` — a
+  decision taken for untracked files that turns out to carry a whole platform.
+
+**Decision.** Windows is a **verified target with two stated caveats**: code
+symbols require a working `tree-sitter-language-pack`, and Change Impact
+requires Git on `PATH`. Everything else is verified by the demo passing end to
+end, including a real process restart. ADR-0009's "verify, do not assume"
+stance is upheld; its two checkpoints were collapsed into one because all nine
+stages finished early.
+
+**Not verified.** The frontend build — there is no Node on this Windows
+install. It is the low-risk half (pure TypeScript, no native dependencies) and
+is stated as untested rather than assumed.
+
+**Final numbers.** Linux: 411 passed, 5 skipped. Windows: **391 passed, 13
+failed, 11 skipped** — 10 grammar DLL, 3 missing Git, **zero in product code**.
+The demo passes on both.

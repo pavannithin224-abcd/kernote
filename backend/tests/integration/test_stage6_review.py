@@ -26,7 +26,7 @@ DUPLICATE_DOCS = {
 
 def _with_proposal(conn, tmp_path):
     for name, text in DUPLICATE_DOCS.items():
-        (tmp_path / name).write_text(text)
+        (tmp_path / name).write_text(text, encoding="utf-8")
     project = prepo.create(conn, Project(name="r", root_path=str(tmp_path)))
     scan_project(
         conn, project_id=project.id, root=tmp_path, max_file_bytes=1_000_000, max_files=50
@@ -150,7 +150,8 @@ def test_merge_across_projects_is_refused(conn, tmp_path):
     other_root.mkdir()
     (other_root / "README.md").write_text(
         "# Other\n\n## Deployment notes\n\n"
-        "This unrelated project deploys to a single host behind a reverse proxy.\n"
+        "This unrelated project deploys to a single host behind a reverse proxy.\n",
+        encoding="utf-8",
     )
     other = prepo.create(conn, Project(name="o", root_path=str(other_root)))
     scan_project(
@@ -174,10 +175,11 @@ def test_approving_an_unknown_proposal_returns_none(conn, tmp_path):
 
 def _conflict_project(conn, tmp_path):
     (tmp_path / "README.md").write_text(
-        "# App\n\n## Testing\n\nRun:\n\n```bash\npytest -q\n```\n"
+        "# App\n\n## Testing\n\nRun:\n\n```bash\npytest -q\n```\n", encoding="utf-8"
     )
     (tmp_path / "CONTRIBUTING.md").write_text(
-        "# Contributing\n\n## Testing\n\nAlways:\n\n```bash\ntox -e py312\n```\n"
+        "# Contributing\n\n## Testing\n\nAlways:\n\n```bash\ntox -e py312\n```\n",
+        encoding="utf-8",
     )
     project = prepo.create(conn, Project(name="c", root_path=str(tmp_path)))
     scan_project(
@@ -286,7 +288,8 @@ def test_impact_reports_only_overlapping_citations(conn, tmp_path):
     (tmp_path / "README.md").write_text(
         "# App\n\n"
         "## Architecture\n\nThe render package produces SVG output here.\n\n"
-        "## Testing\n\nRun the suite with pytest before pushing.\n"
+        "## Testing\n\nRun the suite with pytest before pushing.\n",
+        encoding="utf-8",
     )
     git("add", "-A")
     git("commit", "-q", "-m", "initial")
@@ -300,7 +303,8 @@ def test_impact_reports_only_overlapping_citations(conn, tmp_path):
     (tmp_path / "README.md").write_text(
         "# App\n\n"
         "## Architecture\n\nThe render package now produces PNG output here.\n\n"
-        "## Testing\n\nRun the suite with pytest before pushing.\n"
+        "## Testing\n\nRun the suite with pytest before pushing.\n",
+        encoding="utf-8",
     )
     git("add", "-A")
     git("commit", "-q", "-m", "swap svg for png")
@@ -321,7 +325,9 @@ def test_impact_reports_only_overlapping_citations(conn, tmp_path):
 
 def test_impact_handles_an_unknown_ref(conn, tmp_path):
     _git_repo(tmp_path)
-    (tmp_path / "README.md").write_text("# App\n\n## Notes\n\nSomething here to index.\n")
+    (tmp_path / "README.md").write_text(
+        "# App\n\n## Notes\n\nSomething here to index.\n", encoding="utf-8"
+    )
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True, capture_output=True)
     subprocess.run(
         ["git", "-C", str(tmp_path), "commit", "-q", "-m", "x"], check=True, capture_output=True
@@ -336,7 +342,9 @@ def test_impact_handles_an_unknown_ref(conn, tmp_path):
 
 
 def test_impact_outside_a_git_repository_degrades(conn, tmp_path):
-    (tmp_path / "README.md").write_text("# App\n\n## Notes\n\nSomething here to index.\n")
+    (tmp_path / "README.md").write_text(
+        "# App\n\n## Notes\n\nSomething here to index.\n", encoding="utf-8"
+    )
     project = prepo.create(conn, Project(name="i", root_path=str(tmp_path)))
     report = impact.analyse(
         conn, project_id=project.id, root=tmp_path, base="HEAD~1", head="HEAD"
@@ -350,7 +358,7 @@ def test_impact_outside_a_git_repository_degrades(conn, tmp_path):
 
 def test_review_endpoints(client, tmp_path):
     for name, text in DUPLICATE_DOCS.items():
-        (tmp_path / name).write_text(text)
+        (tmp_path / name).write_text(text, encoding="utf-8")
     pid = client.post(
         "/api/v1/projects", json={"name": "r", "root_path": str(tmp_path)}
     ).json()["id"]
@@ -378,10 +386,11 @@ def test_review_endpoints(client, tmp_path):
 
 def test_resolve_endpoint_and_impact_endpoint(client, tmp_path):
     (tmp_path / "README.md").write_text(
-        "# App\n\n## Testing\n\nRun:\n\n```bash\npytest -q\n```\n"
+        "# App\n\n## Testing\n\nRun:\n\n```bash\npytest -q\n```\n", encoding="utf-8"
     )
     (tmp_path / "CONTRIBUTING.md").write_text(
-        "# Contributing\n\n## Testing\n\nAlways:\n\n```bash\ntox -e py312\n```\n"
+        "# Contributing\n\n## Testing\n\nAlways:\n\n```bash\ntox -e py312\n```\n",
+        encoding="utf-8",
     )
     pid = client.post(
         "/api/v1/projects", json={"name": "c", "root_path": str(tmp_path)}
@@ -405,7 +414,9 @@ def test_resolve_endpoint_and_impact_endpoint(client, tmp_path):
 
 
 def test_resolve_rejects_a_bad_verdict(client, tmp_path):
-    (tmp_path / "README.md").write_text("# A\n\n## Notes\n\nSomething here to index.\n")
+    (tmp_path / "README.md").write_text(
+        "# A\n\n## Notes\n\nSomething here to index.\n", encoding="utf-8"
+    )
     pid = client.post(
         "/api/v1/projects", json={"name": "v", "root_path": str(tmp_path)}
     ).json()["id"]
@@ -498,12 +509,15 @@ def test_impact_handles_a_range_wider_than_the_variable_limit(conn, tmp_path):
     250,000 parameters, not the 999 that is often assumed, so 1,200 files are
     fine -- but the behaviour is pinned rather than assumed."""
     git = _git_repo(tmp_path)
-    (tmp_path / "README.md").write_text("# A\n\n## Notes\n\nLong enough to index here.\n")
+    (tmp_path / "README.md").write_text(
+        "# A\n\n## Notes\n\nLong enough to index here.\n", encoding="utf-8"
+    )
     git("add", "-A")
     git("commit", "-q", "-m", "init")
     for index in range(1100):
         (tmp_path / f"f{index}.md").write_text(
-            f"# F{index}\n\n## S{index}\n\nBody text for file {index}, long enough.\n"
+            f"# F{index}\n\n## S{index}\n\nBody text for file {index}, long enough.\n",
+            encoding="utf-8",
         )
     git("add", "-A")
     git("commit", "-q", "-m", "bulk add")
@@ -538,7 +552,8 @@ def test_a_resolved_finding_does_not_come_back_on_the_next_analyze(conn, tmp_pat
     target = tmp_path / "ARCHITECTURE.md"
     target.write_text(
         "# Architecture\n\n## Queue\n\nWe use Redis streams with consumer "
-        "groups for the job queue, not Celery.\n"
+        "groups for the job queue, not Celery.\n",
+        encoding="utf-8",
     )
     project = project_repo.create(
         conn, Project(name="Refill", root_path=str(tmp_path), is_git_repo=False)
@@ -553,7 +568,8 @@ def test_a_resolved_finding_does_not_come_back_on_the_next_analyze(conn, tmp_pat
 
     target.write_text(
         "# Architecture\n\n## Queue\n\nWe use Celery with RabbitMQ for the job "
-        "queue after all, reversing this.\n"
+        "queue after all, reversing this.\n",
+        encoding="utf-8",
     )
     scan_project(conn, **scan)
     detect_drift(conn, project_id=project.id, root=tmp_path)
@@ -570,7 +586,8 @@ def test_a_resolved_finding_does_not_come_back_on_the_next_analyze(conn, tmp_pat
     # the file's content hash.
     target.write_text(
         "# Architecture\n\n## Queue\n\nWe use Kafka now, which is a third "
-        "answer again and must be flagged.\n"
+        "answer again and must be flagged.\n",
+        encoding="utf-8",
     )
     scan_project(conn, **scan)
     detect_drift(conn, project_id=project.id, root=tmp_path)

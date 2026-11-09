@@ -5,6 +5,85 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Native Windows verified (ADR-0009a)
+
+The largest untested claim in the project, carried since day one. Run on native
+Windows Python **3.12.10 AMD64** against a checkout on an NTFS path — not WSL,
+not a container. It found **three product bugs**, every one of them invisible on
+Linux.
+
+### What changed
+- **Every text read and write names `encoding="utf-8"`**, with
+  `tests/unit/test_text_io_is_explicit.py` to keep it that way.
+- **`mcp/server.py`** forces UTF-8 on the stdio streams before anything writes.
+- **`scripts/demo.py`** sends server output to a file instead of an unread
+  pipe, and degrades its own console decoration when the console is not UTF-8.
+- ADR-0009a added, resolving ADR-0009 and Q3 (50 ADRs).
+
+### The install risk was unfounded
+Risk R11 — native wheels on Windows, the main reason ADR-0009 stayed
+`proposed` — did not materialise. `tree-sitter-language-pack` and
+`onnxruntime 1.31.1` both installed from prebuilt `win_amd64` wheels, nothing
+built from source, no MSVC toolchain, `pip check` clean.
+
+### Three product bugs
+1. **Locale-encoded text I/O.** Reading our own `ARCHITECTURE.md` raised
+   `UnicodeDecodeError: 'charmap' codec can't decode byte 0x90` — box-drawing
+   characters, under cp1252. The quiet case is worse: a byte cp1252 *can* map
+   becomes mojibake, so a migration comment or a memory would be silently
+   wrong. 24 failures became 14. The scan path was already safe, because
+   `capture.py` reads bytes and decodes UTF-8 explicitly — this broke our own
+   files, never a user's content.
+2. **The MCP server wrote cp1252 to a UTF-8 transport.** One em-dash in a tool
+   response and the client died with `can't decode byte 0x97`. Our content is
+   full of em-dashes, so **the agent surface was unusable on Windows**. 27 of
+   27 MCP tests pass after forcing UTF-8.
+3. **The release gate deadlocked.** `stderr=subprocess.PIPE` with nobody
+   reading it: Windows pipe buffers are small enough that the server's own logs
+   filled it mid-scan, uvicorn blocked on write, and the next request timed out
+   after two minutes with the process still apparently alive.
+
+### Two environmental limits, neither a Kernote bug
+- **`tree-sitter-language-pack` grammars will not load** (10 tests). Wheel
+  installed, all 155 `.pyd` present, `tree_sitter` core imports, MSVC runtime
+  on the machine — and `get_language("python")` still raises
+  `ImportError: DLL load failed`. Same shape as the `sqlite-vec` evidence in
+  ADR-0003a. Kernote degrades correctly: the scan completes with 40 memories
+  instead of 51, without symbols.
+- **Git is not installed** (3 tests). `gitmeta` catches `OSError` and logs
+  `git.failed`, so everything but Change Impact works. **Drift still names the
+  overlapping hunk**, because ADR-0019 diffs the stored capture rather than
+  calling `git diff` — a decision taken for untracked files that turned out to
+  carry a whole platform.
+
+### Verification performed
+- Windows: **391 passed, 13 failed, 11 skipped** (from 24 failed), with **zero
+  product-code failures**.
+- **`scripts/demo.py` passes on Windows, exit 0** — scan, idempotent rescan,
+  cited answer, honest refusal, conflict held open with both claims, drift to
+  the overlapping hunk, human resolution, evaluation, context bundle, the MCP
+  surface, and a real process restart.
+- Linux: **411 passed, 5 skipped**, demo still passes. `ruff` clean.
+
+### Known issues / blockers
+1. **Code symbols unavailable on this Windows install.** Worth trying a newer
+   `tree-sitter-language-pack` — our pin is from Stage 3 — but that is a
+   dependency bump to make deliberately, not during a verification.
+2. **The frontend build is untested on Windows** (no Node there). Low risk,
+   stated rather than assumed.
+3 Windows metrics differ because the corpus is smaller without symbols:
+   citation correctness 33.3% against 43.4%, Recall@5 0.52 against 0.60.
+   Explainable, and recorded so nobody reads it as a regression.
+4. The RC tag `v0.1.0-rc.1` points at `22acb32` and predates all of this.
+5. False abstention (Q6) and the UI visual pass remain.
+
+### Next safe task
+**Q6** — centrality in term weighting, the remaining lever on false abstention.
+Optionally first: try a newer `tree-sitter-language-pack` on Windows to see
+whether code symbols can be recovered there.
+
+---
+
 ## 2026-11-09 — A configurable include/exclude list
 
 The last outstanding `CLAUDE.md` requirement. Only half of it existed:

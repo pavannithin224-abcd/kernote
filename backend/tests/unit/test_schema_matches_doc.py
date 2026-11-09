@@ -16,13 +16,13 @@ END = "-- ===== END GENERATED FROM docs/ARCHITECTURE.md ====="
 
 
 def _doc_sql() -> str:
-    blocks = re.findall(r"```sql\n(.*?)```", DOC.read_text(), re.S)
+    blocks = re.findall(r"```sql\n(.*?)```", DOC.read_text(encoding="utf-8"), re.S)
     assert blocks, "no sql block found in ARCHITECTURE.md"
     return "\n".join(blocks).strip()
 
 
 def _migration_generated_part() -> str:
-    text = MIGRATION.read_text()
+    text = MIGRATION.read_text(encoding="utf-8")
     start = text.index(BEGIN) + len(BEGIN)
     end = text.index(END)
     return text[start:end].strip()
@@ -38,5 +38,5 @@ def test_migration_matches_architecture_doc():
 def test_schema_version_seeded():
     assert (
         "INSERT INTO schema_meta(key, value) VALUES ('schema_version', '1')"
-        in MIGRATION.read_text()
+        in MIGRATION.read_text(encoding="utf-8")
     )

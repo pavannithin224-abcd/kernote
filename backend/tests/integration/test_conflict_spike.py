@@ -86,8 +86,8 @@ def project(conn):
 
 
 def test_two_docs_disagreeing_about_the_test_command_conflict(conn, tmp_path):
-    (tmp_path / "README.md").write_text(READ_ME)
-    (tmp_path / "CONTRIBUTING.md").write_text(CONTRIBUTING)
+    (tmp_path / "README.md").write_text(READ_ME, encoding="utf-8")
+    (tmp_path / "CONTRIBUTING.md").write_text(CONTRIBUTING, encoding="utf-8")
     p = prepo.create(conn, Project(name="d", root_path=str(tmp_path)))
     scan_project(conn, project_id=p.id, root=tmp_path, max_file_bytes=1_000_000, max_files=500)
 
@@ -112,8 +112,10 @@ def test_two_docs_disagreeing_about_the_test_command_conflict(conn, tmp_path):
 def test_agreeing_docs_do_not_conflict(conn, tmp_path):
     """The false-positive guard: identical commands in two files is duplication,
     not contradiction."""
-    (tmp_path / "README.md").write_text(READ_ME)
-    (tmp_path / "CONTRIBUTING.md").write_text(READ_ME.replace("# Widgetly", "# Contributing"))
+    (tmp_path / "README.md").write_text(READ_ME, encoding="utf-8")
+    (tmp_path / "CONTRIBUTING.md").write_text(
+        READ_ME.replace("# Widgetly", "# Contributing"), encoding="utf-8"
+    )
     p = prepo.create(conn, Project(name="d", root_path=str(tmp_path)))
     scan_project(conn, project_id=p.id, root=tmp_path, max_file_bytes=1_000_000, max_files=500)
     result = detect_conflicts(conn, project_id=p.id)
@@ -122,7 +124,7 @@ def test_agreeing_docs_do_not_conflict(conn, tmp_path):
 
 
 def test_single_source_is_never_a_conflict_with_itself(conn, tmp_path):
-    (tmp_path / "README.md").write_text(READ_ME)
+    (tmp_path / "README.md").write_text(READ_ME, encoding="utf-8")
     p = prepo.create(conn, Project(name="d", root_path=str(tmp_path)))
     scan_project(conn, project_id=p.id, root=tmp_path, max_file_bytes=1_000_000, max_files=500)
     assert detect_conflicts(conn, project_id=p.id).procedure_conflicts == 0

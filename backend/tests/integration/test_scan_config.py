@@ -20,11 +20,11 @@ from kernote.ingest.walker import walk
 @pytest.fixture
 def repo(tmp_path) -> Path:
     (tmp_path / "data").mkdir()
-    (tmp_path / "README.md").write_text("# R\n\n## Setup\n\nRun it.\n")
-    (tmp_path / "schema.json").write_text('{"title": "the real schema"}')
-    (tmp_path / "data" / "run001.json").write_text('{"x": 1}')
-    (tmp_path / "notes.txt").write_text("plain notes\n")
-    (tmp_path / ".env").write_text("API_KEY=sk-aaaaaaaaaaaaaaaaaaaaaaaa\n")
+    (tmp_path / "README.md").write_text("# R\n\n## Setup\n\nRun it.\n", encoding="utf-8")
+    (tmp_path / "schema.json").write_text('{"title": "the real schema"}', encoding="utf-8")
+    (tmp_path / "data" / "run001.json").write_text('{"x": 1}', encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("plain notes\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("API_KEY=sk-aaaaaaaaaaaaaaaaaaaaaaaa\n", encoding="utf-8")
     return tmp_path
 
 
@@ -43,13 +43,13 @@ def test_include_reaches_a_file_the_allowlist_would_skip(repo):
     assert "schema.json" not in found
     assert skipped["schema.json"] is SkipReason.NOT_ALLOWLISTED
 
-    (repo / ".kernote.toml").write_text('[scan]\ninclude = ["schema.json"]\n')
+    (repo / ".kernote.toml").write_text('[scan]\ninclude = ["schema.json"]\n', encoding="utf-8")
     found, _ = _walk(repo, scanconfig.from_file(repo))
     assert "schema.json" in found
 
 
 def test_exclude_skips_with_its_own_reason(repo):
-    (repo / ".kernote.toml").write_text('[scan]\nexclude = ["notes.txt"]\n')
+    (repo / ".kernote.toml").write_text('[scan]\nexclude = ["notes.txt"]\n', encoding="utf-8")
     found, skipped = _walk(repo, scanconfig.from_file(repo))
     assert "notes.txt" not in found
     assert skipped["notes.txt"] is SkipReason.EXCLUDED
@@ -58,7 +58,7 @@ def test_exclude_skips_with_its_own_reason(repo):
 def test_exclude_beats_include(repo):
     """When a path matches both, the safe direction wins."""
     (repo / ".kernote.toml").write_text(
-        '[scan]\ninclude = ["**/*.json"]\nexclude = ["data/**"]\n'
+        '[scan]\ninclude = ["**/*.json"]\nexclude = ["data/**"]\n', encoding="utf-8"
     )
     found, skipped = _walk(repo, scanconfig.from_file(repo))
     assert "schema.json" in found
@@ -69,7 +69,9 @@ def test_exclude_beats_include(repo):
 def test_include_cannot_reach_a_secret(repo):
     """A config file inside a repository is untrusted input. It must not be
     able to talk Kernote into reading a credential file."""
-    (repo / ".kernote.toml").write_text('[scan]\ninclude = [".env", "**/*"]\n')
+    (repo / ".kernote.toml").write_text(
+        '[scan]\ninclude = [".env", "**/*"]\n', encoding="utf-8"
+    )
     found, skipped = _walk(repo, scanconfig.from_file(repo))
     assert ".env" not in found
     assert skipped[".env"] is SkipReason.SECRET_SUSPECTED
@@ -78,17 +80,19 @@ def test_include_cannot_reach_a_secret(repo):
 def test_include_cannot_override_gitignore(repo):
     """`CLAUDE.md` requires .gitignore be respected, so there is deliberately
     no way to switch it off."""
-    (repo / ".gitignore").write_text("secretplans.md\n")
-    (repo / "secretplans.md").write_text("# Plans\n\n## Thing\n\nHidden.\n")
-    (repo / ".kernote.toml").write_text('[scan]\ninclude = ["secretplans.md"]\n')
+    (repo / ".gitignore").write_text("secretplans.md\n", encoding="utf-8")
+    (repo / "secretplans.md").write_text("# Plans\n\n## Thing\n\nHidden.\n", encoding="utf-8")
+    (repo / ".kernote.toml").write_text(
+        '[scan]\ninclude = ["secretplans.md"]\n', encoding="utf-8"
+    )
     found, skipped = _walk(repo, scanconfig.from_file(repo))
     assert "secretplans.md" not in found
     assert skipped["secretplans.md"] is SkipReason.GITIGNORED
 
 
 def test_include_cannot_override_the_size_limit(repo):
-    (repo / "huge.md").write_text("x" * 5000)
-    (repo / ".kernote.toml").write_text('[scan]\ninclude = ["huge.md"]\n')
+    (repo / "huge.md").write_text("x" * 5000, encoding="utf-8")
+    (repo / ".kernote.toml").write_text('[scan]\ninclude = ["huge.md"]\n', encoding="utf-8")
     found, skipped = walk(
         repo, max_file_bytes=1000, max_files=100, config=scanconfig.from_file(repo)
     )
@@ -98,7 +102,7 @@ def test_include_cannot_override_the_size_limit(repo):
 
 def test_kernoteignore_is_still_honoured(repo):
     """It worked before this module existed and must keep working."""
-    (repo / ".kernoteignore").write_text("# a comment\nnotes.txt\n")
+    (repo / ".kernoteignore").write_text("# a comment\nnotes.txt\n", encoding="utf-8")
     config = scanconfig.from_file(repo)
     assert scanconfig.IGNORE_FILENAME in config.sources
     assert "notes.txt" in config.exclude
@@ -108,17 +112,17 @@ def test_kernoteignore_is_still_honoured(repo):
 def test_malformed_config_is_refused_not_ignored(repo):
     """A config the user believes is in force but which failed to parse is
     worse than an error."""
-    (repo / ".kernote.toml").write_text("[scan]\ninclude = not-a-list\n")
+    (repo / ".kernote.toml").write_text("[scan]\ninclude = not-a-list\n", encoding="utf-8")
     with pytest.raises(scanconfig.ScanConfigError, match="could not be parsed"):
         scanconfig.from_file(repo)
 
-    (repo / ".kernote.toml").write_text('[scan]\ninclude = "one-string"\n')
+    (repo / ".kernote.toml").write_text('[scan]\ninclude = "one-string"\n', encoding="utf-8")
     with pytest.raises(scanconfig.ScanConfigError, match="list of strings"):
         scanconfig.from_file(repo)
 
 
 def test_an_unknown_key_is_reported_rather_than_silently_ignored(repo):
-    (repo / ".kernote.toml").write_text('[scan]\nexcludes = ["typo.txt"]\n')
+    (repo / ".kernote.toml").write_text('[scan]\nexcludes = ["typo.txt"]\n', encoding="utf-8")
     config = scanconfig.from_file(repo)
     assert any("excludes" in note for note in config.notes)
 
@@ -127,7 +131,7 @@ def test_the_override_persists_and_merges_with_the_repository_config(conn, repo)
     project = project_repo.create(
         conn, Project(name="C", root_path=str(repo), is_git_repo=False)
     )
-    (repo / ".kernote.toml").write_text('[scan]\ninclude = ["schema.json"]\n')
+    (repo / ".kernote.toml").write_text('[scan]\ninclude = ["schema.json"]\n', encoding="utf-8")
     scanconfig.save_override(conn, project.id, include=[], exclude=["notes.txt"])
 
     effective = scanconfig.effective(conn, project.id, repo)
@@ -144,7 +148,7 @@ def test_the_override_persists_and_merges_with_the_repository_config(conn, repo)
 def test_a_scan_uses_the_configuration(conn, repo):
     """End to end: the pipeline, not just the walker."""
     (repo / ".kernote.toml").write_text(
-        '[scan]\ninclude = ["schema.json"]\nexclude = ["notes.txt"]\n'
+        '[scan]\ninclude = ["schema.json"]\nexclude = ["notes.txt"]\n', encoding="utf-8"
     )
     project = project_repo.create(
         conn, Project(name="C", root_path=str(repo), is_git_repo=False)
@@ -164,8 +168,10 @@ def test_a_scan_uses_the_configuration(conn, repo):
 
 
 def test_the_endpoints_report_the_effective_config_and_its_rules(client, tmp_path):
-    (tmp_path / "README.md").write_text("# R\n\n## S\n\nx\n")
-    (tmp_path / ".kernote.toml").write_text('[scan]\ninclude = ["weird.json"]\n')
+    (tmp_path / "README.md").write_text("# R\n\n## S\n\nx\n", encoding="utf-8")
+    (tmp_path / ".kernote.toml").write_text(
+        '[scan]\ninclude = ["weird.json"]\n', encoding="utf-8"
+    )
     project = client.post(
         "/api/v1/projects", json={"name": "C", "root_path": str(tmp_path)}
     ).json()
@@ -189,11 +195,11 @@ def test_the_endpoints_report_the_effective_config_and_its_rules(client, tmp_pat
 
 
 def test_a_malformed_repository_config_fails_the_request_clearly(client, tmp_path):
-    (tmp_path / "README.md").write_text("# R\n\n## S\n\nx\n")
+    (tmp_path / "README.md").write_text("# R\n\n## S\n\nx\n", encoding="utf-8")
     project = client.post(
         "/api/v1/projects", json={"name": "C", "root_path": str(tmp_path)}
     ).json()
-    (tmp_path / ".kernote.toml").write_text("[scan]\ninclude = nope\n")
+    (tmp_path / ".kernote.toml").write_text("[scan]\ninclude = nope\n", encoding="utf-8")
     got = client.get(f"/api/v1/projects/{project['id']}/scan-config")
     assert got.status_code == 422
     assert "could not be parsed" in got.json()["detail"]

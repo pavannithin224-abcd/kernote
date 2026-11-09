@@ -100,7 +100,7 @@ def test_combined_log_yields_one_memory_per_section():
     """Kernote's own decision log is this shape, so it is a real fixture
     rather than a synthetic one."""
     doc = pathlib.Path(__file__).resolve().parents[3] / "docs" / "DECISIONS.md"
-    memories = _extract("docs/DECISIONS.md", doc.read_text())
+    memories = _extract("docs/DECISIONS.md", doc.read_text(encoding="utf-8"))
     assert len(memories) > 10, "the combined log should yield many decisions"
     assert all(m.type.value == "decision" for m in memories)
     assert all(m.extraction_method == "rule:adr" for m in memories)
@@ -169,7 +169,9 @@ def test_two_adr_files_produce_a_decision_conflict(conn, tmp_path):
     """End to end: scan real ADR files, detect that they answer the same
     question differently while both are valid."""
     (tmp_path / "docs" / "adr").mkdir(parents=True)
-    (tmp_path / "docs" / "adr" / "0004-use-postgresql.md").write_text(ADR_TOOLS)
+    (tmp_path / "docs" / "adr" / "0004-use-postgresql.md").write_text(
+        ADR_TOOLS, encoding="utf-8"
+    )
     (tmp_path / "docs" / "adr" / "0001-use-sqlite.md").write_text(
         ADR_TOOLS.replace("1. Use PostgreSQL", "1. Use SQLite")
         .replace("# 1. Use SQLite for persistence", "# 1. Use SQLite for persistence")
@@ -181,7 +183,8 @@ def test_two_adr_files_produce_a_decision_conflict(conn, tmp_path):
             "- *SQLite* — rejected for write contention under concurrent writers.",
             "- *PostgreSQL* — heavier to operate for one process.",
         )
-        .replace("Date: 2026-03-11", "Date: 2026-01-05")
+        .replace("Date: 2026-03-11", "Date: 2026-01-05"),
+        encoding="utf-8",
     )
     project = prepo.create(conn, Project(name="adr", root_path=str(tmp_path)))
     scan_project(
@@ -211,7 +214,7 @@ def test_adr_document_does_not_also_produce_generic_section_memories(conn, tmp_p
     extractor as well produced a second payload-less "Decision" memory for
     every `## Decision` sub-heading."""
     (tmp_path / "docs" / "adr").mkdir(parents=True)
-    (tmp_path / "docs" / "adr" / "0001-x.md").write_text(ADR_TOOLS)
+    (tmp_path / "docs" / "adr" / "0001-x.md").write_text(ADR_TOOLS, encoding="utf-8")
     project = prepo.create(conn, Project(name="a", root_path=str(tmp_path)))
     scan_project(
         conn, project_id=project.id, root=tmp_path, max_file_bytes=1_000_000, max_files=500

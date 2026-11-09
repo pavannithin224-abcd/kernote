@@ -79,7 +79,7 @@ def test_real_password_file_is_refused_not_merely_warned(conn, tmp_path):
     `DB_PASSWORD = "..."` was imported into the vault."""
     from kernote.ingest.pipeline import scan_project
 
-    (tmp_path / "config.py").write_text('DB_PASSWORD = "Tr0ub4dor&3xKq9vZ"\n')
+    (tmp_path / "config.py").write_text('DB_PASSWORD = "Tr0ub4dor&3xKq9vZ"\n', encoding="utf-8")
     project = prepo.create(conn, Project(name="s", root_path=str(tmp_path)))
     result = scan_project(
         conn, project_id=project.id, root=tmp_path, max_file_bytes=1_000_000, max_files=50
@@ -98,7 +98,8 @@ def test_our_own_vocabulary_file_is_still_imported(conn, tmp_path):
     from kernote.ingest.pipeline import scan_project
 
     (tmp_path / "models.py").write_text(
-        'SECRET_SUSPECTED = "secret_suspected"\n\n\ndef classify(v):\n    return v\n'
+        'SECRET_SUSPECTED = "secret_suspected"\n\n\ndef classify(v):\n    return v\n',
+        encoding="utf-8",
     )
     project = prepo.create(conn, Project(name="s", root_path=str(tmp_path)))
     result = scan_project(
@@ -111,7 +112,7 @@ def test_our_own_vocabulary_file_is_still_imported(conn, tmp_path):
 def test_classify_without_source_lines_still_refuses_formats(tmp_path):
     """`lines` is optional; rule 1 must work without it."""
     f = tmp_path / "x.md"
-    f.write_text("# D\n\n    ghp_16C7e42F292c6912E7710c838347Ae178B4a\n")
+    f.write_text("# D\n\n    ghp_16C7e42F292c6912E7710c838347Ae178B4a\n", encoding="utf-8")
     with scanning_session():
         hits = scan_path(f)
         refuse_no_lines, _ = classify(hits)
@@ -237,7 +238,8 @@ def test_a_document_about_secrets_is_still_imported(conn, tmp_path):
         "## Status\n\nAccepted\n\n"
         "## Decision\n\n"
         'We refuse any file containing a credential. A real `password = "hunter2xyzABC"`\n'
-        "with no recognisable format is imported with a warning instead.\n"
+        "with no recognisable format is imported with a warning instead.\n",
+        encoding="utf-8",
     )
     project = prepo.create(conn, Project(name="s", root_path=str(tmp_path)))
     result = scan_project(

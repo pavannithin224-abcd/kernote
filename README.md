@@ -189,9 +189,14 @@ true rather than aspirational.
   as text without symbol extraction, and nothing further is claimed.
 - **Tested agent**: the MCP surface is verified against a real client over
   stdio. Claude Code is the only agent it has been driven from.
-- **Linux only, so far.** Everything here was verified on Linux (WSL2). The
-  native wheels (`tree-sitter-language-pack`, `fastembed`/onnxruntime) have
-  **not** been verified on native Windows, and ADR-0009 is still `proposed`.
+- **Verified on Linux and native Windows**, with two Windows caveats
+  (ADR-0009a). Dependencies install from prebuilt wheels on both, and the
+  end-to-end demo passes on both. On Windows: 391 pass, 13 fail — 10 because
+  `tree-sitter-language-pack`'s grammars fail to load their DLLs on that
+  machine, so **code symbols are unavailable** and a scan completes without
+  them; 3 because **Git was not installed**, which Change Impact needs. Drift,
+  conflict, retrieval and the agent surface all work without Git. The frontend
+  build is untested on Windows — no Node on that install.
 - Retrieval answers are **extractive**, not generated prose. Kernote does not
   compete with frontier-LLM codebase chat on fluency; it competes on whether the
   citations are correct and the abstentions are honest. Measured on our own

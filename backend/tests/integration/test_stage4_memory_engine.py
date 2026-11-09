@@ -20,7 +20,7 @@ def _scan(conn, root, files):
     for name, text in files.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
     project = prepo.create(conn, Project(name="s", root_path=str(root)))
     scan_project(
         conn, project_id=project.id, root=root, max_file_bytes=1_000_000, max_files=200

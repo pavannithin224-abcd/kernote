@@ -40,7 +40,7 @@ Nothing else to say.
 
 @pytest.fixture
 def scanned(conn, tmp_path):
-    (tmp_path / "README.md").write_text(README)
+    (tmp_path / "README.md").write_text(README, encoding="utf-8")
     project = prepo.create(conn, Project(name="d", root_path=str(tmp_path)))
     scan_project(
         conn,
@@ -93,7 +93,7 @@ def test_unchanged_repository_produces_no_findings(scanned, conn):
 def test_edit_inside_cited_lines_is_high_severity(scanned, conn):
     project, root = scanned
     path = root / "README.md"
-    path.write_text(README.replace("Three components", "Four components"))
+    path.write_text(README.replace("Three components", "Four components"), encoding="utf-8")
 
     detect_drift(conn, project_id=project.id, root=root)
     stale = open_findings(conn, project.id, kind="stale_risk")
@@ -115,7 +115,7 @@ def test_edit_outside_cited_lines_is_low_severity(scanned, conn):
     not be flagged as high just because the file changed."""
     project, root = scanned
     path = root / "README.md"
-    path.write_text(README.replace("Three components", "Four components"))
+    path.write_text(README.replace("Three components", "Four components"), encoding="utf-8")
     detect_drift(conn, project_id=project.id, root=root)
 
     stale = open_findings(conn, project.id, kind="stale_risk")
@@ -130,7 +130,9 @@ def test_drift_is_idempotent(scanned, conn):
     """Re-running the detector must not pile up duplicates, or the review queue
     becomes unusable after a few scans."""
     project, root = scanned
-    (root / "README.md").write_text(README.replace("Three components", "Four components"))
+    (root / "README.md").write_text(
+        README.replace("Three components", "Four components"), encoding="utf-8"
+    )
     detect_drift(conn, project_id=project.id, root=root)
     first = len(open_findings(conn, project.id))
     detect_drift(conn, project_id=project.id, root=root)
@@ -149,13 +151,15 @@ def test_deleted_file_is_a_broken_link_not_a_crash(scanned, conn):
 def test_drift_works_without_git(conn, tmp_path):
     """content_hash-first provenance (ADR-0005) means drift must work in a
     plain directory that is not a repository at all."""
-    (tmp_path / "README.md").write_text(README)
+    (tmp_path / "README.md").write_text(README, encoding="utf-8")
     project = prepo.create(conn, Project(name="nogit", root_path=str(tmp_path)))
     scan_project(
         conn, project_id=project.id, root=tmp_path, max_file_bytes=1_000_000, max_files=500
     )
     assert not pathlib.Path(tmp_path / ".git").exists()
-    (tmp_path / "README.md").write_text(README.replace("Three components", "Nine components"))
+    (tmp_path / "README.md").write_text(
+        README.replace("Three components", "Nine components"), encoding="utf-8"
+    )
     result = detect_drift(conn, project_id=project.id, root=tmp_path)
     assert result.findings_high >= 1
 
@@ -194,9 +198,10 @@ def test_reformatting_cited_lines_is_medium_not_high(scanned, conn):
     # Trailing whitespace on every non-empty line: exactly what an editor does
     # on save, or a docs formatter in reverse.
     reformatted = "\n".join(
-        (line + "   " if line.strip() else line) for line in path.read_text().splitlines()
+        (line + "   " if line.strip() else line)
+        for line in path.read_text(encoding="utf-8").splitlines()
     )
-    path.write_text(reformatted + "\n")
+    path.write_text(reformatted + "\n", encoding="utf-8")
 
     result = detect_drift(conn, project_id=project.id, root=root)
     assert result.findings_high == 0, (
@@ -218,7 +223,9 @@ def test_a_real_edit_is_still_high_after_the_change(scanned, conn):
     """Guard against over-correcting: the medium band must not swallow real
     edits."""
     project, root = scanned
-    (root / "README.md").write_text(README.replace("Three components", "Four components"))
+    (root / "README.md").write_text(
+        README.replace("Three components", "Four components"), encoding="utf-8"
+    )
     result = detect_drift(conn, project_id=project.id, root=root)
     assert result.findings_high == 1, "a real word change must stay high"
 
@@ -232,7 +239,7 @@ def test_mixed_cosmetic_and_semantic_in_one_file(scanned, conn):
         "Three  components   exist: api, render and store.",
     )
     text = text.replace("Run the suite before pushing:", "Run the full matrix before pushing:")
-    (root / "README.md").write_text(text)
+    (root / "README.md").write_text(text, encoding="utf-8")
 
     detect_drift(conn, project_id=project.id, root=root)
     sev = {f["severity"] for f in open_findings(conn, project.id, kind="stale_risk")}

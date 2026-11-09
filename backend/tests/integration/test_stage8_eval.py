@@ -222,11 +222,13 @@ def test_leads_are_ordered_by_meaning_not_by_the_failed_keywords(conn, tmp_path)
     """
     (tmp_path / "billing.md").write_text(
         "# Billing\n\n## Totals\n\nTax is applied to the invoice total, never "
-        "per line, and the invoice total is what the customer pays.\n"
+        "per line, and the invoice total is what the customer pays.\n",
+        encoding="utf-8",
     )
     (tmp_path / "decoy.md").write_text(
         "# Operations\n\n## Money\n\nThe money is worked out by the finance "
-        "team, who get the figures out on time every month without fail.\n"
+        "team, who get the figures out on time every month without fail.\n",
+        encoding="utf-8",
     )
     project_id, _ = _scan(conn, tmp_path)
     from kernote.retrieval import vector
@@ -271,7 +273,8 @@ def test_breadth_of_common_words_does_not_assert_an_answer(conn, tmp_path):
     (tmp_path / "sim.md").write_text(
         "# Simulation\n\n## Budget\n\nOne simulation run of the SPICE netlist "
         "has a cost measured in curve runs, and the budget for each study is "
-        "recorded with the result.\n"
+        "recorded with the result.\n",
+        encoding="utf-8",
     )
     project_id, _ = _scan(conn, tmp_path)
     bundle = answer_mod.ask(
@@ -298,13 +301,15 @@ def test_the_questions_own_subject_still_asserts(conn, tmp_path):
     """
     (tmp_path / "sim.md").write_text(
         "# Simulation\n\n## Simulator\n\nThe circuit simulator is ngspice "
-        "version 47, pinned for reproducibility across every study.\n"
+        "version 47, pinned for reproducibility across every study.\n",
+        encoding="utf-8",
     )
     for index in range(6):
         (tmp_path / f"topic{index}.md").write_text(
             f"# Topic {index}\n\n## Subsystem {index}\n\nSubsystem {index} "
             "handles billing reconciliation, delivery windows and operator "
-            "sessions, none of which concern the simulator.\n"
+            "sessions, none of which concern the simulator.\n",
+            encoding="utf-8",
         )
     project_id, _ = _scan(conn, tmp_path)
     bundle = answer_mod.ask(

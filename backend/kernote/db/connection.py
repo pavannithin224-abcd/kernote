@@ -99,7 +99,7 @@ def migrate(conn: sqlite3.Connection) -> int:
         # runs, so an outer BEGIN here would be silently discarded. Wrapping
         # the transaction *inside* the script is what actually makes a
         # half-applied migration impossible.
-        script = f"BEGIN;\n{path.read_text()}\nCOMMIT;"
+        script = f"BEGIN;\n{path.read_text(encoding='utf-8')}\nCOMMIT;"
         try:
             conn.executescript(script)
         except Exception:

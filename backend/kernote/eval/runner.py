@@ -472,5 +472,5 @@ def to_markdown(report: EvalReport) -> str:
 
 def write_report(report: EvalReport, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(to_markdown(report))
+    path.write_text(to_markdown(report), encoding="utf-8")
     return path

@@ -42,8 +42,32 @@ BOLD, DIM, RESET = "\033[1m", "\033[2m", "\033[0m"
 failures: list[str] = []
 
 
+def _console_supports_utf8() -> bool:
+    """Make the console UTF-8 if it will go, and report whether it did.
+
+    Windows defaults stdout to the locale encoding -- cp1252 on the machine
+    this was found on -- so printing a box-drawing rule raised
+    `UnicodeEncodeError` and the release gate could not run there at all. Same
+    root cause as the MCP transport bug, in the opposite direction.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8")
+            except (ValueError, OSError):
+                return False
+    encoding = (getattr(sys.stdout, "encoding", "") or "").lower().replace("-", "")
+    return encoding == "utf8"
+
+
+UTF8 = _console_supports_utf8()
+RULE = "\u2500\u2500" if UTF8 else "--"
+BULLET = "\u00b7" if UTF8 else "*"
+
+
 def step(title: str) -> None:
-    print(f"\n{BOLD}── {title}{RESET}")
+    print(f"\n{BOLD}{RULE} {title}{RESET}")
 
 
 def ok(message: str) -> None:
@@ -83,14 +107,23 @@ def free_port() -> int:
 
 
 def wait_for_health(
-    base: str, process: subprocess.Popen | None, seconds: int = 90
+    base: str,
+    process: subprocess.Popen | None,
+    seconds: int = 90,
+    log_file: Path | None = None,
 ) -> dict:
     deadline = time.monotonic() + seconds
     last = ""
     while time.monotonic() < deadline:
         if process is not None and process.poll() is not None:
+            detail = ""
+            if log_file is not None and log_file.is_file():
+                tail = log_file.read_text(
+                    encoding="utf-8", errors="replace"
+                ).splitlines()
+                detail = "\n" + "\n".join(tail[-15:])
             raise SystemExit(
-                f"the API exited with code {process.returncode} before serving"
+                f"the API exited with code {process.returncode} before serving{detail}"
             )
         try:
             with urllib.request.urlopen(f"{base}/health", timeout=5) as response:  # noqa: S310
@@ -124,6 +157,7 @@ def main() -> int:
         print(f"{DIM}workspace {workspace}{RESET}")
 
         state: dict[str, subprocess.Popen | None] = {"process": None}
+        log_path = workspace / "api.log"
 
         def launch() -> subprocess.Popen | None:
             if args.no_serve:
@@ -146,7 +180,13 @@ def main() -> int:
                 ],
                 env=environment,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                # To a file, never to an unread PIPE. On Windows the pipe
+                # buffer is small enough that the server's own log output
+                # filled it mid-scan, uvicorn then blocked on write, and the
+                # next request timed out after two minutes with the server
+                # still apparently alive. A file is also diagnosable when the
+                # server dies.
+                stderr=log_path.open("a", encoding="utf-8"),
             )
 
         def stop() -> None:
@@ -170,12 +210,12 @@ def main() -> int:
                 return False
             stop()
             state["process"] = launch()
-            wait_for_health(health_base, state["process"])
+            wait_for_health(health_base, state["process"], log_file=log_path)
             return True
 
         state["process"] = launch()
         try:
-            return run(base, health_base, state, repo, restart)
+            return run(base, health_base, state, repo, restart, log_path)
         finally:
             stop()
 
@@ -186,9 +226,10 @@ def run(
     state: dict,
     repo: Path,
     restart,
+    log_path: Path,
 ) -> int:
     step("The API is up")
-    health = wait_for_health(health_base, state["process"])
+    health = wait_for_health(health_base, state["process"], log_file=log_path)
     ok(f"schema version {health.get('schema_version')} · {health.get('status')}")
 
     step("Register a project and scan it, read-only")
@@ -251,7 +292,8 @@ def run(
         "# ADR-0007: Celery for the job queue\n\nStatus: accepted\n"
         "Date: 2025-11-01\n\n## Decision\n\nWe will use Celery with RabbitMQ "
         "for the job queue, not Redis streams.\n\n## Consequences\n\n"
-        "RabbitMQ joins the stack.\n"
+        "RabbitMQ joins the stack.\n",
+        encoding="utf-8",
     )
     api("POST", f"/projects/{project['id']}/scan", base)
     analysis = api("POST", f"/projects/{project['id']}/analyze", base)
@@ -270,12 +312,13 @@ def run(
 
     step("Edit a cited file, then detect the drift")
     target = repo / "docs" / "adr" / "0002-redis-queue.md"
-    text = target.read_text()
+    text = target.read_text(encoding="utf-8")
     target.write_text(
         text.replace(
             "We will use Redis streams with consumer groups, not Celery.",
             "We will use Celery with RabbitMQ after all, reversing this decision.",
-        )
+        ),
+        encoding="utf-8",
     )
     api("POST", f"/projects/{project['id']}/scan", base)
     analysis = api("POST", f"/projects/{project['id']}/analyze", base)
@@ -385,7 +428,7 @@ def run(
     if failures:
         print(f"\n{BOLD}DEMO FAILED{RESET} — {len(failures)} check(s):")
         for failure in failures:
-            print(f"  · {failure}")
+            print(f"  {BULLET} {failure}")
         return 1
     print(f"\n{BOLD}DEMO PASSED{RESET} — every step above ran against the real API.")
     return 0

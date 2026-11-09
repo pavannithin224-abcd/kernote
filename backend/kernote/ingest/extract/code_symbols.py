@@ -93,7 +93,7 @@ def _query(language: str):
     try:
         import tree_sitter_language_pack as pack
 
-        return pack.get_language(language).query(scm.read_text())
+        return pack.get_language(language).query(scm.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - a bad grammar must not stop a scan
         log.warning("code_symbols.query_unavailable", language=language, error=str(exc))
         return None

@@ -13,7 +13,9 @@ from kernote.eval import questions as qs
 def _write(tmp_path, questions, corpus="corpus"):
     (tmp_path / corpus).mkdir(exist_ok=True)
     path = tmp_path / "questions.json"
-    path.write_text(json.dumps({"version": 1, "corpus": corpus, "questions": questions}))
+    path.write_text(
+        json.dumps({"version": 1, "corpus": corpus, "questions": questions}), encoding="utf-8"
+    )
     return path
 
 
@@ -42,7 +44,7 @@ def test_an_answerable_question_needs_a_document_that_answers_it(tmp_path):
         tmp_path,
         [{"id": "q1", "question": "?", "kind": "answerable", "relevant": {"a.md": 1}}],
     )
-    (tmp_path / "corpus" / "a.md").write_text("x")
+    (tmp_path / "corpus" / "a.md").write_text("x", encoding="utf-8")
     with pytest.raises(ValidationError, match="no document is graded"):
         qs.load(path)
 
@@ -52,7 +54,7 @@ def test_an_unanswerable_question_may_not_have_an_answer(tmp_path):
         tmp_path,
         [{"id": "q1", "question": "?", "kind": "unanswerable", "relevant": {"a.md": 2}}],
     )
-    (tmp_path / "corpus" / "a.md").write_text("x")
+    (tmp_path / "corpus" / "a.md").write_text("x", encoding="utf-8")
     with pytest.raises(ValidationError, match="graded as answering it"):
         qs.load(path)
 
@@ -91,7 +93,8 @@ def test_a_corpus_outside_the_question_set_is_refused(tmp_path):
                     "corpus": corpus,
                     "questions": [{"id": "q1", "question": "?", "kind": "unanswerable"}],
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         with pytest.raises(ValueError, match="outside"):
             qs.load(path)
@@ -109,7 +112,8 @@ def test_a_corpus_beside_or_one_level_up_is_allowed(tmp_path):
                 "corpus": "../sibling",
                 "questions": [{"id": "q1", "question": "?", "kind": "unanswerable"}],
             }
-        )
+        ),
+        encoding="utf-8",
     )
     assert qs.load(path).questions
 

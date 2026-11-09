@@ -53,7 +53,7 @@ def test_benign_documentation_is_not_flagged(tmp_path):
     primitive bypasses detect-secrets' filters and reports high-entropy hits on
     prose, pip commands and version pins, which would refuse every file."""
     f = tmp_path / "README.md"
-    f.write_text(BENIGN)
+    f.write_text(BENIGN, encoding="utf-8")
     with scanning_session():
         assert scan_path(f) == []
 
@@ -68,7 +68,7 @@ def test_benign_documentation_is_not_flagged(tmp_path):
 )
 def test_real_credential_formats_are_detected(tmp_path, label, line):
     f = tmp_path / "notes.md"
-    f.write_text(f"# Notes\n\nSome context here.\n\n    {line}\n")
+    f.write_text(f"# Notes\n\nSome context here.\n\n    {line}\n", encoding="utf-8")
     with scanning_session():
         hits = scan_path(f)
     assert hits, f"{label} was not detected"
@@ -79,7 +79,10 @@ def test_hits_never_carry_the_secret_value(tmp_path):
     """These end up in logs and in the review UI; writing the credential there
     would recreate the leak being refused."""
     f = tmp_path / "notes.md"
-    f.write_text("# N\n\nSome context.\n\n    ghp_16C7e42F292c6912E7710c838347Ae178B4a\n")
+    f.write_text(
+        "# N\n\nSome context.\n\n    ghp_16C7e42F292c6912E7710c838347Ae178B4a\n",
+        encoding="utf-8",
+    )
     with scanning_session():
         hits = scan_path(f)
     assert hits
@@ -97,8 +100,8 @@ def test_unreadable_file_does_not_raise(tmp_path):
 
 
 def test_file_with_a_credential_is_refused_and_nothing_is_stored(conn, tmp_path):
-    (tmp_path / "README.md").write_text(BENIGN)
-    (tmp_path / "DEPLOY.md").write_text(LEAKY)
+    (tmp_path / "README.md").write_text(BENIGN, encoding="utf-8")
+    (tmp_path / "DEPLOY.md").write_text(LEAKY, encoding="utf-8")
     project, result = _scan(conn, tmp_path)
 
     assert ("DEPLOY.md", "secret_suspected") in [
@@ -116,7 +119,7 @@ def test_file_with_a_credential_is_refused_and_nothing_is_stored(conn, tmp_path)
 
 
 def test_a_clean_repository_is_unaffected(conn, tmp_path):
-    (tmp_path / "README.md").write_text(BENIGN)
+    (tmp_path / "README.md").write_text(BENIGN, encoding="utf-8")
     _project, result = _scan(conn, tmp_path)
     assert result.files_seen == 1
     assert result.memories_created > 0
@@ -124,8 +127,8 @@ def test_a_clean_repository_is_unaffected(conn, tmp_path):
 
 
 def test_refusal_is_stable_across_rescans(conn, tmp_path):
-    (tmp_path / "README.md").write_text(BENIGN)
-    (tmp_path / "DEPLOY.md").write_text(LEAKY)
+    (tmp_path / "README.md").write_text(BENIGN, encoding="utf-8")
+    (tmp_path / "DEPLOY.md").write_text(LEAKY, encoding="utf-8")
     project, _ = _scan(conn, tmp_path)
     second = scan_project(
         conn,
@@ -143,9 +146,9 @@ def test_refusal_is_stable_across_rescans(conn, tmp_path):
 
 def test_path_and_content_refusal_both_report(conn, tmp_path):
     """Two layers, two reasons, both explained in the same scan."""
-    (tmp_path / "README.md").write_text(BENIGN)
-    (tmp_path / ".env").write_text("TOKEN=abc123\n")
-    (tmp_path / "DEPLOY.md").write_text(LEAKY)
+    (tmp_path / "README.md").write_text(BENIGN, encoding="utf-8")
+    (tmp_path / ".env").write_text("TOKEN=abc123\n", encoding="utf-8")
+    (tmp_path / "DEPLOY.md").write_text(LEAKY, encoding="utf-8")
     _project, result = _scan(conn, tmp_path)
     refused = {s.rel_path for s in result.skipped if s.reason.value == "secret_suspected"}
     assert refused == {".env", "DEPLOY.md"}
@@ -161,7 +164,8 @@ def test_keyword_only_hits_warn_instead_of_refusing(conn, tmp_path):
     (tmp_path / "models.py").write_text(
         'SECRET_SUSPECTED = "secret_suspected"\n'
         'REASON = "refused as possible secret -- never read"\n'
-        "\n\ndef classify(value):\n    return value\n"
+        "\n\ndef classify(value):\n    return value\n",
+        encoding="utf-8",
     )
     _project, result = _scan(conn, tmp_path)
 
@@ -176,7 +180,7 @@ def test_keyword_only_hits_warn_instead_of_refusing(conn, tmp_path):
 
 def test_format_hits_still_refuse(conn, tmp_path):
     """The two-tier policy must not weaken refusal of real credentials."""
-    (tmp_path / "DEPLOY.md").write_text(LEAKY)
+    (tmp_path / "DEPLOY.md").write_text(LEAKY, encoding="utf-8")
     _project, result = _scan(conn, tmp_path)
     assert [s.rel_path for s in result.skipped if s.reason.value == "secret_suspected"] == [
         "DEPLOY.md"
