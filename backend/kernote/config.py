@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from platformdirs import user_data_dir
+from platformdirs import user_cache_dir, user_data_dir
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +22,19 @@ class Settings(BaseSettings):
     # Scanner limits. Read-only always; these bound what is even read.
     max_file_bytes: int = 1_000_000
     max_files_per_scan: int = 20_000
+
+    # Semantic retrieval is opt-in because the model weights are a ~90 MB
+    # download and `CLAUDE.md` forbids outbound calls by default. With this
+    # off, retrieval is keyword-only -- which is also ADR-0014's baseline, not
+    # a degraded state (ADR-0023).
+    embeddings_enabled: bool = False
+    # The model weights are a shared, re-downloadable asset, not project data,
+    # so they live in the user cache rather than under `data_dir`. Keeping them
+    # in `data_dir` meant relocating the database re-downloaded 90 MB.
+    model_cache_dir: Path = Path(user_cache_dir("kernote", "kernote")) / "models"
+    # Permits the one-time model fetch. Separate from `embeddings_enabled` so
+    # enabling search on an already-cached model never implies a download.
+    embeddings_allow_download: bool = False
 
     @property
     def db_path(self) -> Path:

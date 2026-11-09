@@ -995,3 +995,89 @@ section/commands gives 2, a planted duplicate gives 1, same-title-different-body
 gives 0, unrelated gives 0. The canonical-comparison rule means a reviewer sees
 "these 24 duplicate the canonical record" rather than a combinatorial list,
 which is the more useful statement as well as the cheaper one.
+
+---
+
+## ADR-0023 — Semantic search is opt-in; keyword-only is a supported mode
+**Status:** accepted · 2026-11-09
+
+**Context.** `CLAUDE.md` forbids outbound network calls by default, and
+`fastembed` fetches ~90 MB of model weights on first use. Those two facts
+collide: embeddings cannot be a silent prerequisite.
+
+**Decision.**
+1. `embed.status()` reports availability from the **filesystem only** and never
+   touches the network. `ensure_model(allow_download=True)` is the single path
+   that may download, and the UI states the size, the destination and that only
+   weights move — nothing about the user's code leaves the machine.
+2. With the model absent, retrieval is **keyword-only**, and that is a
+   supported mode rather than a degraded one — FTS5-alone is also the floor
+   ADR-0014 measures against. `encode()` returns `[]` instead of raising so a
+   caller falls back rather than failing a request.
+3. Weights live in the **user cache** (`platformdirs.user_cache_dir`), not under
+   `data_dir`. They were under `data_dir` first, which meant relocating the
+   database triggered another 90 MB download — found when tests pointed
+   `data_dir` at a temporary directory and the model silently vanished.
+
+**Alternatives.** *Vendor the weights in the repository* — 90 MB in git, and a
+licence question. *Download on first scan* — the silent network call the
+contract forbids. *Require embeddings* — would make the product unusable
+offline, which is the whole premise.
+
+**Consequences.** First index of this repository: 319 memories + 313 chunks in
+~56 s, then incremental (a second build embeds nothing). Warm encode is ~3 ms
+and 200 short texts take 0.21 s, so query latency is dominated by the matmul,
+not the model. Keyword-only remains fully functional, and the Project
+Intelligence screen says so rather than appearing broken.
+
+---
+
+## ADR-0024 — Hybrid retrieval fuses ranks; support is decided by term overlap
+**Status:** accepted · 2026-11-09 · *implements F3 as scoped by ADR-0015*
+
+**Context.** F3 is *cited evidence retrieval*, not chat: there is no LLM in the
+core loop (ADR-0006), so the product must return evidence and say honestly when
+it has none. Two sub-problems, both measured rather than guessed.
+
+**Fusion.** bm25 is an unbounded negative and cosine is bounded [-1, 1].
+Normalising them onto one scale means inventing a conversion, and the
+conversion would be doing the ranking. **Reciprocal Rank Fusion** combines
+*ranks*, needs no such assumption, and every result carries the signals that
+produced it because `MEMORY_MODEL.md` requires score/reason metadata. Boosts
+(importance, a penalty for `needs_review`, a penalty for `interpretation`) are
+scaled to reorder near-ties only, never to overrule the text signals.
+
+**Support.** Retrieval always returns *something*, so relevance has to be
+decided separately from ranking. Four measurements shaped that rule:
+
+1. **FTS5 crashes on ordinary questions.** 8 of 10 realistic inputs raised
+   `OperationalError` — `"what's the setup?"`, `sqlite-vec`, `C++`, `100%`, an
+   empty string, even `OR`. Every term is now re-emitted as a quoted literal,
+   making operators and punctuation inert. 0 of 13 inputs crash.
+2. **Stopwords manufactured support.** "what is the airspeed velocity of an
+   unladen swallow" matched "an", "is", "of" and "the" in a spec document and
+   was reported as `evidence_found`.
+3. **Exact substring matching created false negatives.** "secrets" did not
+   match ADR-0020a's "**Secret** refusal", so a well-supported question
+   abstained. A crude prefix stem fixed it, checked against the item's *full*
+   text rather than the 500-character excerpt shown to the reader.
+4. **One coincidental word is not support.** After (2) and (3), the swallow
+   question passed again because `CLAUDE.md` contains "Do not **swallow**
+   errors" — one word of four. Support now needs
+   `min(2, number_of_content_terms)` matches, so a one-word question still
+   works while a four-word question needs two.
+
+**Decision.** Three outcomes: `evidence_found`, `weak_evidence` (something was
+retrieved but nothing mentions what was asked) and `not_found`. Each item is
+labelled `evidence` (quoted from source) or `inference` (derived or
+model-generated), carries a citation, and lists which terms it matched. Terms
+no source mentions are reported as unknowns. Every turn is persisted to
+`ask_turns` with its full retrieval trace, so a bad answer is debuggable after
+the fact — and session state stays out of the vault (MEMORY_MODEL §8).
+
+**Consequences.** 8 of 8 probe questions now classify correctly on this
+repository. The honest cost is pinned by a test: *"which database did we
+choose"* returns `weak_evidence`, because the ADR says "PostgreSQL" and
+"persistence" and never "database" — a human would answer it, term overlap
+cannot. That is the documented price of ADR-0006, and the right place to spend
+an optional model adapter later.

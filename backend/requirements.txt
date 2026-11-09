@@ -16,9 +16,9 @@ pathspec==0.12.1
 identify==2.6.3
 markdown-it-py==3.0.0
 
-# --- Stage 5: retrieval (ADR-0011) --- not yet installed
-# fastembed==0.5.1
-# numpy==2.2.1
+# --- Stage 5: retrieval (ADR-0011, ADR-0023) ---
+fastembed==0.5.1        # ONNX embeddings, no torch; model fetch is opt-in
+numpy==2.5.4
 
 # --- Stage 3: code symbols (ADR-0012) ---
 tree-sitter==0.23.2

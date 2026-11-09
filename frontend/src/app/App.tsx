@@ -12,7 +12,7 @@ import SettingsScreen from '../screens/Settings'
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', stage: 2 },
   { to: '/explorer', label: 'Memory Explorer', stage: 2 },
-  { to: '/intelligence', label: 'Project Intelligence', stage: 5 },
+  { to: '/intelligence', label: 'Project Intelligence', stage: 2 },
   { to: '/maintenance', label: 'Memory Intelligence', stage: 2 },
   { to: '/impact', label: 'Change Impact', stage: 6 },
   { to: '/agents', label: 'Agent Integrations', stage: 7 },

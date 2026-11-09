@@ -53,6 +53,42 @@ export interface Proposal {
   }
 }
 
+export interface EvidenceItem {
+  kind: 'evidence' | 'inference'
+  source: 'memory' | 'chunk'
+  target_id: string
+  title: string
+  excerpt: string
+  citation: string
+  confidence: number | null
+  matched_terms: string[]
+  why_ranked: string
+}
+
+export interface AnswerBundle {
+  question: string
+  outcome: 'evidence_found' | 'weak_evidence' | 'not_found'
+  statement: string
+  evidence: EvidenceItem[]
+  unknowns: string[]
+  semantic_available: boolean
+  note: string | null
+  session_id: string | null
+  turn_id: string | null
+}
+
+export interface EmbeddingStatus {
+  model_id: string
+  dim: number
+  cached: boolean
+  enabled: boolean
+  usable: boolean
+  cache_path: string
+  download_mb: number
+  indexed_memories: number
+  indexed_chunks: number
+}
+
 export interface AnalysisResult {
   drift_high: number
   drift_medium: number
@@ -189,6 +225,18 @@ export const api = {
   findings: (id: string, kind?: string) =>
     call<Finding[]>(`/projects/${id}/findings${kind ? `?kind=${kind}` : ''}`),
   proposals: (id: string) => call<Proposal[]>(`/projects/${id}/proposals`),
+  ask: (id: string, question: string, sessionId?: string | null) =>
+    call<AnswerBundle>(`/projects/${id}/ask`, {
+      method: 'POST',
+      body: JSON.stringify({ question, session_id: sessionId ?? null }),
+    }),
+  embeddingStatus: (id: string) =>
+    call<EmbeddingStatus>(`/projects/${id}/embeddings`),
+  buildEmbeddings: (id: string, allowDownload: boolean) =>
+    call<{ embedded_memories: number; embedded_chunks: number; skipped: string | null }>(
+      `/projects/${id}/embeddings/build`,
+      { method: 'POST', body: JSON.stringify({ allow_download: allowDownload }) },
+    ),
 }
 
 /** Date-only display for an ISO timestamp the backend normalised. */

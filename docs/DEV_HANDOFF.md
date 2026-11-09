@@ -5,6 +5,73 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 5: recall and evidence retrieval
+
+### What changed
+- **`retrieval/fts.py`** — keyword search with a safe MATCH builder.
+- **`retrieval/embed.py`** — `fastembed` (ONNX, no torch), **opt-in** with a
+  filesystem-only status check (ADR-0023).
+- **`retrieval/vector.py`** — float32 BLOBs, cosine by one numpy matmul,
+  incremental index, project-scoped, `clear()` for reindex.
+- **`retrieval/hybrid.py`** — Reciprocal Rank Fusion plus small boosts; every
+  result explains its rank (ADR-0024).
+- **`retrieval/answer.py`** — evidence composition with three outcomes and
+  labelled, cited items; turns persisted to `ask_turns` with a full trace.
+- **`api/routers/ask.py`** — `POST /ask`, `GET /embeddings`,
+  `POST /embeddings/build`. 17 endpoints total.
+- **Project Intelligence screen** — asks, renders labelled evidence with
+  citations and matched terms, shows unknowns, and offers the opt-in download
+  with its size and destination stated.
+- ADR-0023 and ADR-0024 added (31 ADRs).
+
+### Verification performed
+- **287 tests pass** (was 245). 42 new, with the semantic ones skipped when the
+  model is not cached so the suite never reaches the network.
+- `ruff check` / `format --check` clean; frontend typechecks and builds.
+- **Live over HTTP**: 102 files → 319 memories → index 319 memories + 313
+  chunks → three questions answered with citations, session reused across turns.
+- 8 of 8 probe questions classify correctly on this repository.
+
+### Five defects found by measuring first
+1. **FTS5 crashed on 8 of 10 realistic questions** — `"what's the setup?"`,
+   `sqlite-vec`, `C++`, `100%`, `""`, `OR`. Measured *before* writing the
+   module, which is why the safe MATCH builder exists at all rather than being
+   bolted on after a crash report. Now 0 of 13.
+2. **Stopwords manufactured support.** "airspeed velocity of an unladen
+   swallow" matched "an/is/of/the" and reported `evidence_found`.
+3. **Exact substring matching abstained wrongly.** "secrets" missed ADR-0020a's
+   "Secret refusal"; fixed with a prefix stem against the item's full text.
+4. **One coincidental word passed as support** — `CLAUDE.md` contains "Do not
+   **swallow** errors", so the nonsense question passed again. Support now
+   needs `min(2, content_terms)` matches.
+5. **The model cache sat under `data_dir`**, so relocating the database meant
+   another 90 MB download. Found when tests pointed `data_dir` at a temp
+   directory and the model silently vanished. Weights now live in the user
+   cache.
+
+### Known issues / blockers
+1. **The honest cost of ADR-0006 is now visible and pinned by a test:** *"which
+   database did we choose"* returns `weak_evidence`, because the ADR says
+   "PostgreSQL" and "persistence" and never "database". A human would answer
+   it; term overlap cannot. This is the clearest place an optional model
+   adapter would earn its keep.
+2. **ADR-0014's four-way benchmark is not done.** `fastembed` does not carry
+   the potion models, so `potion-code-16M-v2` and `potion-retrieval-32M` need
+   `model2vec` as a second runtime — an ADR-0011 amendment, to be decided
+   deliberately. The benchmark also needs the labelled question set (P11).
+2. No `ranx` metrics yet: Recall@k, MRR and nDCG belong with the labelled set.
+3. Proposal approval and finding resolution remain Stage 6.
+4. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open.
+
+### Next safe task
+Either **the Stage 5 defect sweep** (the pattern that has found real bugs at
+every stage), or **Stage 6 (Days 18-20)** — the differentiating milestone:
+approval for consolidation proposals, resolution for findings, and the Change
+Impact screen over a commit range. Stage 6's detection halves are already
+proven by the P4/P5 spikes.
+
+---
+
 ## 2026-11-08 — Stage 4 defect sweep
 
 Probed Stage 4 adversarially before starting Stage 5, as with Stage 3.

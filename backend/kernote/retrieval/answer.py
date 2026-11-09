@@ -1,0 +1,360 @@
+"""Evidence composition — the honest half of ADR-0015's F3.
+
+There is no LLM in the core loop (ADR-0006), so this module does **not** write
+an answer. It returns the evidence that bears on a question, each item labelled
+and cited, and it says so plainly rather than dressing retrieval up as
+comprehension.
+
+Three outcomes, and the third matters as much as the first:
+
+* `evidence_found`   — retrieved records that genuinely overlap the question.
+* `weak_evidence`    — something was retrieved, but nothing overlaps the terms
+                       asked about. Reported as weak rather than presented as
+                       an answer.
+* `not_found`        — nothing retrieved. "Evidence was not found" is a correct
+                       outcome, not a failure (`CLAUDE.md`, memory quality rules).
+
+Every item is labelled `evidence` (quoted from a source) or `inference` (a
+model-generated or derived interpretation), because the contract requires
+answers to distinguish evidence, inference and unknowns.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from dataclasses import dataclass, field
+
+import structlog
+
+from ..db.connection import transaction
+from ..domain.models import new_id, utc_now
+from . import fts, hybrid
+
+log = structlog.get_logger(__name__)
+
+# How many content terms an item must mention to count as support. One is too
+# few: "what is the airspeed velocity of an unladen swallow" was reported as
+# `evidence_found` because CLAUDE.md contains "Do not **swallow** errors" -- a
+# single coincidental word out of four. Capped at the number of terms actually
+# asked, so a one-word question still works.
+_MIN_OVERLAP = 2
+
+# Stopwords are kept for *retrieval* (bm25 handles them, and dropping them
+# would hurt recall on short questions) but must not count as support.
+# Without this, "what is the airspeed velocity of an unladen swallow" matched
+# "an", "is", "of" and "the" in a spec document and was reported as
+# `evidence_found` -- precisely the false confidence ADR-0015 forbids.
+_STOPWORDS = frozenset(
+    """
+    a an and are as at be been but by can could did do does for from had has
+    have how i if in into is it its may might must not of on or should so such
+    than that the their then there these they this those to was we were what
+    when where which who why will with would you your about above after again
+    all also any because before being below between both during each few more
+    most no nor only other our out over own same some same too under until up
+    very via while
+    """.split()
+)
+
+
+def _content_terms(terms: list[str]) -> set[str]:
+    """Query terms that can actually support an answer."""
+    return {t for t in terms if t not in _STOPWORDS and len(t) > 2}
+
+
+def _stem(term: str) -> str:
+    """Crude prefix stem for the overlap check.
+
+    An exact substring test reported "how are secrets kept out of the
+    database" as unsupported, because ADR-0020a says "**Secret** refusal" --
+    singular. FTS5 uses the porter tokenizer for retrieval; this only has to
+    agree with it well enough to decide whether an item mentions the thing
+    asked about.
+    """
+    if len(term) <= 4:
+        return term
+    return term[: max(4, len(term) - 2)]
+
+
+def _mentions(haystack: str, term: str) -> bool:
+    return term in haystack or _stem(term) in haystack
+
+
+@dataclass
+class EvidenceItem:
+    kind: str  # "evidence" | "inference"
+    source: str  # "memory" | "chunk"
+    target_id: str
+    title: str
+    excerpt: str
+    citation: str
+    confidence: float | None
+    matched_terms: list[str]
+    why_ranked: str
+
+
+@dataclass
+class AnswerBundle:
+    question: str
+    outcome: str  # evidence_found | weak_evidence | not_found
+    statement: str
+    evidence: list[EvidenceItem] = field(default_factory=list)
+    unknowns: list[str] = field(default_factory=list)
+    semantic_available: bool = False
+    note: str | None = None
+    session_id: str | None = None
+    turn_id: str | None = None
+
+
+def _query_terms(question: str) -> list[str]:
+    match = fts.build_match(question)
+    if not match:
+        return []
+    return [part.strip('"') for part in match.split(" OR ")]
+
+
+def _citation(conn: sqlite3.Connection, kind: str, target_id: str) -> tuple[str, str, str]:
+    """(title, excerpt, citation) for a retrieved item."""
+    if kind == "memory":
+        row = conn.execute(
+            "SELECT m.title, m.summary, m.content, m.claim_kind, "
+            "       r.rel_path, r.line_start, r.line_end, r.user_note "
+            "FROM memories m LEFT JOIN memory_source_refs r ON r.memory_id = m.id "
+            "WHERE m.id = ? LIMIT 1",
+            (target_id,),
+        ).fetchone()
+        if row is None:
+            return "(missing)", "", "unknown"
+        excerpt = (row["summary"] or row["content"] or "")[:500]
+        if row["rel_path"] and row["line_start"]:
+            citation = f"{row['rel_path']}:{row['line_start']}-{row['line_end']}"
+        else:
+            citation = row["rel_path"] or row["user_note"] or "user note"
+        return row["title"], excerpt, citation
+    row = conn.execute(
+        "SELECT c.heading_path, c.text, c.line_start, c.line_end, sf.rel_path "
+        "FROM chunks c JOIN source_files sf ON sf.id = c.source_file_id "
+        "WHERE c.id = ?",
+        (target_id,),
+    ).fetchone()
+    if row is None:
+        return "(missing)", "", "unknown"
+    return (
+        row["heading_path"] or row["rel_path"],
+        (row["text"] or "")[:500],
+        f"{row['rel_path']}:{row['line_start']}-{row['line_end']}",
+    )
+
+
+def _full_text(conn: sqlite3.Connection, kind: str, target_id: str) -> str:
+    """Everything an item says, for deciding support."""
+    if kind == "memory":
+        row = conn.execute(
+            "SELECT COALESCE(summary,'') || ' ' || content AS t FROM memories WHERE id=?",
+            (target_id,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT COALESCE(heading_path,'') || ' ' || text AS t FROM chunks WHERE id=?",
+            (target_id,),
+        ).fetchone()
+    return row["t"] if row else ""
+
+
+def _claim_kind(
+    conn: sqlite3.Connection, kind: str, target_id: str
+) -> tuple[str, float | None]:
+    """Whether an item is a quoted source fact or an interpretation."""
+    if kind != "memory":
+        # A chunk is verbatim source text by construction.
+        return "evidence", None
+    row = conn.execute(
+        "SELECT claim_kind, confidence FROM memories WHERE id = ?", (target_id,)
+    ).fetchone()
+    if row is None:
+        return "evidence", None
+    label = "evidence" if row["claim_kind"] == "source_fact" else "inference"
+    return label, float(row["confidence"])
+
+
+def ask(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    question: str,
+    limit: int = 6,
+    allow_download: bool = False,
+    session_id: str | None = None,
+) -> AnswerBundle:
+    terms = _query_terms(question)
+    if not terms:
+        return AnswerBundle(
+            question=question,
+            outcome="not_found",
+            statement=("That question has no searchable terms, so nothing was looked up."),
+            unknowns=["the question contained no indexable words"],
+        )
+
+    outcome = hybrid.search(
+        conn,
+        project_id=project_id,
+        query=question,
+        limit=limit,
+        allow_download=allow_download,
+    )
+
+    items: list[EvidenceItem] = []
+    lowered = [t.lower() for t in terms]
+    content_terms = _content_terms(lowered)
+    if not content_terms:
+        # Only stopwords were asked. Matching them would manufacture support.
+        content_terms = set()
+    seen_citations: set[str] = set()
+    for result in outcome.results:
+        title, excerpt, citation = _citation(conn, result.target_kind, result.target_id)
+        label, confidence = _claim_kind(conn, result.target_kind, result.target_id)
+        # Support is decided against the item's *full* text, not the excerpt
+        # shown to the reader: a 500-character preview can omit the very term
+        # that makes the record relevant.
+        haystack = f"{title}\n{_full_text(conn, result.target_kind, result.target_id)}".lower()
+        matched = sorted(t for t in content_terms if _mentions(haystack, t))
+        # A memory and the chunk it came from cite the same lines; showing both
+        # pads the evidence list without adding a source.
+        if citation in seen_citations:
+            continue
+        seen_citations.add(citation)
+        items.append(
+            EvidenceItem(
+                kind=label,
+                source=result.target_kind,
+                target_id=result.target_id,
+                title=title,
+                excerpt=excerpt,
+                citation=citation,
+                confidence=confidence,
+                matched_terms=matched,
+                why_ranked=result.why,
+            )
+        )
+
+    required = min(_MIN_OVERLAP, len(content_terms)) if content_terms else 1
+    supported = [i for i in items if len(i.matched_terms) >= required]
+    unmatched = sorted(content_terms - {t for i in items for t in i.matched_terms})
+
+    if content_terms and not supported and items:
+        # Retrieval found things; none of them mentions what was asked.
+        pass
+    if not items:
+        bundle = AnswerBundle(
+            question=question,
+            outcome="not_found",
+            statement=(
+                "Evidence was not found. Nothing in this project's memory or "
+                "indexed sources matches that question."
+            ),
+            unknowns=[f"no source mentions: {', '.join(terms[:8])}"],
+            semantic_available=outcome.semantic_available,
+            note=outcome.note,
+        )
+    elif not supported:
+        bundle = AnswerBundle(
+            question=question,
+            outcome="weak_evidence",
+            statement=(
+                "No source directly addresses that question. The closest records "
+                "are listed, but none mentions the terms asked about, so treat "
+                "them as leads rather than as an answer."
+            ),
+            evidence=items,
+            unknowns=[f"not mentioned in any source: {', '.join(unmatched[:8])}"]
+            if unmatched
+            else [],
+            semantic_available=outcome.semantic_available,
+            note=outcome.note,
+        )
+    else:
+        facts = sum(1 for i in supported if i.kind == "evidence")
+        inferences = len(supported) - facts
+        bundle = AnswerBundle(
+            question=question,
+            outcome="evidence_found",
+            statement=(
+                f"{len(supported)} supporting record(s) found: {facts} quoted from "
+                f"source, {inferences} interpretation(s). Kernote returns the "
+                "evidence rather than composing an answer, so read the citations."
+            ),
+            evidence=supported,
+            unknowns=[f"no source mentions: {', '.join(unmatched[:8])}"] if unmatched else [],
+            semantic_available=outcome.semantic_available,
+            note=outcome.note,
+        )
+
+    _persist(conn, project_id, session_id, bundle, outcome)
+    return bundle
+
+
+def _persist(
+    conn: sqlite3.Connection,
+    project_id: str,
+    session_id: str | None,
+    bundle: AnswerBundle,
+    outcome: hybrid.SearchOutcome,
+) -> None:
+    """Record the turn with its full retrieval trace.
+
+    Session state is kept separate from durable memory (MEMORY_MODEL.md §8):
+    these tables are purgeable and nothing here is promoted into the vault.
+    The trace exists so a bad answer is debuggable after the fact.
+    """
+    with transaction(conn):
+        if session_id is None:
+            session_id = new_id()
+            conn.execute(
+                "INSERT INTO ask_sessions(id,project_id,created_at) VALUES(?,?,?)",
+                (session_id, project_id, utc_now()),
+            )
+        elif (
+            conn.execute(
+                "SELECT 1 FROM ask_sessions WHERE id=? AND project_id=?",
+                (session_id, project_id),
+            ).fetchone()
+            is None
+        ):
+            conn.execute(
+                "INSERT INTO ask_sessions(id,project_id,created_at) VALUES(?,?,?)",
+                (session_id, project_id, utc_now()),
+            )
+        turn_id = new_id()
+        conn.execute(
+            "INSERT INTO ask_turns(id,session_id,question,answer,citations_json,"
+            "trace_json,created_at) VALUES(?,?,?,?,?,?,?)",
+            (
+                turn_id,
+                session_id,
+                bundle.question,
+                bundle.statement,
+                json.dumps([i.citation for i in bundle.evidence]),
+                json.dumps(
+                    {
+                        "outcome": bundle.outcome,
+                        "keyword_hits": outcome.keyword_hits,
+                        "semantic_hits": outcome.semantic_hits,
+                        "semantic_available": outcome.semantic_available,
+                        "ranked": [
+                            {
+                                "kind": i.source,
+                                "id": i.target_id,
+                                "matched_terms": i.matched_terms,
+                                "why": i.why_ranked,
+                            }
+                            for i in bundle.evidence
+                        ],
+                        "unknowns": bundle.unknowns,
+                    }
+                ),
+                utc_now(),
+            ),
+        )
+    bundle.session_id = session_id
+    bundle.turn_id = turn_id
