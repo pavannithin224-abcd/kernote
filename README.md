@@ -165,10 +165,11 @@ true rather than aspirational.
   compete with frontier-LLM codebase chat on fluency; it competes on whether the
   citations are correct and the abstentions are honest. Measured on our own
   31-question labelled set: **citation correctness 52%**, **useful abstention
-  67%**, Recall@5 0.70. The known weakness is the opposite error — on 24% of
+  83%**, Recall@5 0.74 — and on a real sibling repository it declines on
+  **4 of 4** unanswerable questions. The known weakness is the opposite error — on 24% of
   answerable questions it finds the right document and declines to call it an
   answer, because a paraphrased question shares no words with the source it
-  needs. When it cannot assert an answer it returns leads ordered by meaning,
+  needs (28% on the fixture, 11% on the real repository). When it cannot assert an answer it returns leads ordered by meaning,
   and the right document is first in 67% of those cases.
   `docs/EVALUATION.md` has the numbers; ADR-0032 explains why assertion stays
   lexical and ADR-0030 why the remaining gap is a centrality problem.

@@ -9,7 +9,9 @@ from kernote.db.repositories import memories as mrepo
 from kernote.db.repositories import projects as prepo
 from kernote.domain.models import ClaimKind, Memory, MemoryType, Project, SourceRef
 from kernote.ingest.secrets import (
+    SecretHit,
     classify,
+    key_names_a_credential,
     read_lines,
     scan_path,
     scanning_session,
@@ -245,3 +247,53 @@ def test_a_document_about_secrets_is_still_imported(conn, tmp_path):
         s for s in result.skipped if s.reason.value == "secret_suspected"
     ], "a document discussing credentials was refused"
     assert mrepo.list_for_project(conn, project.id), "no memories extracted"
+
+
+# ─── found by scanning a real data-heavy repository (ADR-0020c) ─────────────
+
+
+def test_a_high_entropy_value_without_a_credential_key_only_warns():
+    """A digest, a UUID, a git object id and an API token are the same shape.
+
+    Scanning a real modelling repository refused 2918 of 2938 files on
+    `Hex High Entropy String` alone -- including three of its seven Markdown
+    documents -- because every hash in a JSON manifest is twenty-plus
+    characters without a space. For a low-precision hit the *name* has to
+    carry the signal.
+    """
+    digest = "a3f5c9e1b7d04a26f8c3b159e7a2d4068b1c5e9f3a7d2b6c8e0f4a1d9c7b3e52"
+    for line in (f'"sha256": "{digest}"', f'checksum = "{digest}"', f'"curve_id": "{digest}"'):
+        assert not key_names_a_credential(line), line
+        # The value *is* credential-shaped; only the key name saves the file.
+        assert value_looks_like_credential(line), line
+        refuse, warn = classify(
+            [SecretHit(line_number=1, detector="Hex High Entropy String")], [line]
+        )
+        assert not refuse, f"a checksum must not refuse the file: {line}"
+        assert warn, "it must still be recorded for a human glance"
+
+
+def test_a_high_entropy_value_under_a_credential_key_still_refuses():
+    """The fix must not let a real secret through."""
+    value = "a3f5c9e1b7d04a26f8c3b159e7a2d406"
+    for line in (
+        f'api_key = "{value}"',
+        f'"access_token": "{value}"',
+        f'DB_PASSWORD = "{value}"',
+        f'client_secret: "{value}"',
+        f'private_key = "{value}"',
+    ):
+        assert key_names_a_credential(line), line
+        refuse, _ = classify(
+            [SecretHit(line_number=1, detector="Hex High Entropy String")], [line]
+        )
+        assert refuse, f"must still refuse: {line}"
+
+
+def test_json_is_allowlisted_by_name_not_by_suffix():
+    """`.json` as an allowed suffix swept in 2909 generated data manifests."""
+    from kernote.ingest import walker
+
+    assert ".json" not in walker.ALLOWED_SUFFIXES
+    for name in ("package.json", "tsconfig.json", "composer.json"):
+        assert name in walker.ALLOWED_NAMES, name

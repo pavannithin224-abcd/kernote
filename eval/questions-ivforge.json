@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "corpus": "../IVForge",
+  "about": [
+    "A labelled question set over a REAL repository (proposal item Q2): a",
+    "sibling research project, IVForge, which neither Kernote nor this question",
+    "set was designed around. 5955 files, mostly generated data; 7 Markdown",
+    "documents.",
+    "",
+    "**The corpus is not included in this repository.** These labels are kept",
+    "as the evidence behind the real-repo numbers in docs/EVALUATION.md, not as",
+    "a runnable set: `corpus` points outside this project, which load() refuses",
+    "by design (ADR-0029b). Run it by scanning the repository first and passing",
+    "the resulting project id to kernote.eval.runner.run().",
+    "",
+    "Labels were verified by grepping the repository for presence and absence",
+    "before being written: every unanswerable question's distinctive terms were",
+    "confirmed to appear in none of the allowlisted documents."
+  ],
+  "questions": [
+    {
+      "id": "r01",
+      "question": "Which circuit simulator and version is used?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2,
+        "docs/simulation_setup.md": 1
+      }
+    },
+    {
+      "id": "r02",
+      "question": "Which transistor device is being characterized?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2,
+        "docs/simulation_setup.md": 1
+      }
+    },
+    {
+      "id": "r03",
+      "question": "What error metric is used to report accuracy?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2
+      }
+    },
+    {
+      "id": "r04",
+      "question": "How is generalization held out across geometries?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2
+      }
+    },
+    {
+      "id": "r05",
+      "question": "At which simulation budget does diverse active sampling reliably help?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2,
+        "docs/data_generation.md": 1
+      }
+    },
+    {
+      "id": "r06",
+      "question": "How do the surrogate models compare against direct SPICE on measured silicon?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2,
+        "docs/measured_data.md": 1
+      }
+    },
+    {
+      "id": "r07",
+      "question": "How do I recreate the configured data batches?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/data_generation.md": 2
+      }
+    },
+    {
+      "id": "r08",
+      "question": "Where does the measured silicon data come from and under what license?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/measured_data.md": 2
+      }
+    },
+    {
+      "id": "r09",
+      "question": "Which PDK revision is pinned?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2,
+        "docs/simulation_setup.md": 1
+      }
+    },
+    {
+      "id": "r10",
+      "question": "What is the monetary cost in dollars of one SPICE simulation run?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "Budget and cost are discussed throughout, always in simulation runs, never in money. Heavy vocabulary overlap, no answer."
+    },
+    {
+      "id": "r11",
+      "question": "Which cloud provider runs the training jobs?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "Training is documented as running locally on Windows and Linux/WSL. No cloud provider is named anywhere."
+    },
+    {
+      "id": "r12",
+      "question": "What is the gate oxide thickness of the SKY130 NMOS?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "A plausible device-physics question about the exact device the repository characterizes. Neither 'oxide' nor 'thickness' appears in any allowlisted document."
+    },
+    {
+      "id": "r13",
+      "question": "Who maintains this project and how do I contact them?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "There is a licence and attribution section but no maintainer or contact details."
+    }
+  ]
+}

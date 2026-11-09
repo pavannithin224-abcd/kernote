@@ -125,7 +125,18 @@ ALLOWED_NAMES: frozenset[str] = frozenset(
         "setup.py",
         "setup.cfg",
         "package.json",
+        "package-lock.json",
         "tsconfig.json",
+        "jsconfig.json",
+        "composer.json",
+        "deno.json",
+        "deno.jsonc",
+        "renovate.json",
+        ".eslintrc.json",
+        ".prettierrc.json",
+        "nest-cli.json",
+        "angular.json",
+        "manifest.json",
         "dockerfile",
         "docker-compose.yml",
         "docker-compose.yaml",
@@ -138,6 +149,16 @@ ALLOWED_NAMES: frozenset[str] = frozenset(
         "build.gradle",
     }
 )
+# `.json` is deliberately absent below. It is a *data* format, and its
+# meaningful instances are named configuration files, which `ALLOWED_NAMES`
+# already covers. Allowing the suffix made the name list redundant and swept in
+# every generated manifest: scanning a real modelling repository imported 2909
+# JSON data manifests and raised 2918 secret warnings from the hashes inside
+# them, which is both useless knowledge and an unusable review queue. A project
+# memory tool should read a project's documentation and configuration, not its
+# data. Skips are reported with a reason, so under-reading is visible; a
+# project that needs a differently named JSON file is the case for the
+# configurable include list `CLAUDE.md` asks for (ADR-0020c).
 ALLOWED_SUFFIXES: frozenset[str] = frozenset(
     {
         ".md",
@@ -147,7 +168,6 @@ ALLOWED_SUFFIXES: frozenset[str] = frozenset(
         ".toml",
         ".yaml",
         ".yml",
-        ".json",
         ".ini",
         ".cfg",
         ".conf",

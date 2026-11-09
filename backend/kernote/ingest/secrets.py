@@ -55,6 +55,33 @@ _WORDS = re.compile(r"[^a-z0-9]+")
 # rather than as an assignment.
 _PROSE_WORD_LIMIT = 8
 
+# Key names that actually announce a credential. A high-entropy value proves
+# nothing on its own -- a SHA-256 digest, a UUID, a git object id and an API
+# token are the same shape -- so for a low-precision hit the *name* has to
+# carry the signal. Scanning a real data-heavy repository showed what the
+# alternative costs: 2918 of 2938 files refused, including three of the
+# repository's seven Markdown documents, because every hash in a JSON
+# manifest is twenty-plus characters without a space (ADR-0020c).
+_CREDENTIAL_KEY = re.compile(
+    r"(?:^|[^a-z])(?:"
+    r"pass(?:wd|word)?|pwd|secret|token|api[_-]?key|auth|credential|"
+    r"bearer|private[_-]?key|access[_-]?key|client[_-]?secret|"
+    r"session[_-]?key|encryption[_-]?key|signing[_-]?key|salt|"
+    r"connection[_-]?string|dsn"
+    r")(?:[^a-z]|$)",
+    re.IGNORECASE,
+)
+
+
+def key_names_a_credential(line: str) -> bool:
+    """Does the *name* being assigned on this line announce a credential?
+
+    Checked against the text before the first `=` or `:`, so a value that
+    merely contains the word "token" does not make its own key suspicious.
+    """
+    head = _ASSIGN.split(line, 1)[0]
+    return _CREDENTIAL_KEY.search(head) is not None
+
 
 def _char_classes(value: str) -> int:
     return sum(
@@ -164,9 +191,14 @@ def classify(
     Three rules, in order:
 
     1. A credential *format* match refuses the file outright.
-    2. A keyword or entropy hit refuses it when the value on that line also
-       looks like a credential (`value_looks_like_credential`). This is what
-       stops a real `DB_PASSWORD = "..."` being stored.
+    2. A keyword or entropy hit refuses it only when the line's **key names a
+       credential** *and* the value is shaped like one. Both halves are
+       required because each detector only knows half the story: the keyword
+       detector knows the name looks secret and needs the value to confirm it,
+       while an entropy detector knows the value is random and needs the name
+       -- a digest, a UUID, a git object id and an API token are
+       indistinguishable by shape. This is what still stops a real
+       `DB_PASSWORD = "..."` being stored.
     3. Otherwise it only warns, because the keyword detector fires on the name
        alone and would lose ordinary files in any security-adjacent codebase.
 
@@ -182,7 +214,7 @@ def classify(
         line = ""
         if lines and 1 <= hit.line_number <= len(lines):
             line = lines[hit.line_number - 1]
-        if line and value_looks_like_credential(line):
+        if line and key_names_a_credential(line) and value_looks_like_credential(line):
             refuse.append(hit)
         else:
             warn.append(hit)

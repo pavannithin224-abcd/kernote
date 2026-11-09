@@ -255,3 +255,62 @@ def test_the_lead_first_rate_is_reported(report):
     assert 0.0 <= report.lead_first_rate <= 1.0
     assert all(r.answer_rank is None or r.answer_rank >= 1 for r in report.results)
     assert "the right document was first" in runner.to_markdown(report)
+
+
+# ─── found by evaluating against a real repository (ADR-0033) ───────────────
+
+
+def test_breadth_of_common_words_does_not_assert_an_answer(conn, tmp_path):
+    """A share threshold alone is satisfiable by breadth.
+
+    On a real repository, "what is the monetary cost in dollars of one SPICE
+    simulation run" was answered `evidence_found`: the two words that make it
+    unanswerable carried half the question's weight, and a document matching
+    the five ordinary words cleared the bar without touching either.
+    """
+    (tmp_path / "sim.md").write_text(
+        "# Simulation\n\n## Budget\n\nOne simulation run of the SPICE netlist "
+        "has a cost measured in curve runs, and the budget for each study is "
+        "recorded with the result.\n"
+    )
+    project_id, _ = _scan(conn, tmp_path)
+    bundle = answer_mod.ask(
+        conn,
+        project_id=project_id,
+        question="What is the monetary cost in dollars of one SPICE simulation run?",
+        limit=10,
+    )
+    assert bundle.outcome != "evidence_found", bundle.statement
+    assert bundle.unknowns
+    # It must name the words it could not find, heaviest first.
+    missing = " ".join(bundle.unknowns).lower()
+    assert "monetary" in missing or "dollars" in missing
+
+
+def test_the_questions_own_subject_still_asserts(conn, tmp_path):
+    """The abstention rules must not refuse a question whose subject is
+    matched -- otherwise they would trade one failure for another.
+
+    Needs several documents on different subjects. In a two-document corpus
+    every content word appears in every record, so inverse document frequency
+    makes them all worth zero and the only weight left belongs to whichever
+    word is missing -- which is a property of the fixture, not of the rule.
+    """
+    (tmp_path / "sim.md").write_text(
+        "# Simulation\n\n## Simulator\n\nThe circuit simulator is ngspice "
+        "version 47, pinned for reproducibility across every study.\n"
+    )
+    for index in range(6):
+        (tmp_path / f"topic{index}.md").write_text(
+            f"# Topic {index}\n\n## Subsystem {index}\n\nSubsystem {index} "
+            "handles billing reconciliation, delivery windows and operator "
+            "sessions, none of which concern the simulator.\n"
+        )
+    project_id, _ = _scan(conn, tmp_path)
+    bundle = answer_mod.ask(
+        conn,
+        project_id=project_id,
+        question="Which circuit simulator version is used?",
+        limit=10,
+    )
+    assert bundle.outcome == "evidence_found", bundle.statement

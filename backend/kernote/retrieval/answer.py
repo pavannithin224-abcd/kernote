@@ -62,6 +62,30 @@ _MIN_OVERLAP = 2
 # abstention gain as optimistic -- see docs/DEV_HANDOFF.md.
 _MIN_INFORMATION_SHARE = 0.30
 
+# If this share or more of what was asked about appears **nowhere** in the
+# project, no record can answer it and nothing is asserted. Stated to the user
+# in those words, because it is a sentence a reader can act on: "a third of
+# your question does not occur in this project".
+#
+# This replaced a share threshold that could be cleared by *breadth*. Ask "what
+# is the monetary cost in dollars of one SPICE simulation run" and `monetary`
+# and `dollars` -- the two words that make it unanswerable -- carry half the
+# question's weight, while a document matching the five ordinary words scored
+# 0.467 against a 0.30 bar and answered confidently. The more everyday words a
+# question contains, the easier it became to answer it without addressing it.
+#
+# Invisible on the synthetic fixture; it appeared the first time the labelled
+# set was run against a real repository, where useful abstention measured
+# **0 of 4** (ADR-0033).
+#
+# A per-item "match the heaviest term" rule was tried first and rejected on
+# measurement: it refused correct answers whenever the question's subject words
+# were common enough in the corpus to weigh zero, so an incidental absent word
+# became the peak. The absent-term share beat it on both corpora -- on the real
+# repository it reaches 4 of 4 correct abstentions with **no** increase in
+# false abstention, where the peak rule reached 3 of 4 and cost two answers.
+_MAX_ABSENT_TERM_SHARE = 0.30
+
 # Stopwords are kept for *retrieval* (bm25 handles them, and dropping them
 # would hurt recall on short questions) but must not count as support.
 # Without this, "what is the airspeed velocity of an unladen swallow" matched
@@ -75,7 +99,7 @@ _STOPWORDS = frozenset(
     when where which who why will with would you your about above after again
     all also any because before being below between both during each few more
     most no nor only other our out over own same some same too under until up
-    very via while
+    very via while one them us
     """.split()
 )
 
@@ -392,7 +416,14 @@ def ask(
             return False
         return information_share(item) >= _MIN_INFORMATION_SHARE
 
-    supported = [i for i in items if supports(i)]
+    absent_share = (
+        sum(1 for t in content_terms if frequencies.get(t, 0) == 0) / len(content_terms)
+        if content_terms
+        else 0.0
+    )
+    too_much_unknown = absent_share >= _MAX_ABSENT_TERM_SHARE
+
+    supported = [] if too_much_unknown else [i for i in items if supports(i)]
 
     # When nothing is lexically supported, the answer is a set of *leads*, and
     # the fusion ordering is the wrong one for that job: it is dominated by
@@ -435,9 +466,16 @@ def ask(
             question=question,
             outcome="weak_evidence",
             statement=(
-                "No source directly addresses that question. The closest records "
-                "are listed, but none of them mentions what makes the question "
-                "specific, so treat them as leads rather than as an answer."
+                (
+                    f"{round(absent_share * 100)}% of what you asked about does "
+                    "not occur anywhere in this project, so no record here can "
+                    "answer it. The closest records are listed as leads."
+                    if too_much_unknown
+                    else "No source directly addresses that question. The closest "
+                    "records are listed, but none of them mentions what makes the "
+                    "question specific, so treat them as leads rather than as an "
+                    "answer."
+                )
                 + (
                     " They are ordered by meaning rather than by keyword, "
                     "because the keywords are what failed."

@@ -1750,3 +1750,109 @@ number should weight terms by **centrality** — position in the question, or
 agreement between the question's terms and the document's title — not by
 rarity alone. That is a new question (Q6), and it is not a licence to weaken
 assertion; it is a request for a better lexical signal.
+
+---
+
+## ADR-0020c — A low-precision secret hit needs the key name, not the value shape
+**Status:** accepted · 2026-11-09 · *amends ADR-0020b*
+
+**Context.** Scanning a real data-heavy repository refused **2918 of 2938
+files** as suspected secrets — including three of the repository's seven
+Markdown documents and two of its Python scripts. The documentation this
+product exists to read was silently dropped, and the scan took 30.6s because
+every one of 2909 generated JSON manifests was being scanned line by line.
+
+One detector was responsible: `Hex High Entropy String`. It is correctly
+outside `HIGH_PRECISION`, so ADR-0020b's rule 2 applied — refuse when the value
+on the line also looks like a credential. And `value_looks_like_credential`
+ends with `_char_classes(value) >= 2 or len(value) >= 20`, so **any quoted
+token of twenty characters without a space is credential-shaped**. In a JSON
+manifest that is every SHA-256 digest, every UUID, every long identifier.
+
+The heuristic was built in Stage 3 and tuned on Kernote's own repository, which
+is prose. It had never seen a corpus of data.
+
+**Decision.** For a low-precision hit, refusing requires **both** that the
+line's key names a credential *and* that the value is shaped like one. Each
+detector only knows half the story: the keyword detector knows the *name* looks
+secret and needs the value to confirm it, while an entropy detector knows the
+*value* is random and needs the name — because a digest, a UUID, a git object
+id and an API token are indistinguishable by shape. `HIGH_PRECISION` format
+matches still refuse unconditionally, which is what covers the realistic
+high-value leaks: AWS keys, GitHub tokens, private keys, JWTs.
+
+**Alternatives.** *Skip entropy detectors in data files* — needs a definition
+of "data file" we do not have. *Raise the length threshold* — there is no
+length at which a hex secret and a hex digest differ. *Leave it* — untenable
+once measured: the feature was discarding the repository.
+
+**Consequences.** On that repository: refusals 2918 → **0**, warnings 0 → 9, a
+reviewable number; files ingested 23 → 2941 and then 29 after ADR-0020c's
+companion change below; scan 30.6s → 2.0s. Two tests pin both directions — a
+checksum under a `sha256` key warns, and the same value under `api_key`,
+`access_token`, `DB_PASSWORD` or `client_secret` still refuses.
+
+**Companion change.** `.json` was removed from the walker's allowed *suffixes*
+and its meaningful instances allowlisted by *name* instead (`package.json`,
+`tsconfig.json`, and the common others). JSON is a data format; allowing the
+suffix made the name list redundant and swept in 2909 generated manifests,
+which is both useless knowledge and an unusable review queue. Skips are
+reported with a reason, so under-reading stays visible — and a project needing
+a differently named JSON file is the case for the configurable include list
+`CLAUDE.md` asks for and we have not yet built.
+
+---
+
+## ADR-0033 — A question is unanswerable when a third of it occurs nowhere
+**Status:** accepted · 2026-11-09 · *supersedes the support rule in ADR-0030, resolves proposal item Q2*
+
+**Context.** Proposal item Q2 asked which real repositories the evaluation set
+would be. It had been answered with a corpus written for the purpose, which
+bounds regressions and says little about real projects. Pointing the labelled
+harness at a real repository broke the product's central claim on the first
+run: **useful abstention measured 0 of 4**, with all four unanswerable
+questions answered confidently. The same measure was 66.7% on the fixture.
+
+Retrieval was *better* on the real repository — Recall@3 0.889 against 0.600 —
+so this was not a retrieval problem. ADR-0030's information-share threshold can
+be cleared by **breadth**. Asking "what is the monetary cost in dollars of one
+SPICE simulation run", `monetary` and `dollars` carry 11.3 of the question's
+21.2 total weight and appear nowhere in the project, while a document matching
+the five ordinary words — cost, SPICE, one, run, simulation — scores 0.467
+against a 0.30 bar. The more everyday words a question contains, the easier it
+becomes to answer it without addressing it.
+
+**Decision.** Nothing is asserted when **30% or more of a question's content
+terms occur nowhere in the project**. The share threshold stays as a second,
+per-record test. The user is told so in those words — "41% of what you asked
+about does not occur anywhere in this project" — because that is a sentence a
+reader can act on.
+
+**Alternatives, one of them measured and rejected.** A per-record rule
+requiring a match on the question's heaviest term was implemented first. It
+refused *correct* answers whenever the question's subject words were common
+enough in the corpus to weigh zero, leaving an incidental absent word as the
+peak; a positive-control test caught it. Measured against the absent-share
+rule on both corpora it was strictly worse: on the real repository it reached 3
+of 4 correct abstentions and cost two answers, where the absent-share rule
+reaches 4 of 4 and costs none.
+
+**Consequences.**
+
+| | Real repo | Fixture |
+|---|---|---|
+| Useful abstention | 0.0% → **100.0%** | 66.7% → **83.3%** |
+| Wrongly asserted | 4 → **0** | 2 → **1** |
+| False abstention | 11.1% → **11.1%** | 20.0% → **28.0%** |
+| Answered | 7 → **7** | 12 → **12** |
+
+The fixture's false abstention is the real cost, and it is recorded rather than
+averaged away. For this product that is the right direction to trade: a
+confident wrong answer is the failure the whole design exists to prevent.
+
+**What this changes about how we evaluate.** Two of the three defects found in
+this session were invisible to 392 passing tests and to a 31-question synthetic
+set, and appeared within minutes of a real repository. A synthetic corpus tests
+that the code does what it did yesterday. Only a corpus nobody wrote for the
+purpose tests whether the product's claims are true. Q2 is closed as: **both** —
+the fixture for regression, a real repository for truth.

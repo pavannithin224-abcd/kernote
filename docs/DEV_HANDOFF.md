@@ -5,6 +5,92 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Real-repository evaluation (Q2): the central claim failed on first contact
+
+Everything measured so far came from a corpus written for the purpose. Pointing
+the harness at a real repository broke the product's central claim within
+minutes, and 392 passing tests had nothing to say about it.
+
+### What changed
+- **`ingest/secrets.py`** — a low-precision hit now needs the key *name* to
+  name a credential, not just a credential-shaped value (ADR-0020c).
+- **`ingest/walker.py`** — `.json` allowlisted by filename, not by suffix.
+- **`retrieval/answer.py`** — nothing is asserted when 30% or more of a
+  question's terms occur nowhere in the project, and the user is told that in
+  those words (ADR-0033). `one`, `them` and `us` added to the stopwords.
+- **`eval/questions-ivforge.json`** — 13 labels over the real repository, kept
+  as the evidence behind the numbers; the corpus is not in this repository.
+- `docs/EVALUATION.md` has a real-repository section. ADR-0020c and ADR-0033
+  added (48 ADRs).
+
+### Three findings, none of which a synthetic corpus could show
+
+**1. Useful abstention was 0 of 4 on a real repository** — against 66.7% on the
+fixture. Retrieval was *better* there (Recall@3 0.889 against 0.600), so this
+was never a retrieval problem: ADR-0030's share threshold can be cleared by
+**breadth**. Ask "what is the monetary cost in dollars of one SPICE simulation
+run" and `monetary` and `dollars` carry half the question's weight and appear
+nowhere, while a document matching the five ordinary words scores 0.467 against
+a 0.30 bar. The more everyday words a question has, the easier it was to answer
+it without addressing it. Now **100.0%** correct abstention on the real
+repository, 0 wrongly asserted, with false abstention and the answered count
+both unchanged.
+
+**2. The secret scanner refused 2918 of 2938 files** — including three of the
+repository's seven Markdown documents and two Python scripts. One detector,
+`Hex High Entropy String`, plus a value-shape rule ending in `len(value) >= 20`:
+every SHA-256 digest in a JSON manifest is credential-shaped. The heuristic was
+tuned on Kernote's own prose repository in Stage 3 and had never seen data.
+Refusals **2918 → 0**, warnings 0 → 9, scan **30.6s → 2.0s**, and the
+documentation that was being dropped now produces 8 procedure memories that did
+not exist before.
+
+**3. `.json` as an allowed suffix swept in 2909 generated manifests.** JSON is
+a data format and its meaningful instances are named config files, which the
+name list already covered. A project memory tool should read a project's
+documentation and configuration, not its data.
+
+### A rule I implemented and then rejected on measurement
+The first fix for finding 1 was a per-record rule requiring a match on the
+question's heaviest term. A positive-control test caught it refusing *correct*
+answers: when a question's subject words are common enough in the corpus to
+weigh zero, an incidental absent word becomes the peak. Measured head to head
+on both corpora it was strictly worse — 3 of 4 abstentions and two answers lost,
+against 4 of 4 and none. It is recorded in ADR-0033 as a rejected alternative
+rather than quietly deleted.
+
+### Verification performed
+- **397 tests pass, 5 skipped** (was 392). Five new: two pinning the secret
+  scanner in both directions, one the JSON allowlist, and two the breadth
+  defect and its positive control.
+- Measured on both corpora after every change, not just the one being fixed.
+- `ruff` clean. `docs/EVALUATION.md` regenerated from real runs.
+- One test fixture corrected: a positive control on a 3-document corpus proved
+  nothing, because with that few records every content word is ubiquitous and
+  inverse document frequency makes them all worth zero. Same class of fixture
+  fault as Stage 7's.
+
+### Known issues / blockers
+1. **False abstention rose on the fixture, 20.0% → 28.0%.** That is the price
+   of finding 1 and it is the right direction for this product, but it is a
+   real cost. Q6 (centrality in term weighting) is still the lever on it.
+2. **The include/exclude list is still not configurable**, and finding 3 makes
+   that gap sharper: a project with meaningful JSON under a non-standard name
+   now loses it, visibly but without recourse. `CLAUDE.md` asks for the
+   configurable list; this is the strongest case yet for building it.
+3. The RC tag `v0.1.0-rc.1` points at `ca0f72c` and does **not** include this
+   work. Its message quotes citation correctness 52% and abstention 67%; the
+   fixture now measures 51.6% and 83.3%.
+4. No native-Windows verification. Approval has no undo. The UI has had no
+   visual pass.
+
+### Next safe task
+**The configurable include/exclude list**, which is a `CLAUDE.md` requirement,
+is now the blocking issue for scanning real repositories well, and is the
+natural home for the JSON question. Then **Windows verification**, then **Q6**.
+
+---
+
 ## 2026-11-09 — Q5 closed: assertion stays lexical, leads are ordered by meaning
 
 Q5 was the named cause of the product's largest quality weakness. Closing it
