@@ -27,6 +27,10 @@ api:
 web:
     PATH="{{node_bin}}:$PATH" npm --prefix frontend run dev
 
+# End-to-end demo: scan, ask, drift, conflict, review, bundle, MCP, restart
+demo:
+    {{py}} scripts/demo.py
+
 # Backend tests
 test:
     cd backend && .venv/bin/python -m pytest -q

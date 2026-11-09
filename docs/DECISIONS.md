@@ -1644,3 +1644,37 @@ their own repository, which is a use we want.
 
 **Consequences.** Four tests, including both traversal forms and both allowed
 layouts. The shipped set is unaffected.
+
+---
+
+## ADR-0031 — A resolved finding suppresses its own cause
+**Status:** accepted · 2026-11-09 · *amends ADR-0007*
+
+**Context.** Found by the Stage 9 demo, which is the first thing to exercise
+review *and then carry on working*. The dedupe query that stops a detector
+piling up findings for one cause matched only `status='open'`. So the moment a
+human resolved a finding, it stopped suppressing itself, and the next `analyze`
+inserted an identical new one. The review queue refilled with exactly the item
+just closed, on every scan, for ever.
+
+ADR-0007 says a finding is a request for review. A request the product reissues
+the instant you answer it is not a request, and a review the product discards
+is worse than no review at all.
+
+**Decision.** A finding suppresses its cause whatever its status. The weight
+moves onto the dedupe key, which must contain whatever would make the finding
+legitimately *new*:
+
+* Drift keys carry the file's current content hash
+  (`stale:{ref_id}:{hash}`), so a further edit makes a new key and a new
+  finding while the resolved one stays closed. Verified in both directions.
+* Conflict and duplicate keys are a pair of memory ids, so adjudicating that
+  pair is final until one of them is replaced. That is the honest reading of a
+  human decision; if those detectors should re-raise on changed content, their
+  keys need a content fingerprint rather than a looser query here.
+
+**Consequences.** A regression test asserts both halves: a resolved drift
+finding does not return after `analyze`, and a subsequent edit still raises
+one. The finding a human closed staying closed is now part of what the demo
+checks, because this bug was invisible to every test that resolved a finding
+and then stopped.

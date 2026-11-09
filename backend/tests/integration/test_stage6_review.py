@@ -518,3 +518,60 @@ def test_impact_handles_a_range_wider_than_the_variable_limit(conn, tmp_path):
     assert report.resolved
     assert len(report.changed_files) >= 1100
     assert report.affected
+
+
+def test_a_resolved_finding_does_not_come_back_on_the_next_analyze(conn, tmp_path):
+    """Found by the Stage 9 demo: the review queue refilled with the item the
+    human had just closed, on every scan, forever.
+
+    The dedupe query matched only `status='open'`, so a resolved finding no
+    longer suppressed its own cause and an identical one was inserted. A review
+    the product immediately discards is worse than no review.
+    """
+    from kernote.db.repositories import projects as project_repo
+    from kernote.db.repositories.findings import open_findings
+    from kernote.domain.models import Project
+    from kernote.ingest.pipeline import scan_project
+    from kernote.maintain.drift import detect_drift
+    from kernote.maintain.review import resolve_finding
+
+    target = tmp_path / "ARCHITECTURE.md"
+    target.write_text(
+        "# Architecture\n\n## Queue\n\nWe use Redis streams with consumer "
+        "groups for the job queue, not Celery.\n"
+    )
+    project = project_repo.create(
+        conn, Project(name="Refill", root_path=str(tmp_path), is_git_repo=False)
+    )
+    scan = {
+        "project_id": project.id,
+        "root": tmp_path,
+        "max_file_bytes": 1_000_000,
+        "max_files": 100,
+    }
+    scan_project(conn, **scan)
+
+    target.write_text(
+        "# Architecture\n\n## Queue\n\nWe use Celery with RabbitMQ for the job "
+        "queue after all, reversing this.\n"
+    )
+    scan_project(conn, **scan)
+    detect_drift(conn, project_id=project.id, root=tmp_path)
+    found = open_findings(conn, project.id)
+    assert found, "the edit should raise a staleness finding"
+
+    resolve_finding(conn, project_id=project.id, finding_id=found[0]["id"], verdict="resolved")
+    detect_drift(conn, project_id=project.id, root=tmp_path)
+    after = open_findings(conn, project.id)
+    assert all(f["id"] != found[0]["id"] for f in after)
+    assert not after, f"the resolved finding came back as {[f['id'] for f in after]}"
+
+    # ...but a further edit is genuinely new, because the dedupe key carries
+    # the file's content hash.
+    target.write_text(
+        "# Architecture\n\n## Queue\n\nWe use Kafka now, which is a third "
+        "answer again and must be flagged.\n"
+    )
+    scan_project(conn, **scan)
+    detect_drift(conn, project_id=project.id, root=tmp_path)
+    assert open_findings(conn, project.id), "a new edit must still raise a finding"

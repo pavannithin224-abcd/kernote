@@ -23,8 +23,14 @@ registry clearance — see `docs/PRODUCT_SPEC.md` §9.
 
 ## Status
 
-**Stage 8 of 9 complete** (Day 4 of a 25-day build ending 2026-11-30), each
-stage followed by a defect sweep against real data.
+**Release candidate — all 9 stages complete** (Day 4 of a 25-day build
+targeting 2026-11-30), each stage followed by a defect sweep against real data.
+
+`scripts/demo.py` runs the whole product end to end and is the release gate:
+scan, idempotent rescan, a cited answer, an honest refusal, a planted
+contradiction held open, drift detected down to the overlapping hunk, a human
+resolution, a budgeted context bundle, the read-only MCP surface, the measured
+evaluation, and a real process restart. It is verified from a clean clone.
 
 The app runs end to end: register a local project, scan it read-only, browse
 typed memories with line-exact provenance and revision history, ask questions
@@ -34,8 +40,7 @@ the result to a coding agent over a read-only MCP surface. All of it survives
 a restart.
 
 Retrieval quality is measured against a labelled question set rather than
-asserted — see [docs/EVALUATION.md](docs/EVALUATION.md). Still to come: Stage 9
-(the release candidate). Read
+asserted — see [docs/EVALUATION.md](docs/EVALUATION.md). Read
 `docs/DEV_HANDOFF.md` for exactly where things stand, what is verified and
 what is not.
 
@@ -125,6 +130,18 @@ directory (`just where` prints the path); override it with `KERNOTE_DATA_DIR`.
 backend/.venv/bin/python -m pytest backend/tests -q
 ```
 
+Then run the end-to-end demo, which exercises every feature against the real
+API and exits non-zero if any step fails:
+
+```bash
+backend/.venv/bin/python scripts/demo.py
+```
+
+It starts its own API on a free port, works on a **copy** of
+`samples/eval-repo` in a temporary directory, and uses a temporary data
+directory — so it never edits your files and its fixture memories never enter
+your vault. With `just`, `just demo`.
+
 `requirements-ml.txt` is optional and is **never** installed by CI or by the
 commands above — that is what keeps "works with no ML stack and no paid API"
 true rather than aspirational.
@@ -135,8 +152,15 @@ true rather than aspirational.
   runs as a localhost app (ADR-0001).
 - Extraction is deterministic and rule-based by default, so recall is lower than
   an LLM pipeline would give; a model adapter is optional and additive (ADR-0006).
-- Only tested languages and agents will be claimed as supported. Nothing is
-  claimed as supported yet.
+- **Tested languages**: code symbols are extracted for Python, TypeScript, TSX
+  and JavaScript. Markdown, and `pyproject.toml` / `package.json` /
+  `requirements.txt` manifests, are parsed everywhere. Anything else is stored
+  as text without symbol extraction, and nothing further is claimed.
+- **Tested agent**: the MCP surface is verified against a real client over
+  stdio. Claude Code is the only agent it has been driven from.
+- **Linux only, so far.** Everything here was verified on Linux (WSL2). The
+  native wheels (`tree-sitter-language-pack`, `fastembed`/onnxruntime) have
+  **not** been verified on native Windows, and ADR-0009 is still `proposed`.
 - Retrieval answers are **extractive**, not generated prose. Kernote does not
   compete with frontier-LLM codebase chat on fluency; it competes on whether the
   citations are correct and the abstentions are honest. Measured on our own
@@ -146,6 +170,14 @@ true rather than aspirational.
   answer, because a paraphrased question shares no words with the source it
   needs. `docs/EVALUATION.md` has the numbers and `docs/DECISIONS.md` ADR-0014a
   has the reason.
+- **Approval has no undo.** A consolidation merge preserves full lineage and
+  nothing is ever silently dropped, so the information survives — but there is
+  no one-click reverse of an approval.
+- **The include/exclude list is not configurable yet.** The scanner honours
+  `.gitignore` and a built-in deny-list for secrets, binaries and build output,
+  but the deny-list cannot yet be edited per project.
+- **The UI is functional, not finished.** It shows real data and real error
+  states throughout, and a visual pass is deliberately still outstanding.
 - The agent-memory space is crowded and partly free. Kernote's claim is narrow
   and specific: knowledge **update** and **conflict resolution**, the two
   competencies published benchmarks show no system masters.

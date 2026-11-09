@@ -19,13 +19,31 @@ def record(conn: sqlite3.Connection, project_id: str, finding: Finding) -> str:
 
     Re-running a detector must not pile up duplicate findings for the same
     cause, or the review queue becomes unusable after a few scans.
+
+    **A closed finding suppresses its cause too.** This used to match only
+    `status='open'`, so the moment a human resolved a finding the next
+    `analyze` inserted an identical new one and the review queue refilled with
+    exactly the item just closed -- on every scan, forever. A review that the
+    product immediately discards is worse than no review.
+
+    This puts the weight on the dedupe key: it must contain whatever would make
+    the finding legitimately *new*. Drift's key carries the file's current
+    content hash (`stale:{ref_id}:{hash}`), so a further edit produces a new
+    key and a new finding, while the resolved one stays closed -- which is
+    exactly the wanted behaviour. Conflict and duplicate keys are a pair of
+    memory ids, so adjudicating that pair is final until one of them is
+    replaced. That is the honest reading of a human decision, and if those
+    detectors should re-raise on changed content their keys need a content
+    fingerprint, not a looser query here.
     """
     with transaction(conn):
         dedupe_key = finding.evidence.get("dedupe_key")
         if dedupe_key:
             existing = conn.execute(
-                "SELECT id FROM findings WHERE project_id=? AND kind=? AND status='open' "
-                "AND json_extract(evidence_json,'$.dedupe_key')=?",
+                "SELECT id,status FROM findings WHERE project_id=? AND kind=? "
+                "AND json_extract(evidence_json,'$.dedupe_key')=? "
+                "ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, created_at "
+                "LIMIT 1",
                 (project_id, finding.kind.value, dedupe_key),
             ).fetchone()
             if existing:

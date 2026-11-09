@@ -3,3 +3,11 @@ pytest==8.3.4
 pytest-asyncio==0.25.2
 httpx==0.28.1
 ruff==0.8.6
+
+# `honcho` runs the API and the web app together, and the README's primary
+# "run it" instruction is `backend/.venv/bin/honcho start`. It was missing
+# here: it only ever existed in one developer's virtualenv because it had been
+# installed by hand, so a clean clone followed the README and got
+# "command not found". Verified from a fresh clone by scripts/demo.py and by
+# running that exact command.
+honcho==2.0.0

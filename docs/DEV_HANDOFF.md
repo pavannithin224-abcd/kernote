@@ -5,6 +5,92 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 9: release candidate
+
+The gate for this stage is a demo that runs end to end from a clean clone, and
+writing it found two defects that every previous stage had missed — both of
+them in the documented happy path rather than in the code.
+
+### What changed
+- **`scripts/demo.py`** — the end-to-end release gate. It drives the real HTTP
+  API through: scan, idempotent rescan, a cited answer, an honest refusal, a
+  planted contradiction held open with both claims, drift detected down to the
+  overlapping hunk, a human resolution, a budgeted context bundle, the
+  read-only MCP surface, the measured evaluation, and a **real process
+  restart**. It exits non-zero if any check fails. `just demo`.
+- **`backend/requirements-dev.txt`** — `honcho==2.0.0` added. See below.
+- **`db/repositories/findings.py`** — a resolved finding now suppresses its own
+  cause (ADR-0031).
+- **README** — status, demo instructions, and a known-limitations list that
+  now names the tested languages, the tested agent, the untested platform and
+  the measured numbers.
+- ADR-0031 added (45 ADRs).
+
+### Two defects in the documented happy path
+
+**1. `honcho` was never installed.** The README's primary instruction for
+running the product is `backend/.venv/bin/honcho start`. It is not in
+`requirements-dev.txt` and never was: it existed only in this machine's
+virtualenv because it had been installed by hand during Stage 2. A clean clone
+following the README got `command not found`, exit 127.
+
+This is the **exact Stage 2 lesson repeating** — a documented command that had
+never been run from a clean install — and it survived six stages and three
+defect sweeps because every sweep tested the code rather than the instructions.
+Now pinned, and `honcho start` is verified from a fresh clone: API 200, web
+200, and the web app's `/api` proxy 200.
+
+**2. The review queue refilled with whatever you had just closed.** The dedupe
+query matched only `status='open'`, so resolving a finding stopped it
+suppressing itself and the next `analyze` inserted an identical one. Every test
+that resolved a finding stopped there, so nothing caught it; the demo caught it
+because it resolves a finding and then keeps working. Fixed in ADR-0031, with a
+test asserting both that the resolved finding stays closed and that a further
+edit still raises a new one.
+
+A third, smaller one was mine: the demo printed "survives a restart" while only
+re-querying the API. It now really stops and restarts the process, and 53
+memories, the project and the findings all come back.
+
+### Verification performed
+- **Clean clone, from scratch**: `git clone`, `python3 -m venv`,
+  `pip install -r backend/requirements-dev.txt`, `npm install` — all clean, and
+  `pip check` reports no broken requirements.
+- **390 tests pass, 5 skipped** on that clean clone (the skips are the ranx
+  cross-checks, which pass under `requirements-eval.txt`).
+- `npm run build` clean on the clean clone.
+- **`scripts/demo.py` passes on the clean clone**, every check green.
+- `backend/.venv/bin/honcho start` verified on the clean clone.
+- `ruff check` and `ruff format --check` clean.
+
+### Known issues / blockers
+1. **No native-Windows verification.** The native wheels
+   (`tree-sitter-language-pack`, `fastembed`/onnxruntime) have only run on
+   Linux/WSL2. ADR-0009 remains `proposed`. This is the largest untested claim
+   in the project and it is stated in the README rather than hidden.
+2. **False abstention 20-24%** remains the headline quality weakness, with the
+   `lead_only` gap its cause. Open question Q5 (ADR-0014a) is the decision that
+   would close it.
+3. The support threshold is fitted on the same 31 questions the metrics are
+   reported on; a held-out split needs more questions.
+4. Approval still has no undo.
+5. The include/exclude list is not configurable (`walker.py` has a hardcoded
+   `EXCLUDED_DIRS`); `CLAUDE.md` asks for a configurable one.
+6. The UI has had no visual pass. It shows real data and real error states, and
+   that is a different thing from being designed.
+7. Proposal items P3, P6-P10, P12-P13 unapplied. Q1/Q2/Q4 open, Q5 new.
+
+### Next safe task
+The RC is tagged **locally** and has not been pushed, so nothing is published
+yet. The next moves, in the order I would take them:
+1. **Windows verification** — the biggest unknown, and purely a matter of
+   running the existing suite and demo on native Windows.
+2. **The UI visual pass**, once reference stills are available.
+3. **Q5** — whether a semantic match with no lexical overlap can ever be
+   asserted as evidence. Closing it would address the 20-24% false abstention.
+
+---
+
 ## 2026-11-09 — Stage 8 defect sweep: the measurement apparatus was itself wrong
 
 Seven defects. Three were in the code the evaluation measures, and **four were
