@@ -19,6 +19,7 @@ import pathspec
 from identify import identify
 
 from ..domain.models import SkipReason
+from .scanconfig import ScanConfig
 
 # Seeded from github-linguist's vendor.yml / documentation.yml conventions
 # rather than invented (ADR-0013).
@@ -221,8 +222,25 @@ def _allowlisted(path: Path) -> bool:
 
 
 def walk(
-    root: Path, *, max_file_bytes: int, max_files: int, respect_gitignore: bool = True
+    root: Path,
+    *,
+    max_file_bytes: int,
+    max_files: int,
+    respect_gitignore: bool = True,
+    config: ScanConfig | None = None,
 ) -> tuple[list[Found], list[Skipped]]:
+    """Find what should be scanned, and record why everything else was not.
+
+    `config` carries the project's include/exclude patterns. Its two rules are
+    asymmetric on purpose, because a configuration file inside a repository is
+    untrusted input:
+
+    * **exclude** is checked early and always wins -- the safe direction.
+    * **include** widens *only* the allowlist decision. It cannot override a
+      secret refusal, `.gitignore`, the size limit or the binary check, so no
+      config file can talk Kernote into reading a private key.
+    """
+    config = config or ScanConfig()
     root = root.resolve()
     spec = _gitignore_spec(root) if respect_gitignore else None
     found: list[Found] = []
@@ -246,13 +264,17 @@ def walk(
             skipped.append(Skipped(rel_str, SkipReason.EXCLUDED))
             continue
         if _looks_secret(abs_path.name):
-            # Recorded but NEVER read.
+            # Recorded but NEVER read. Checked before the user's own patterns
+            # so an `include` cannot reach a credential file.
             skipped.append(Skipped(rel_str, SkipReason.SECRET_SUSPECTED))
+            continue
+        if config.matches_exclude(rel_str):
+            skipped.append(Skipped(rel_str, SkipReason.EXCLUDED))
             continue
         if spec is not None and spec.match_file(rel_str):
             skipped.append(Skipped(rel_str, SkipReason.GITIGNORED))
             continue
-        if not _allowlisted(abs_path):
+        if not _allowlisted(abs_path) and not config.matches_include(rel_str):
             skipped.append(Skipped(rel_str, SkipReason.NOT_ALLOWLISTED))
             continue
         try:

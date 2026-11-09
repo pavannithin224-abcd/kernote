@@ -1856,3 +1856,67 @@ set, and appeared within minutes of a real repository. A synthetic corpus tests
 that the code does what it did yesterday. Only a corpus nobody wrote for the
 purpose tests whether the product's claims are true. Q2 is closed as: **both** —
 the fixture for regression, a real repository for truth.
+
+---
+
+## ADR-0034 — A configurable include/exclude list, and what configuration may not do
+**Status:** accepted · 2026-11-09 · *satisfies a `CLAUDE.md` requirement*
+
+**Context.** `CLAUDE.md` has always required Kernote to "respect .gitignore and
+provide a configurable include/exclude list". Only half of that existed:
+`.gitignore` and an undocumented `.kernoteignore` were honoured, but there was
+no way to *include* anything, and nothing was visible in the application.
+
+Real-repo evaluation made the gap concrete rather than theoretical. ADR-0020c
+removed `.json` from the allowed suffixes because allowing it swept 2909
+generated manifests into the vault — which was right for that repository and
+wrong for one whose schemas happen to be JSON. Under-reading with an
+explanation is better than ingesting data, but only if the user can say
+otherwise.
+
+**Decision.** Three layers, merged with their provenance recorded so the result
+can be explained rather than merely obeyed:
+
+1. The built-in allowlist.
+2. **`.kernote.toml`** in the repository root — `[scan] include`/`exclude`, in
+   `.gitignore` pattern syntax. The project's declared intent, versioned with
+   the code and reviewable in a pull request. Kernote only ever *reads* it.
+3. A **per-project override** in Kernote's own database, editable from Settings
+   — the equivalent of `.git/info/exclude` beside a shared `.gitignore`, so
+   trying an exclusion does not require a commit.
+
+Nothing writes to the user's repository: `CLAUDE.md` forbids rewriting their
+files, and an approval flow for config writes would be a larger feature than
+the one being asked for.
+
+**The asymmetry is the design.** A configuration file inside a repository is
+untrusted input, so:
+
+* **exclude** is evaluated early and always wins over include;
+* **include** widens *only* the allowlist decision. It cannot override a secret
+  refusal (by filename or content), `.gitignore`, the size limit or the binary
+  check.
+
+`.gitignore` therefore has no off switch, because `CLAUDE.md` requires it be
+respected and a configurable exemption would be a way around that rule rather
+than an implementation of it.
+
+**Alternatives.** *Let Kernote write `.kernote.toml` from the UI* — the natural
+thing to want, and it needs the review/approval flow that canonical writes get;
+deferred rather than done badly. *Database only* — loses versioning and code
+review, which is most of the value for a team. *A `[tool.kernote]` table in
+`pyproject.toml`* — only sensible for Python projects, and Kernote is not one
+language's tool.
+
+**Consequences.** Malformed configuration raises rather than being ignored: a
+config the user believes is in force but which silently failed to parse is
+worse than an error, and an unrecognised `[scan]` key is reported by name so a
+typo does not look like it worked. Migration 0006 adds
+`project_scan_config`. Thirteen tests, of which five assert what configuration
+*cannot* do.
+
+Verified on the real repository: `exclude = ["datasets/**", "reports/**"]` skips
+68 files with reason `excluded`, and `include =
+["data/manifests/**/*reference.json"]` recovers exactly the 12 reference
+manifests that matter without the 2906 generated ones — the precise outcome
+ADR-0020c's blanket rule could not express.

@@ -15,7 +15,7 @@ from ..db.connection import transaction
 from ..db.repositories import memories as memory_repo
 from ..db.repositories import sources as source_repo
 from ..domain.models import ScanResult, SecretWarning, SkippedFile, SkipReason
-from . import entities, gitmeta
+from . import entities, gitmeta, scanconfig
 from .capture import Capture, capture_file
 from .extract import adr, code_symbols, manifests
 from .extract import markdown as md_extract
@@ -37,6 +37,9 @@ def scan_project(
     max_files: int,
 ) -> ScanResult:
     root = root.resolve()
+    # Read before anything is touched, so a malformed config fails the scan
+    # rather than silently scanning with the wrong rules.
+    config = scanconfig.effective(conn, project_id, root)
     is_repo = gitmeta.is_repo(root)
     commit = gitmeta.head_commit(root) if is_repo else None
     blobs = gitmeta.blob_hashes(root) if is_repo else {}
@@ -50,7 +53,9 @@ def scan_project(
     skipped: list = []
 
     try:
-        found, skipped = walk(root, max_file_bytes=max_file_bytes, max_files=max_files)
+        found, skipped = walk(
+            root, max_file_bytes=max_file_bytes, max_files=max_files, config=config
+        )
         with transaction(conn):
             for skip in skipped:
                 source_repo.record_skip(

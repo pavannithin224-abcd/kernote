@@ -66,6 +66,14 @@ export interface ContextBundle {
   note: string | null
 }
 
+export interface ScanConfig {
+  effective: { include: string[]; exclude: string[]; sources: string[]; notes: string[] }
+  override: { include: string[]; exclude: string[] }
+  config_filename: string
+  ignore_filename: string
+  rules: string[]
+}
+
 export interface EvalQuestionSet {
   version: number
   corpus: string
@@ -368,6 +376,12 @@ export const api = {
       body: JSON.stringify({ task, token_budget: tokenBudget }),
     }),
   mcpInfo: (id: string) => call<McpInfo>(`/projects/${id}/mcp`),
+  scanConfig: (id: string) => call<ScanConfig>(`/projects/${id}/scan-config`),
+  saveScanConfig: (id: string, include: string[], exclude: string[]) =>
+    call<ScanConfig>(`/projects/${id}/scan-config`, {
+      method: 'PUT',
+      body: JSON.stringify({ include, exclude }),
+    }),
   evalQuestionSet: () => call<EvalQuestionSet>('/evaluation/question-set'),
   runEvaluation: (allowDownload: boolean) =>
     call<EvalReport>('/evaluation/run', {

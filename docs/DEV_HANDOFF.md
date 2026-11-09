@@ -5,6 +5,74 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — A configurable include/exclude list
+
+The last outstanding `CLAUDE.md` requirement. Only half of it existed:
+`.gitignore` and an undocumented `.kernoteignore` were honoured, but there was
+no way to *include* anything and nothing was visible in the application.
+
+### What changed
+- **`ingest/scanconfig.py`** — three layers merged with provenance: the
+  built-in allowlist, `.kernote.toml` in the repository root, and a per-project
+  override in Kernote's own database (ADR-0034).
+- **`ingest/walker.py`** — exclude is evaluated early and always wins; include
+  widens only the allowlist decision.
+- **Migration 0006** — `project_scan_config`.
+- **`GET`/`PUT /projects/{id}/scan-config`** — the effective configuration with
+  its sources, and the local override. 28 endpoints.
+- **Settings & Evaluation** — a Scan configuration panel showing the effective
+  patterns, where each came from, and editable local overrides.
+- **README** — the configuration is now documented, including
+  `.kernoteignore`, which never was.
+- ADR-0034 added (49 ADRs).
+
+### The asymmetry is the whole design
+A configuration file inside a repository is untrusted input, so include is
+deliberately weaker than exclude. Include widens only the allowlist — "is this
+a kind of file Kernote reads?" — and **cannot** override a secret refusal,
+`.gitignore`, the size limit or the binary check. `.gitignore` has no off
+switch, because `CLAUDE.md` requires it be respected and a configurable
+exemption would be a way around that rule rather than an implementation of it.
+
+Five of the thirteen tests assert what configuration cannot do, including
+`include = [".env", "**/*"]`, which still refuses the credential file.
+
+### Verification performed
+- **410 tests pass, 5 skipped** (was 397). Thirteen new.
+- `ruff` clean, frontend builds.
+- Verified on the real repository, without writing to it:
+  `exclude = ["datasets/**", "reports/**"]` skips 68 files with reason
+  `excluded`; `include = ["data/manifests/**/*reference.json"]` recovers
+  exactly the **12** reference manifests that matter without the 2906
+  generated ones. `**/*.rst` is correctly a no-op, since `.rst` is already
+  allowlisted.
+- Migration 0006 applies to schema version 6 on a fresh database.
+
+### A note on my own first attempt
+The migration initially carried its own `BEGIN`/`COMMIT` and wrote to a
+`schema_migrations` table that does not exist. The runner wraps every script in
+a transaction already — because `executescript()` implicitly commits an outer
+one — and tracks versions in `schema_meta`. It failed loudly on the first run,
+which is what that design is for.
+
+### Known issues / blockers
+1. **Kernote cannot write `.kernote.toml` for you.** Editing the repository
+   file from the UI is the natural thing to want and needs the review/approval
+   flow canonical writes get. Deferred rather than done badly; the local
+   override covers the immediate need.
+2. **No native-Windows verification.** Still the largest untested claim.
+   ADR-0009 remains `proposed`.
+3. False abstention 28% on the fixture, 11% on the real repository. Q6
+   (centrality in term weighting) is the lever.
+4. Approval has no undo. The UI has had no visual pass.
+5. The RC tag `v0.1.0-rc.1` points at `22acb32` and does not include this work.
+
+### Next safe task
+**Windows verification** — the existing suite and `scripts/demo.py` run on
+native Windows, which needs a Windows machine and no new code. Then **Q6**.
+
+---
+
 ## 2026-11-09 — Real-repository evaluation (Q2): the central claim failed on first contact
 
 Everything measured so far came from a corpus written for the purpose. Pointing

@@ -120,6 +120,37 @@ With [`just`](https://github.com/casey/just) installed, `just dev` does the same
 and `just ci` runs lint, tests and the frontend build. Without `just` or honcho,
 `./scripts/dev.sh` is a plain-bash fallback.
 
+### Choosing what gets scanned
+
+Kernote reads a project's documentation, source and configuration under a
+built-in allowlist, honours `.gitignore`, and explains every file it skipped.
+To adjust it, commit a `.kernote.toml` to the repository root:
+
+```toml
+[scan]
+include = ["data/schemas/**/*.json", "deploy/*.yaml"]
+exclude = ["vendor/**", "docs/generated/**"]
+```
+
+`include` widens the allowlist — use it for meaningful files Kernote does not
+recognise by name. `exclude` skips paths regardless. A `.kernoteignore` file is
+read as additional exclude patterns. Patterns are `.gitignore` syntax.
+
+Four rules worth knowing, because the asymmetry is deliberate:
+
+- **Exclude always beats include.** The safe direction wins.
+- **Include widens only the allowlist** — the question "is this a kind of file
+  Kernote reads?"
+- **Include cannot override** a secret refusal, `.gitignore`, the size limit or
+  the binary check. A config file inside a repository is untrusted input and
+  must not be able to talk Kernote into reading a private key.
+- **`.gitignore` is always respected** and there is deliberately no switch to
+  disable it.
+
+Settings & Evaluation shows the effective configuration with its provenance,
+and holds a machine-local override — the equivalent of `.git/info/exclude` next
+to a shared `.gitignore`. Kernote never writes into your repository.
+
 The API serves `127.0.0.1:8787` and the web app proxies `/api` to it, so the
 browser only ever talks to one origin. The database lives in your platform data
 directory (`just where` prints the path); override it with `KERNOTE_DATA_DIR`.
@@ -176,9 +207,6 @@ true rather than aspirational.
 - **Approval has no undo.** A consolidation merge preserves full lineage and
   nothing is ever silently dropped, so the information survives — but there is
   no one-click reverse of an approval.
-- **The include/exclude list is not configurable yet.** The scanner honours
-  `.gitignore` and a built-in deny-list for secrets, binaries and build output,
-  but the deny-list cannot yet be edited per project.
 - **The UI is functional, not finished.** It shows real data and real error
   states throughout, and a visual pass is deliberately still outstanding.
 - The agent-memory space is crowded and partly free. Kernote's claim is narrow
