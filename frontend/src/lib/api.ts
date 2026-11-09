@@ -94,6 +94,7 @@ export interface EvalReport {
   memories_scanned: number
   semantic: boolean
   elapsed_seconds: number
+  retrieval_depth: number
   recall_at_k: Record<string, number | null>
   mrr: number | null
   ndcg_at_10: number | null

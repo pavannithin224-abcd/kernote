@@ -103,3 +103,28 @@ def test_agrees_with_ranx(name, ours, binarise):
     theirs = float(ranx_mod.evaluate(ranx_mod.Qrels(qrels_d), ranx_mod.Run(run_d), name))
     computed = metrics.mean([ours(r, g) for r, g in mine.values()])
     assert computed == pytest.approx(theirs, abs=1e-9)
+
+
+# ─── defects found in the Stage 8 sweep ────────────────────────────────────
+
+
+def test_a_repeated_key_cannot_score_twice():
+    """Recall read 1.0 when one of two answering documents had been found.
+
+    `_ranked_paths` does collapse duplicates, but a metric that silently
+    reports a half-success as a perfect score cannot depend on its caller
+    being careful.
+    """
+    grades = {"a": 2, "b": 2}
+    assert metrics.recall_at_k(["a", "a"], grades, 5) == 0.5
+    assert metrics.precision_at_k(["a", "a"], grades, 5) == pytest.approx(0.2)
+    # Rank is counted over distinct documents too.
+    assert metrics.reciprocal_rank(["x", "x", "a"], {"a": 2}) == 0.5
+
+
+@pytest.mark.parametrize("k", [0, -1, -10])
+def test_a_cut_off_of_zero_or_less_measures_nothing(k):
+    """It returned 0.0, which `mean` averaged in as a real score."""
+    assert math.isnan(metrics.recall_at_k(["a"], {"a": 2}, k))
+    assert math.isnan(metrics.precision_at_k(["a"], {"a": 2}, k))
+    assert math.isnan(metrics.ndcg_at_k(["a"], {"a": 2}, k))

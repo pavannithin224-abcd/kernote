@@ -10,8 +10,10 @@ checks our arithmetic without becoming a prerequisite for `pytest`.
 
 Conventions, so the reported numbers can be compared with anything else:
 
-* `ranked` is a list of document keys, best first, with duplicates already
-  collapsed by the caller.
+* `ranked` is a list of document keys, best first. Duplicates are **collapsed
+  here** rather than trusted to the caller: counting a repeated key twice
+  reported Recall 1.0 when one of two answering documents had been found, and
+  a metric that reads 1.0 on a half-success is worse than no metric.
 * `grades` maps a document key to a positive integer relevance grade. A key
   absent from `grades` has grade 0.
 * **Recall@k** counts only *fully* relevant documents — grade >= `RELEVANT`.
@@ -46,6 +48,17 @@ def _fully_relevant(grades: dict[str, int]) -> set[str]:
     return {key for key, grade in grades.items() if grade >= RELEVANT}
 
 
+def _distinct(ranked: list[str], k: int) -> list[str]:
+    """The first `k` positions, with repeats dropped and order kept."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for key in ranked[:k]:
+        if key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
 def recall_at_k(ranked: list[str], grades: dict[str, int], k: int) -> float:
     """Share of the answering documents that appear in the top `k`.
 
@@ -55,9 +68,11 @@ def recall_at_k(ranked: list[str], grades: dict[str, int], k: int) -> float:
     drag an average down.
     """
     relevant = _fully_relevant(grades)
-    if not relevant:
+    if not relevant or k <= 0:
+        # k <= 0 measures nothing. Returning 0.0 -- as this did -- would be a
+        # score, and `mean` would average it in and drag the result down.
         return float("nan")
-    hits = sum(1 for key in ranked[:k] if key in relevant)
+    hits = sum(1 for key in _distinct(ranked, k) if key in relevant)
     return hits / len(relevant)
 
 
@@ -69,7 +84,7 @@ def precision_at_k(ranked: list[str], grades: dict[str, int], k: int) -> float:
     """
     if k <= 0:
         return float("nan")
-    hits = sum(1 for key in ranked[:k] if key in _fully_relevant(grades))
+    hits = sum(1 for key in _distinct(ranked, k) if key in _fully_relevant(grades))
     return hits / k
 
 
@@ -82,7 +97,7 @@ def reciprocal_rank(ranked: list[str], grades: dict[str, int]) -> float:
     relevant = _fully_relevant(grades)
     if not relevant:
         return float("nan")
-    for index, key in enumerate(ranked, start=1):
+    for index, key in enumerate(_distinct(ranked, len(ranked)), start=1):
         if key in relevant:
             return 1.0 / index
     return 0.0

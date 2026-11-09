@@ -140,7 +140,7 @@ true rather than aspirational.
 - Retrieval answers are **extractive**, not generated prose. Kernote does not
   compete with frontier-LLM codebase chat on fluency; it competes on whether the
   citations are correct and the abstentions are honest. Measured on our own
-  31-question labelled set: **citation correctness 51%**, **useful abstention
+  31-question labelled set: **citation correctness 52%**, **useful abstention
   67%**, Recall@5 0.70. The known weakness is the opposite error — on 24% of
   answerable questions it finds the right document and declines to call it an
   answer, because a paraphrased question shares no words with the source it

@@ -5,6 +5,101 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 8 defect sweep: the measurement apparatus was itself wrong
+
+Seven defects. Three were in the code the evaluation measures, and **four were
+in the evaluation itself** — which is the uncomfortable part: a harness that
+reports confident numbers about correctness is the last place a wrong number
+can be noticed.
+
+### What changed
+- **`retrieval/answer.py`** — document frequency now comes from the FTS index
+  instead of a full table scan, and term weights are clamped at zero
+  (ADR-0029a).
+- **`eval/metrics.py`** — duplicate keys collapse inside the metric, and
+  `k <= 0` returns `nan` instead of `0.0`.
+- **`eval/runner.py`** — a report lists only the cut-offs its retrieval depth
+  can support, and states the depth.
+- **`eval/questions.py`** — a corpus path that escapes the question set's own
+  directory is refused, as is an empty set (ADR-0029b).
+- **Settings screen** — shows the retrieval depth and no longer labels nDCG
+  with a fixed k.
+- `docs/EVALUATION.md` regenerated. ADR-0029a and ADR-0029b added (44 ADRs).
+
+### The seven defects
+
+**1. The support gate was a full table scan on every question.** The worst of
+them. It read every memory and chunk and stemmed the text in Python for a
+handful of counts: **75ms per question on 754 rows, 88-92% of the whole cost of
+answering**, growing linearly with the vault. It now uses the FTS index, which
+is already tokenised `porter unicode61` and therefore already stem-aware.
+`ask()` went **83ms → 18ms** and **86ms → 30ms**, and the evaluation's verdicts
+came out **identical** — answered 12, lead_only 3, missed 10. Citation
+correctness even rose slightly, 41.9% → 43.4%, because Porter weights a few
+terms differently.
+
+**2. A term in every record carried a negative weight.** `log(N/(1+df))` goes
+negative once `df` reaches `N`. A question whose terms were all ubiquitous
+summed to a negative total weight, which flipped the sign of the share;
+matching a common term gave -0.005. The gate behaved correctly **by luck**, since
+a negative share is below any positive threshold — which is the kind of
+correctness that stops being correct the moment anything nearby changes.
+
+**3. A metric reported cut-offs it never measured.** `Recall@10` was printed
+for a run that only ever retrieved three documents: Recall@3 under a different
+name, and a `limit=3` run printed four identical numbers under four labels.
+This is the Stage 7 lesson — a stated number must describe what was delivered —
+reappearing in the tool built to check honesty.
+
+**4. A repeated document scored twice.** Recall read **1.0** when one of two
+answering documents had been found. `_ranked_paths` does dedupe, so nothing was
+mismeasured in practice, but a metric cannot depend on its caller being careful.
+
+**5. `recall_at_k(k=0)` returned 0.0**, which `mean` averaged in as a real
+score. `precision_at_k` already returned `nan`; the two disagreed.
+
+**6. A question set could aim a scan at any directory.** `"corpus":
+"../../../../etc"` loaded and resolved to `/etc`; so did `"/etc"`. `CLAUDE.md`
+forbids reading credentials during scanning, and relying on the walker's
+deny-list to save us is not a security property. A corpus must now resolve
+inside the set's own directory or one level above (ADR-0029b).
+
+**7. An empty question set loaded happily** and produced a report of `n/a`
+everywhere that still looked like a measurement.
+
+### Verification performed
+- **389 tests pass, 5 skipped** (was 379). 10 new, one per defect plus the
+  allowed-layout cases.
+- The ranx cross-check still agrees to 1e-9 after the distinct-key change:
+  **16 passed** under `requirements-eval.txt`.
+- `ruff` clean, `tsc -b` and `npm run build` clean.
+- Before/after timings measured on this repository at 754 rows, not a fixture.
+- `docs/EVALUATION.md` regenerated; the ADR-0014a conclusion is unchanged.
+
+### Known issues / blockers
+1. **False abstention remains the headline weakness at 20-24%** and the
+   `lead_only` gap is its cause. Open question Q5 (ADR-0014a) is the decision
+   that would close it.
+2. The support threshold is still fitted on the same 31 questions the metrics
+   are reported on. A held-out split needs more questions.
+3. **The include/exclude list is not configurable.** `walker.py` has a
+   hardcoded `EXCLUDED_DIRS`, and `CLAUDE.md` asks for a configurable list.
+   Pre-existing, not Stage 8, and now more visible because `samples/eval-repo`
+   means a self-scan of Kernote ingests the fixture service's documents --
+   including its deliberate contradiction, which our own conflict detection
+   will flag against our own project. Harmless but noisy for dogfooding.
+4. Approval still has no undo (Stage 6).
+5. Proposal items P3, P6-P10, P12-P13 unapplied. ADR-0009 open; Q1/Q2/Q4 open,
+   Q5 new. No Windows verification of the native wheels.
+
+### Next safe task
+**Stage 9 (Day 25): the release candidate.** Tag, demo script that runs end to
+end from a clean clone, and a known-limitations list with measured numbers
+behind it. The honest headline: citation correctness 52%, useful abstention
+67%, Recall@5 0.70, with the `lead_only` gap named as the known weakness.
+
+---
+
 ## 2026-11-09 — Stage 8: evaluation, and what it found
 
 The first honest measurement of retrieval quality, and it immediately failed

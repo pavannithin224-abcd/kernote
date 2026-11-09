@@ -111,12 +111,13 @@ export default function Settings() {
               <Stat label="Recall@1" value={num(report.recall_at_k['1'])} />
               <Stat label="Recall@5" value={num(report.recall_at_k['5'])} />
               <Stat label="MRR" value={num(report.mrr)} />
-              <Stat label="nDCG@10" value={num(report.ndcg_at_10)} />
+              <Stat label="nDCG" value={num(report.ndcg_at_10)} />
             </div>
             <p className="text-[12px] mt-2" style={{ color: 'var(--muted)' }}>
               {report.memories_scanned} memories ·{' '}
               {report.semantic ? 'hybrid keyword + semantic' : 'keyword only'} ·{' '}
-              {report.elapsed_seconds}s. Recall and MRR are averaged over the
+              retrieval depth {report.retrieval_depth} · {report.elapsed_seconds}s. No
+              cut-off deeper than that depth is reported. Recall and MRR are averaged over the
               answerable questions only — scoring an unanswerable question zero
               would make honest abstention look like failed retrieval.
             </p>

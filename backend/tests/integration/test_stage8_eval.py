@@ -145,3 +145,48 @@ def test_run_endpoint_scores_the_set_without_touching_the_user_vault(client, con
 def test_run_endpoint_rejects_an_absurd_limit(client):
     assert client.post("/api/v1/evaluation/run", json={"limit": 0}).status_code == 422
     assert client.post("/api/v1/evaluation/run", json={"limit": 999}).status_code == 422
+
+
+# ─── defects found in the Stage 8 sweep ────────────────────────────────────
+
+
+def test_it_reports_no_cut_off_deeper_than_it_searched(conn, question_set, scanned):
+    """Recall@10 from a run that retrieved three documents is Recall@3 with a
+    misleading label. All four cut-offs used to be printed whatever the depth."""
+    shallow = runner.run(conn, question_set=question_set, project_id=scanned, limit=3)
+    assert set(shallow.recall_at_k) == {1, 3}
+    assert shallow.retrieval_depth == 3
+    assert "Retrieval depth was 3" in runner.to_markdown(shallow)
+    assert "Recall@10" not in runner.to_markdown(shallow)
+
+    deep = runner.run(conn, question_set=question_set, project_id=scanned, limit=10)
+    assert set(deep.recall_at_k) == {1, 3, 5, 10}
+
+
+def test_a_term_in_every_record_is_worth_nothing_not_less(conn, scanned):
+    """Unclamped, log(N/(N+1)) gave a ubiquitous term a small *negative*
+    weight, which made an all-common question's total weight negative and
+    flipped the sign of the information share."""
+    weights = answer_mod._term_weights({"everywhere": 51, "absent": 0}, 51)
+    assert weights["everywhere"] == 0.0
+    assert weights["absent"] > 0
+    assert all(w >= 0 for w in weights.values())
+    # And the degenerate case cannot produce a negative denominator.
+    all_common = answer_mod._term_weights({"a": 10, "b": 10}, 10)
+    assert sum(all_common.values()) == 0.0
+
+
+def test_document_frequency_uses_the_index_not_a_full_scan(conn, scanned):
+    """It was 75ms per question on a 754-row corpus and 88-92% of the cost of
+    answering -- a linear scan with Python stemming in the interactive path.
+
+    Asserted by behaviour rather than by a timing, which would be flaky: the
+    counts must be bounded by the corpus and must find a term that is really
+    there, and the query plan must use the FTS tables.
+    """
+    terms = {"redis", "postgresql", "definitelynotinthiscorpus"}
+    counts, total = answer_mod._document_frequency(conn, scanned, terms)
+    assert total > 0
+    assert counts["definitelynotinthiscorpus"] == 0
+    assert counts["redis"] > 0, "a term that is in the corpus must be counted"
+    assert all(0 <= c <= total for c in counts.values())

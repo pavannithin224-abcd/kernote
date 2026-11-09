@@ -1562,3 +1562,85 @@ with. A high cosine similarity is a plausible third tier between "lead" and
 a user can check by reading, so it needs its own ADR and is not slipped in
 here. Leaving it unresolved is the conservative choice: the product currently
 under-claims, which is the right direction to err.
+
+---
+
+## ADR-0029a — Document frequency comes from the index; a metric reports only what it measured
+**Status:** accepted · 2026-11-09 · *amends ADR-0029 and ADR-0030*
+
+**Context.** The Stage 8 sweep found that ADR-0030's support gate, which is the
+right idea, had been implemented in the wrong place and at the wrong cost, and
+that two of the metrics reporting on it were quietly wrong.
+
+**1. The gate was a full table scan in the interactive path.** The first
+`_document_frequency` read every memory and chunk and stemmed the text in
+Python for a handful of counts. Measured on this repository — 754 rows, 200k
+characters — it cost **75ms per question, 88-92% of the entire cost of
+answering**, and grew linearly with the vault. Every question paid it.
+
+**2. A term in every record carried a negative weight.** `log(N/(1+df))` is
+negative once `df` reaches `N`: a ubiquitous term scored -0.019, and a
+single-record corpus -0.693. A question whose terms were all ubiquitous summed
+to a *negative* total weight, which flipped the sign of the information share;
+matching a common term produced a share of -0.005. The gate still behaved
+correctly, by luck, because a negative share is below any positive threshold.
+
+**3. Metrics reported cut-offs they never measured.** `Recall@10` was printed
+for a run that retrieved three documents — Recall@3 with a misleading label,
+and a `limit=3` run printed four identical numbers under four different names.
+A repeated key also scored twice, so Recall read **1.0** when one of two
+answering documents had been found. And `recall_at_k` with `k <= 0` returned
+`0.0`, which `mean` then averaged in as a real score.
+
+**Decision.**
+1. Document frequency is counted through the **FTS index**, one indexed query
+   per term. The FTS tables are tokenised `porter unicode61`, so the counts are
+   already stem-aware, and the term's own variants are OR'd in. Porter and our
+   suffix stemmer still disagree at the margins, which can leave a count
+   slightly *low* — making a term look rarer and the gate **stricter**, never
+   looser. The error can cost an unnecessary abstention; it cannot produce
+   false confidence. That asymmetry is why this trade is acceptable.
+2. Term weights are clamped at zero. A term that tells us nothing is worth
+   nothing, not less than nothing. When every weight is zero there is nothing
+   to discriminate with and the overlap bar stands alone — now stated, rather
+   than reached by dividing by a negative number.
+3. Metrics collapse duplicate keys themselves rather than trusting the caller,
+   and return `nan` for `k <= 0`. A report lists only the cut-offs its
+   retrieval depth can support, and states that depth.
+
+**Consequences.** `ask()` went from 83ms to 18ms and from 86ms to 30ms on the
+two measured questions — **4 to 7 times faster** — and the evaluation's
+verdicts are **identical**: answered 12, lead_only 3, missed 10,
+correctly_declined 4, wrongly_asserted 2, abstention 66.7%. Citation
+correctness moved slightly up, 41.9% to 43.4% keyword and 51.1% to 52.2%
+hybrid, because the Porter counts weight a few terms differently. The ADR-0014a
+conclusion is unchanged. The ranx cross-check still agrees to 1e-9 after the
+distinct-key change.
+
+---
+
+## ADR-0029b — A question set may not aim a scan at an arbitrary directory
+**Status:** accepted · 2026-11-09 · *amends ADR-0029*
+
+**Context.** ADR-0029 made a question set self-describing: `corpus` is a path
+relative to the set's own file, so a set can be dropped anywhere and still find
+what it describes. The sweep tried `"corpus": "../../../../etc"`. It loaded,
+resolved to `/etc`, and the harness would then have pointed a repository scan
+at it. `"/etc"` worked too. `CLAUDE.md` forbids reading credentials and private
+keys during scanning, and the walker's deny-list is the wrong place to rely on
+for this: the path should never have been accepted.
+
+**Decision.** A corpus must resolve inside the question set's own directory or
+one level above it — which is exactly what an `eval/questions.json` pointing at
+`samples/eval-repo` needs, and nothing more. Anything else is refused by name
+and reason. An **empty** question set is refused as well: every metric would be
+undefined and the report would still look like a measurement.
+
+**Alternatives.** *Trust the walker* — its allowlist would skip most of `/etc`,
+but "most" is not a security property, and the scan should not begin. *Require
+an absolute path* — no better, and it breaks the self-describing property.
+*Pin the corpus to the repository root* — would stop a user pointing a set at
+their own repository, which is a use we want.
+
+**Consequences.** Four tests, including both traversal forms and both allowed
+layouts. The shipped set is unaffected.

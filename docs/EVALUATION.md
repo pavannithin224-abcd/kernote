@@ -21,8 +21,8 @@ generated answer to score for fluency, deliberately.
 | Recall@10 | 0.600 | 0.700 |
 | MRR | 0.568 | 0.611 |
 | nDCG@10 | 0.592 | 0.663 |
-| Citation correctness | 41.9% | 51.1% |
-| Citation correctness (strict) | 33.7% | 40.4% |
+| Citation correctness | 43.4% | 52.2% |
+| Citation correctness (strict) | 34.9% | 41.3% |
 | Useful abstention | 66.7% | 66.7% |
 | False abstention | 20.0% | 24.0% |
 | Retrieved an answering doc | 60.0% | 72.0% |

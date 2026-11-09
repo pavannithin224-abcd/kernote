@@ -50,7 +50,7 @@ def question_set() -> dict:
         "measures": [
             "citation correctness",
             "useful abstention rate",
-            "Recall@k, MRR, nDCG@10",
+            "Recall@k, MRR, nDCG",
         ],
     }
 

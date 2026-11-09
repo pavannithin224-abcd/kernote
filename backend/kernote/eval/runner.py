@@ -67,6 +67,17 @@ RECALL_KS = (1, 3, 5, 10)
 NDCG_K = 10
 
 
+def _reportable_ks(depth: int) -> tuple[int, ...]:
+    """The cut-offs a run at this retrieval depth can honestly report.
+
+    Recall@10 from a run that only ever retrieved three documents is Recall@3
+    wearing a different label. The first version printed all four cut-offs
+    whatever the depth, so a `limit=3` run reported four identical numbers and
+    called one of them Recall@10.
+    """
+    return tuple(k for k in RECALL_KS if k <= depth) or (depth,)
+
+
 DECLINED_OUTCOMES = frozenset({"not_found", "weak_evidence"})
 
 
@@ -103,6 +114,8 @@ class EvalReport:
     memories_scanned: int
     semantic: bool
     elapsed_seconds: float
+    retrieval_depth: int = 0
+    """How many results were asked for. Cut-offs above this are not reported."""
     recall_at_k: dict[int, float] = field(default_factory=dict)
     mrr: float = float("nan")
     ndcg_at_10: float = float("nan")
@@ -213,9 +226,9 @@ def _score(conn: sqlite3.Connection, question: Question, bundle, limit: int) -> 
         verdict=verdict,
         retrieved_answer=retrieved_answer,
         retrieved=ranked[:limit],
-        recall={k: metrics.recall_at_k(ranked, grades, k) for k in RECALL_KS},
+        recall={k: metrics.recall_at_k(ranked, grades, k) for k in _reportable_ks(limit)},
         reciprocal_rank=metrics.reciprocal_rank(ranked, grades),
-        ndcg=metrics.ndcg_at_k(ranked, grades, NDCG_K),
+        ndcg=metrics.ndcg_at_k(ranked, grades, min(NDCG_K, limit)),
         precision_at_5=metrics.precision_at_k(ranked, grades, 5)
         if question.kind == "answerable"
         else float("nan"),
@@ -295,6 +308,7 @@ def run(
         memories_scanned=memories,
         semantic=semantic,
         elapsed_seconds=round(time.perf_counter() - started, 3),
+        retrieval_depth=limit,
         outcomes={
             outcome: sum(1 for r in results if r.outcome == outcome)
             for outcome in sorted({r.outcome for r in results})
@@ -313,7 +327,9 @@ def run(
             if answerable
             else float("nan")
         ),
-        recall_at_k={k: metrics.mean([r.recall[k] for r in results]) for k in RECALL_KS},
+        recall_at_k={
+            k: metrics.mean([r.recall[k] for r in results]) for k in _reportable_ks(limit)
+        },
         mrr=metrics.mean([r.reciprocal_rank for r in results]),
         ndcg_at_10=metrics.mean([r.ndcg for r in results]),
         precision_at_5=metrics.mean([r.precision_at_5 for r in results]),
@@ -384,7 +400,7 @@ def to_markdown(report: EvalReport) -> str:
         "",
         "| Measure | Value |",
         "|---|---|",
-        f"| Retrieved an answering document (top {NDCG_K}) | "
+        f"| Retrieved an answering document (top {report.retrieval_depth}) | "
         f"{pct(report.retrieval_success_rate)} |",
         f"| ...and asserted it as evidence | {pct(report.answer_rate)} |",
         "",
@@ -399,16 +415,18 @@ def to_markdown(report: EvalReport) -> str:
         "| Metric | Value |",
         "|---|---|",
     ]
-    for k in RECALL_KS:
-        lines.append(f"| Recall@{k} | {num(report.recall_at_k.get(k, float('nan')))} |")
+    for k in sorted(report.recall_at_k):
+        lines.append(f"| Recall@{k} | {num(report.recall_at_k[k])} |")
     lines += [
         f"| MRR | {num(report.mrr)} |",
-        f"| nDCG@{NDCG_K} | {num(report.ndcg_at_10)} |",
+        f"| nDCG@{min(NDCG_K, report.retrieval_depth or NDCG_K)} | "
+        f"{num(report.ndcg_at_10)} |",
         f"| Precision@5 | {num(report.precision_at_5)} |",
         "",
-        "Recall and MRR are averaged over the answerable questions only; an "
-        "unanswerable question has no recall, and scoring it zero would make "
-        "honest abstention look like failed retrieval.",
+        f"Retrieval depth was {report.retrieval_depth}, so no cut-off above "
+        "that is reported. Recall and MRR are averaged over the answerable "
+        "questions only; an unanswerable question has no recall, and scoring it "
+        "zero would make honest abstention look like failed retrieval.",
         "",
         "## Per question",
         "",

@@ -139,33 +139,51 @@ def _document_frequency(
 ) -> tuple[dict[str, int], int]:
     """How many of the project's records mention each term, and how many exist.
 
-    Deterministic and explainable: it is a count over the records already
-    stored, so a user can be told *why* a term was treated as uninformative.
+    Counted through the FTS index, one indexed query per term. The first
+    implementation scanned every memory and chunk and stemmed the text in
+    Python, which measured **75ms per question on a 754-row corpus and 88-92%
+    of the total cost of answering** -- a linear-time full scan added to the
+    interactive path for a handful of counts.
+
+    The FTS tables are tokenised `porter unicode61`, so these counts are
+    already stem-aware; the term's own variants are OR'd in as well so a
+    question's wording matches the same records `_mentions` would. Porter and
+    our suffix stemmer still disagree at the margins, which can leave a count
+    slightly *lower* than the exact one. That makes a term look rarer and the
+    support gate stricter, never looser, so the error cannot produce false
+    confidence -- only, at worst, an unnecessary abstention.
     """
     total = conn.execute(
-        "SELECT (SELECT COUNT(*) FROM memories WHERE project_id=?) + "
+        "SELECT (SELECT COUNT(*) FROM memories WHERE project_id=? "
+        "        AND status NOT IN ('superseded','archived')) + "
         "       (SELECT COUNT(*) FROM chunks c JOIN source_files sf "
-        "        ON sf.id=c.source_file_id WHERE sf.project_id=?) AS c",
+        "        ON sf.id=c.source_file_id WHERE c.project_id=? "
+        "        AND sf.is_current=1) AS c",
         (project_id, project_id),
     ).fetchone()["c"]
     if not total:
-        return {term: 0 for term in terms}, 0
+        return dict.fromkeys(terms, 0), 0
 
     counts: dict[str, int] = {}
-    rows = conn.execute(
-        "SELECT COALESCE(title,'') || ' ' || COALESCE(summary,'') || ' ' || "
-        "       COALESCE(content,'') AS t FROM memories WHERE project_id=? "
-        "UNION ALL "
-        "SELECT COALESCE(c.heading_path,'') || ' ' || c.text AS t FROM chunks c "
-        "JOIN source_files sf ON sf.id=c.source_file_id WHERE sf.project_id=?",
-        (project_id, project_id),
-    ).fetchall()
-    for row in rows:
-        stems = _stems_of(row["t"])
-        for term in terms:
-            if _mentions(stems, term):
-                counts[term] = counts.get(term, 0) + 1
-    return {term: counts.get(term, 0) for term in terms}, total
+    for term in terms:
+        match = " OR ".join(f'"{v}"' for v in sorted(_variants(term)) if v)
+        if not match:
+            counts[term] = 0
+            continue
+        row = conn.execute(
+            "SELECT (SELECT COUNT(*) FROM memories_fts "
+            "        JOIN memories m ON m.rowid = memories_fts.rowid "
+            "        WHERE memories_fts MATCH ? AND m.project_id = ? "
+            "          AND m.status NOT IN ('superseded','archived')) + "
+            "       (SELECT COUNT(*) FROM chunks_fts "
+            "        JOIN chunks c ON c.rowid = chunks_fts.rowid "
+            "        JOIN source_files sf ON sf.id = c.source_file_id "
+            "        WHERE chunks_fts MATCH ? AND c.project_id = ? "
+            "          AND sf.is_current = 1) AS c",
+            (match, project_id, match, project_id),
+        ).fetchone()
+        counts[term] = int(row["c"])
+    return counts, total
 
 
 def _term_weights(frequencies: dict[str, int], total: int) -> dict[str, float]:
@@ -178,7 +196,13 @@ def _term_weights(frequencies: dict[str, int], total: int) -> dict[str, float]:
     """
     if not total:
         return dict.fromkeys(frequencies, 1.0)
-    return {term: math.log(total / (1 + count)) for term, count in frequencies.items()}
+    # Clamped at zero. Unclamped, a term present in *every* record scored
+    # log(N/(N+1)) -- a small negative weight, which made the total weight of
+    # an all-common question negative and flipped the sign of the share. A
+    # term that tells us nothing must be worth nothing, not less than nothing.
+    return {
+        term: max(0.0, math.log(total / (1 + count))) for term, count in frequencies.items()
+    }
 
 
 def _stems_of(text: str) -> set[str]:
@@ -356,6 +380,9 @@ def ask(
     whole = sum(weights.values())
 
     def information_share(item: EvidenceItem) -> float:
+        # Every term is in every record, so there is nothing to discriminate
+        # with and the overlap bar stands alone. Stated, rather than arrived at
+        # by dividing by a negative number.
         if whole <= 0:
             return 1.0
         return sum(weights.get(t, 0.0) for t in item.matched_terms) / whole

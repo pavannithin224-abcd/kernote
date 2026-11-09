@@ -76,3 +76,47 @@ def test_a_grade_outside_the_documented_scale_is_refused(tmp_path):
     )
     with pytest.raises(ValidationError, match="outside the documented"):
         qs.load(path)
+
+
+def test_a_corpus_outside_the_question_set_is_refused(tmp_path):
+    """`corpus` is a relative path in a data file, and `../../../../etc`
+    resolved happily -- which would have pointed a scan at it."""
+    (tmp_path / "set").mkdir()
+    path = tmp_path / "set" / "questions.json"
+    for corpus in ("../../../../etc", "/etc"):
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "corpus": corpus,
+                    "questions": [{"id": "q1", "question": "?", "kind": "unanswerable"}],
+                }
+            )
+        )
+        with pytest.raises(ValueError, match="outside"):
+            qs.load(path)
+
+
+def test_a_corpus_beside_or_one_level_up_is_allowed(tmp_path):
+    """The real layout is `eval/questions.json` pointing at `samples/`."""
+    (tmp_path / "set").mkdir()
+    (tmp_path / "sibling").mkdir()
+    path = tmp_path / "set" / "questions.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "corpus": "../sibling",
+                "questions": [{"id": "q1", "question": "?", "kind": "unanswerable"}],
+            }
+        )
+    )
+    assert qs.load(path).questions
+
+
+def test_an_empty_question_set_is_refused(tmp_path):
+    """Every metric would be undefined and the report would still look like a
+    measurement."""
+    path = _write(tmp_path, [])
+    with pytest.raises(ValueError, match="empty"):
+        qs.load(path)

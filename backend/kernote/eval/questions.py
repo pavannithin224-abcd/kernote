@@ -80,6 +80,23 @@ def default_path() -> Path:
     return Path(__file__).resolve().parents[3] / "eval" / "questions.json"
 
 
+def allowed_root(question_set: QuestionSet) -> Path:
+    """The directory a question set's corpus must stay inside.
+
+    One level above the set's own file, which is what a `project/eval/` layout
+    needs to reach `project/samples/`. The guard exists because `corpus` is a
+    relative path from a data file: `../../../../etc` resolved happily, and the
+    harness would then have pointed a scan at it. `CLAUDE.md` forbids reading
+    credentials during scanning, and the cheapest way to honour that is to
+    refuse the path rather than to trust the walker's deny-list to catch
+    whatever is in there.
+    """
+    base = (
+        question_set.source_path.parent if question_set.source_path else default_path().parent
+    )
+    return base.parent.resolve()
+
+
 def corpus_path(question_set: QuestionSet, *, root: Path | None = None) -> Path:
     base = root or (
         question_set.source_path.parent if question_set.source_path else default_path().parent
@@ -99,8 +116,21 @@ def load(path: Path | None = None, *, validate_corpus: bool = True) -> QuestionS
     if duplicates:
         raise ValueError(f"duplicate question ids: {sorted(duplicates)}")
 
+    if not question_set.questions:
+        raise ValueError(
+            "the question set is empty; every metric would be undefined and the "
+            "report would look like a measurement"
+        )
+
     if validate_corpus:
         corpus = corpus_path(question_set)
+        root = allowed_root(question_set)
+        if not corpus.is_relative_to(root):
+            raise ValueError(
+                f"corpus {question_set.corpus!r} resolves to {corpus}, outside "
+                f"{root}. A question set may only point at a corpus beside it, "
+                "so a data file cannot aim a scan at an arbitrary directory."
+            )
         if not corpus.is_dir():
             raise FileNotFoundError(f"corpus not found: {corpus}")
         missing = sorted(
