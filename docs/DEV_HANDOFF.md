@@ -5,6 +5,56 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Code symbols work on Windows: language-pack 0.4.0 → 1.25.0
+
+ADR-0009a left two Windows caveats. One is now gone.
+
+### What changed
+- **`tree-sitter-language-pack` 0.4.0 → 1.25.0** in `backend/requirements.txt`,
+  with the reason written beside the pin (ADR-0009b).
+- **The ADR-0009a guard test narrowed** to named source roots.
+
+### The result
+| | Windows | Linux |
+|---|---|---|
+| Before | 13 failed, 391 passed | 411 passed |
+| After | **3 failed, 402 passed** | **411 passed** |
+
+All four languages load on Windows, all 23 code-symbol tests pass there, and a
+Windows scan now produces **51 memories — identical to Linux** — with matching
+metrics (citation correctness 37.9%, useful abstention 83.3%, Recall@5 0.6).
+The three remaining failures are Change Impact needing Git on `PATH`.
+
+### Checked before pinning, not after
+The Stage 7 lesson. A `--dry-run --report` showed **one** package changing and
+nothing transitive; `tree-sitter` core stays at 0.23.2, so `Language.query()`
+is untouched and no code change was needed; `pip check` is clean on both
+platforms; grammar loading is immeasurable.
+
+### Two things that could have misled me
+- The first post-bump Linux run showed **4 failures and took 369s** against a
+  normal 40s. Both transient — a re-run was clean at 36.7s and the code-symbol
+  file passed in isolation. Had I stopped there I would have reverted a good
+  bump.
+- **My own guard test failed on Windows**, and it was the guard's bug: it
+  globbed from the repository root and swept in the Windows virtualenv's
+  site-packages, because `.venv-win` does not match a `.venv` exclusion. It
+  checks named source roots now, and a planted offender confirms it still
+  fires.
+
+### Known issues / blockers
+1. **Git is not installed on the Windows machine**, so Change Impact is
+   unverified there. It is a documented prerequisite and everything else works
+   without it.
+2. The frontend build is still untested on Windows (no Node).
+3. False abstention (Q6) and the UI visual pass remain.
+4. The RC tag `v0.1.0-rc.1` points at `22acb32` and predates Windows work.
+
+### Next safe task
+**Q6** — centrality in term weighting, the remaining lever on false abstention.
+
+---
+
 ## 2026-11-09 — Native Windows verified (ADR-0009a)
 
 The largest untested claim in the project, carried since day one. Run on native

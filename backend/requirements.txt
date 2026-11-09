@@ -22,7 +22,15 @@ numpy==2.5.4
 
 # --- Stage 3: code symbols (ADR-0012) ---
 tree-sitter==0.23.2
-tree-sitter-language-pack==0.4.0   # native wheel; risk R11
+# Bumped 0.4.0 -> 1.25.0 after native-Windows verification: on 0.4.0 the
+# grammars installed but would not load there -- all 155 .pyd files present,
+# tree_sitter core importing, MSVC runtime on the machine, and
+# get_language("python") still raising "DLL load failed". 1.25.0 loads all four
+# of our languages on Windows and takes its failures from 13 to 3 (the rest
+# need Git). Verified on both platforms before pinning: one package changed,
+# nothing transitive, tree-sitter core stays at 0.23.2 so the query() API is
+# unchanged, and Linux is 411 passed either way (ADR-0009b).
+tree-sitter-language-pack==1.25.0
 
 # --- Stage 3: secrets + diffs (ADR-0013) ---
 unidiff==0.7.5          # diff hunk parsing for drift detection

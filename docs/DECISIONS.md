@@ -1998,3 +1998,52 @@ is stated as untested rather than assumed.
 **Final numbers.** Linux: 411 passed, 5 skipped. Windows: **391 passed, 13
 failed, 11 skipped** — 10 grammar DLL, 3 missing Git, **zero in product code**.
 The demo passes on both.
+
+---
+
+## ADR-0009b — `tree-sitter-language-pack` bumped 0.4.0 → 1.25.0; code symbols work on Windows
+**Status:** accepted · 2026-11-09 · *amends ADR-0009a and ADR-0012*
+
+**Context.** ADR-0009a recorded that on `tree-sitter-language-pack 0.4.0` the
+grammars installed on Windows but would not load: all 155 `.pyd` files present,
+`tree_sitter` core importing, MSVC runtime on the machine, and
+`get_language("python")` still raising `ImportError: DLL load failed`. Ten tests
+failed and Windows scans produced 40 memories instead of 51. Our pin dated from
+Stage 3; the published version was **1.25.0**.
+
+**Decision.** Bump to `1.25.0`, verified on both platforms *before* changing the
+pin — the Stage 7 lesson, where one install broke the whole application.
+
+**What the measurement showed.**
+
+| | Windows | Linux |
+|---|---|---|
+| Before | 13 failed, 391 passed | 411 passed |
+| After | **3 failed, 402 passed** | **411 passed** |
+
+All four of our languages load on Windows, all 23 code-symbol tests pass there,
+and a Windows scan of the demo corpus now produces **51 memories — the same as
+Linux** — with matching metrics (citation correctness 37.9%, useful abstention
+83.3%, Recall@5 0.6). The three remaining Windows failures are Change Impact
+needing Git on `PATH`, which is a documented prerequisite.
+
+**Why this was a safe bump, checked rather than assumed.** A `--dry-run
+--report` showed **one** package changing and nothing transitive. `tree-sitter`
+core stays at **0.23.2**, so `Language.query()` — which newer core versions
+replace with `Query(language, source)` — is untouched and no code change was
+needed. `pip check` is clean on both platforms, and grammar loading is
+immeasurable (0.000s per language).
+
+**One scare worth recording.** The first post-bump Linux run reported 4 failures
+and took 369s against a normal 40s. Both were transient: a re-run was clean and
+timed 36.7s, and the code-symbol file passed in isolation. The suite is timed in
+this ADR precisely so a future 9x reading is recognised as the environment
+rather than the dependency.
+
+**Consequences.** ADR-0012's "native wheel; risk R11" caveat is now resolved
+twice over: the wheels install *and* load on Windows. ADR-0009a's first stated
+caveat is withdrawn; only the Git prerequisite remains. The guard test from
+ADR-0009a had to be narrowed at the same time — it globbed from the repository
+root and swept in a virtualenv's site-packages as soon as one appeared under a
+name its exclusion list had not predicted (`.venv-win`). It now checks named
+source roots, and a planted offender confirms it still fires.

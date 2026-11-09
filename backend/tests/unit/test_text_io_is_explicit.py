@@ -25,8 +25,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-# The repository root, so `scripts/` is covered too and not just the package.
 ROOT = Path(__file__).resolve().parents[3]
+
+# Our own source, named explicitly rather than globbed from the repository
+# root. Globbing swept in a virtualenv's site-packages the moment one was
+# created under a name the exclusion list did not predict -- `.venv-win`, on
+# the Windows run -- and third-party code is not ours to police.
+SOURCE_ROOTS = ("backend/kernote", "backend/tests", "scripts")
 CALL = re.compile(r"\.(read_text|write_text)\(")
 
 
@@ -53,9 +58,9 @@ def _call_args(source: str, open_paren: int) -> str:
 
 def test_no_text_io_relies_on_the_locale_encoding():
     offenders: list[str] = []
-    for path in sorted(ROOT.rglob("*.py")):
-        if ".venv" in path.parts or "node_modules" in path.parts:
-            continue
+    files = [f for root in SOURCE_ROOTS for f in sorted((ROOT / root).rglob("*.py"))]
+    assert files, "found no source to check; the paths above are wrong"
+    for path in files:
         source = path.read_text(encoding="utf-8")
         for match in CALL.finditer(source):
             if "encoding=" in _call_args(source, match.end()):
