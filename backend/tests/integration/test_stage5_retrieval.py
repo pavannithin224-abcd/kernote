@@ -589,3 +589,52 @@ def test_deleting_a_memory_removes_its_vector(conn, tmp_path):
         ]
         == 0
     ), "orphaned vectors survived the cascade"
+
+
+# ─── retrieved but not verifiable (ADR-0036) ───────────────────────────────
+
+
+def test_a_retrieved_record_is_never_silently_discarded(conn, tmp_path):
+    """Found while investigating recall.
+
+    When anything passed the support gate, every *other* retrieved record was
+    dropped in silence -- and the record that actually answered the question
+    was repeatedly among them. Asked "which database does this project use and
+    why was it chosen", the deciding ADR came back at rank 2 of 10 and was
+    withheld, while four records that do not answer it were returned as
+    evidence. Returning them as `related` keeps `evidence` meaning verified
+    while not hiding the search's own best guesses.
+    """
+    (tmp_path / "ARCHITECTURE.md").write_text(
+        "# Architecture\n\n## Storage\n\nThe project stores records in a "
+        "database shared by both contexts.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "0001-pg.md").write_text(
+        "# ADR-0001: PostgreSQL\n\nStatus: accepted\n\n## Decision\n\n"
+        "We will use PostgreSQL 16 for its exclusion constraints.\n",
+        encoding="utf-8",
+    )
+    for index in range(5):
+        (tmp_path / f"topic{index}.md").write_text(
+            f"# Topic {index}\n\n## Part {index}\n\nSubsystem {index} covers "
+            "billing and delivery windows for this project.\n",
+            encoding="utf-8",
+        )
+    project = prepo.create(conn, Project(name="R", root_path=str(tmp_path), is_git_repo=False))
+    scan_project(conn, project_id=project.id, root=tmp_path, max_file_bytes=10**6, max_files=50)
+    bundle = answer.ask(
+        conn,
+        project_id=project.id,
+        question="Which database does this project use and why was it chosen?",
+        limit=10,
+    )
+    returned = {i.citation.split(":")[0] for i in bundle.evidence} | {
+        i.citation.split(":")[0] for i in bundle.related
+    }
+    assert len(returned) > 1, "the search found several files; all should be accounted for"
+    if bundle.outcome == "evidence_found" and bundle.related:
+        # Related records are offered, never asserted.
+        assert "related" in bundle.statement or "not as evidence" in bundle.statement
+        asserted = {i.target_id for i in bundle.evidence}
+        assert not (asserted & {i.target_id for i in bundle.related})

@@ -2109,3 +2109,77 @@ repository, and it is now dominated by `missed` — documents retrieval never
 surfaced — rather than by records it found and would not assert. That is a
 retrieval problem, not a support-rule problem, so Q6 closes here rather than
 being renamed.
+
+---
+
+## ADR-0036 — Retrieved records are never silently discarded; and the recall metric measured the wrong thing
+**Status:** accepted · 2026-11-09 · *amends ADR-0029a and the ADR-0030 composer*
+
+**Context.** `missed` was the largest failure bucket after Q6 closed — 9 or 10
+of 25 answerable questions on the fixture — so the obvious next task was
+retrieval recall. The diagnosis said otherwise.
+
+For every one of the "missed" questions, the document that answers it **was in
+the fused top ten**, at ranks 2 to 5. Nothing had been missed by retrieval at
+all.
+
+**Two separate faults, one in the product and one in the measurement.**
+
+**1. The product discarded retrieved records in silence.** When any record
+passed the support gate, every other retrieved record was dropped — and the one
+that actually answered the question was repeatedly among them. Asked *"which
+database does this project use and why was it chosen"*, the deciding ADR came
+back at **rank 2 of 10** and was withheld, while four records that do not answer
+it were returned as evidence, `docs/onboarding.md` among them. The response
+implied "these four are what I found" when six had been found. For a product
+whose thesis is showing its evidence and being honest about the rest, quietly
+binning its best candidate is close to the worst available behaviour.
+
+`AnswerBundle` now carries `related`: retrieved, labelled, never asserted.
+`evidence` still means verified. The statement says how many related records
+there are and that they are not evidence; the Ask screen shows them under
+"Also retrieved, not verified" with the reason; `kernote_search_memory` returns
+them as `related_but_unverified`.
+
+**2. `retrieved_answer` was computed from what the composer returned.** So a
+document retrieved at rank 2 and then withheld by the support gate scored as a
+**retrieval miss**. The metric measured the composer, not retrieval. It now
+reads everything retrieval surfaced, and the verdicts split three ways that do
+not overlap: `answered` (asserted it), `lead_only` (retrieved it, did not
+assert it — whether it declined or asserted something else), `missed` (never
+retrieved it).
+
+**Consequences, and which of these is real.**
+
+| | before | after |
+|---|---|---|
+| Retrieved an answering doc | 80.0% | **100.0%** |
+| ...and asserted it | 60.0% | **60.0%** |
+| Recall@5 | 0.780 | **0.980** |
+| MRR | 0.718 | **0.777** |
+| `missed` | 9 | **0** |
+| Useful abstention | 83.3% | 83.3% |
+| False abstention | 20.0% | 20.0% |
+
+**The retrieval numbers moved because the metric was wrong, not because
+retrieval improved.** "...and asserted it" is unchanged at 60.0%, which is the
+honest summary: the product asserts exactly what it asserted before. What
+changed for a user is that the other retrieved records are now visible instead
+of hidden. On the real repository nothing moved at all except the one genuine
+miss being correctly identified as one.
+
+**A rejected alternative, measured.** Capping records per source file — on the
+theory that several chunks of one document were consuming the ten slots, which
+is true: the real repository's answer to "what error metric is used" sits at
+distinct-file rank 6 while the top ten collapse into four files. It changed no
+verdict on either corpus and **cost citation correctness** (54.7% → 47.7% on the
+fixture, 57.9% → 51.2% on the real repository). It cannot work by construction:
+it filters the ten results the composer already holds rather than fetching more.
+Reverted.
+
+**What is actually left.** One genuine miss, on the real repository, needing a
+deeper candidate pool rather than better ranking — which is a precision trade
+(more records shown per answer), not a free win. The remaining 40% gap between
+retrieving an answering document and asserting it is the support gate doing its
+job: those records do not mention what was asked, and ADR-0032 settled that
+assertion stays lexical.

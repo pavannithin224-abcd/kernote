@@ -182,15 +182,28 @@ def _source_path(conn: sqlite3.Connection, kind: str, target_id: str) -> str | N
     return row["rel_path"] if row else None
 
 
-def _ranked_paths(conn: sqlite3.Connection, bundle) -> list[str]:
-    """Evidence collapsed to a ranked list of distinct source files.
+def _ranked_paths(
+    conn: sqlite3.Connection, bundle, *, asserted_only: bool = False
+) -> list[str]:
+    """Retrieved records collapsed to a ranked list of distinct source files.
+
+    `asserted_only` restricts this to what the answer actually *claims*;
+    otherwise it covers everything retrieval surfaced, including the related
+    records it could not verify. The two were conflated until the recall
+    investigation: `retrieved_answer` was computed from what the composer chose
+    to return, so a document retrieved at rank 2 and then withheld by the
+    support gate was scored as a **retrieval miss**. It measured the composer,
+    not retrieval.
 
     Labels are per file, so several memories from one file are one retrieved
     document — otherwise a file that produced five memories would score five
     recall hits for one correct retrieval.
     """
+    items = list(bundle.evidence)
+    if not asserted_only:
+        items += list(getattr(bundle, "related", []))
     ordered: list[str] = []
-    for item in bundle.evidence:
+    for item in items:
         path = _source_path(conn, item.source, item.target_id)
         if path and path not in ordered:
             ordered.append(path)
@@ -199,6 +212,7 @@ def _ranked_paths(conn: sqlite3.Connection, bundle) -> list[str]:
 
 def _score(conn: sqlite3.Connection, question: Question, bundle, limit: int) -> QuestionResult:
     ranked = _ranked_paths(conn, bundle)
+    asserted = set(_ranked_paths(conn, bundle, asserted_only=True))
     grades = dict(question.relevant)
     abstained = bundle.outcome in DECLINED_OUTCOMES
 
@@ -219,13 +233,18 @@ def _score(conn: sqlite3.Connection, question: Question, bundle, limit: int) -> 
         correct = abstained
         verdict = "correctly_declined" if abstained else "wrongly_asserted"
     else:
-        # Retrieving the right document is necessary but not sufficient: a
-        # system that finds it and then declines to call it an answer has not
-        # answered the question -- but it has not missed it either.
-        correct = retrieved_answer and not abstained
+        # Three distinct outcomes, which were two until the recall
+        # investigation: asserting the right document, retrieving it without
+        # asserting it, and never retrieving it at all. The middle case covers
+        # both an abstention and an answer that asserted something *else*.
+        # Only `evidence_found` asserts anything. In the declining branches
+        # `evidence` carries every retrieved record, so reading it as a claim
+        # would score an honest refusal as an answer.
+        claimed = not abstained and bool(asserted & question.answering)
+        correct = claimed
         if not retrieved_answer:
             verdict = "missed"
-        elif abstained:
+        elif not claimed:
             verdict = "lead_only"
         else:
             verdict = "answered"

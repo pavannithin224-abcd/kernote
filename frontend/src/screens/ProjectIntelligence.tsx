@@ -164,6 +164,30 @@ export default function ProjectIntelligence() {
             </ol>
           )}
 
+          {bundle.related?.length > 0 && (
+            <div className="mt-4 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
+              <div className="text-[12px] mb-1">
+                <strong>Also retrieved, not verified ({bundle.related.length})</strong>
+              </div>
+              <p className="text-[12px] mb-2" style={{ color: 'var(--muted)' }}>
+                These came back from the search but do not mention what you asked
+                about, so Kernote will not offer them as evidence. They are shown
+                because withholding them would hide the search's own best guesses.
+              </p>
+              <ul className="space-y-1">
+                {bundle.related.map((item) => (
+                  <li
+                    key={`rel-${item.source}-${item.target_id}`}
+                    className="flex flex-wrap items-center gap-1.5 text-[12px]"
+                  >
+                    <Citation>{item.citation}</Citation>
+                    <span className="flex-1 min-w-0 truncate">{item.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {bundle.unknowns.length > 0 && (
             <div
               className="mt-3 rounded-md px-2.5 py-2 text-[12px]"

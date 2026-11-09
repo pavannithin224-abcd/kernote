@@ -5,6 +5,83 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Recall: the metric was measuring the composer
+
+`missed` was the largest failure bucket after Q6 closed, so retrieval recall
+looked like the next task. The diagnosis said otherwise, and found a real
+product defect instead.
+
+### What changed
+- **`retrieval/answer.py`** — `AnswerBundle.related` carries records that were
+  retrieved but cannot be verified against the question's words. They used to
+  be **discarded in silence** (ADR-0036).
+- **`eval/runner.py`** — `retrieved_answer` now reads what retrieval surfaced,
+  not what the composer chose to return. Verdicts split three non-overlapping
+  ways.
+- **Ask screen** shows "Also retrieved, not verified" with the reason;
+  `kernote_search_memory` returns `related_but_unverified`.
+- ADR-0036 added (53 ADRs).
+
+### There was no recall problem
+For every one of the "missed" questions the answering document **was in the
+fused top ten**, at ranks 2 to 5. Two separate faults were hiding behind one
+number.
+
+**The product binned its own best candidate.** When anything passed the support
+gate, every other retrieved record was dropped — and the answering record was
+repeatedly among them. Asked "which database does this project use and why was
+it chosen", the deciding ADR came back at rank 2 of 10 and was withheld, while
+four records that do not answer it were returned as evidence. The response
+implied "these four are what I found" when six had been found.
+
+**The metric measured the composer.** `retrieved_answer` was computed from what
+was returned, so a document retrieved at rank 2 and then withheld scored as a
+retrieval miss.
+
+### What is real and what is not
+| | before | after |
+|---|---|---|
+| Retrieved an answering doc | 80.0% | **100.0%** |
+| ...and asserted it | 60.0% | **60.0%** |
+| Recall@5 | 0.780 | **0.980** |
+| `missed` | 9 | **0** |
+| Useful abstention / false abstention | 83.3% / 20.0% | unchanged |
+
+**The retrieval numbers moved because the metric was wrong, not because
+retrieval improved.** "...and asserted it" unchanged at 60.0% is the honest
+summary. What changed for a user is that the other retrieved records are now
+visible.
+
+### A rejected alternative, measured
+Capping records per source file. The premise was true — the real repository's
+answer to "what error metric is used" sits at distinct-file rank 6 while the top
+ten collapse into four files — but it changed no verdict on either corpus and
+**cost citation correctness** (54.7% → 47.7% fixture, 57.9% → 51.2% real). It
+cannot work by construction: it filters the ten results the composer already
+holds rather than fetching more. Reverted, and recorded in ADR-0036 rather than
+deleted.
+
+### Verification performed
+- **414 tests pass, 5 skipped** (was 413). One new, pinning the silent discard.
+- Both corpora measured after every change; `docs/EVALUATION.md` regenerated.
+- `ruff` clean, frontend builds, demo passes.
+
+### Known issues / blockers
+1. **One genuine miss remains**, on the real repository, needing a deeper
+   candidate pool rather than better ranking — a precision trade, not a free
+   win.
+2. The 40% gap between retrieving an answering document and asserting one is
+   the support gate working as designed: those records do not mention what was
+   asked, and ADR-0032 settled that assertion stays lexical.
+3. Windows: Git absent, frontend build untested. UI has had no visual pass.
+4. The RC tag predates all post-RC work.
+
+### Next safe task
+**The UI visual pass**, which needs reference stills. The retrieval side has no
+cheap wins left — what remains is a deliberate precision/recall trade.
+
+---
+
 ## 2026-11-09 — Q6 closed: a title match is worth the overlap bar
 
 The last open question on retrieval quality, and the measurement redirected it

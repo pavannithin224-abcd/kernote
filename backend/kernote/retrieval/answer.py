@@ -280,6 +280,19 @@ class AnswerBundle:
     outcome: str  # evidence_found | weak_evidence | not_found
     statement: str
     evidence: list[EvidenceItem] = field(default_factory=list)
+    related: list[EvidenceItem] = field(default_factory=list)
+    """Retrieved, but not verifiable against the question's own words.
+
+    These used to be **discarded in silence** whenever anything else passed the
+    support gate, and the record that actually answered the question was
+    repeatedly among them: asked "which database does this project use and why
+    was it chosen", the deciding ADR came back at rank 2 of 10 and was dropped,
+    while four records that do not answer it were returned as evidence.
+
+    They are returned now, labelled and never asserted, because "here is what I
+    can verify, and here is what else I found but cannot" is the honest shape
+    of the answer. `evidence` still means verified.
+    """
     unknowns: list[str] = field(default_factory=list)
     semantic_available: bool = False
     note: str | None = None
@@ -547,6 +560,8 @@ def ask(
     else:
         facts = sum(1 for i in supported if i.kind == "evidence")
         inferences = len(supported) - facts
+        asserted = {id(i) for i in supported}
+        related = [i for i in items if id(i) not in asserted]
         bundle = AnswerBundle(
             question=question,
             outcome="evidence_found",
@@ -554,8 +569,16 @@ def ask(
                 f"{len(supported)} supporting record(s) found: {facts} quoted from "
                 f"source, {inferences} interpretation(s). Kernote returns the "
                 "evidence rather than composing an answer, so read the citations."
+                + (
+                    f" {len(related)} further record(s) were retrieved but do not "
+                    "mention what you asked about; they are listed as related, "
+                    "not as evidence."
+                    if related
+                    else ""
+                )
             ),
             evidence=supported,
+            related=related,
             unknowns=[f"no source mentions: {', '.join(unmatched[:8])}"] if unmatched else [],
             semantic_available=outcome.semantic_available,
             note=outcome.note,

@@ -201,8 +201,10 @@ true rather than aspirational.
   compete with frontier-LLM codebase chat on fluency; it competes on whether the
   citations are correct and the abstentions are honest. Measured on our own
   31-question labelled set: **citation correctness 55%**, **useful abstention
-  83%**, Recall@5 0.78 — and on a real sibling repository it declines on
-  **4 of 4** unanswerable questions. The known weakness is the opposite error — on 24% of
+  83%**, Recall@5 0.98 — and on a real sibling repository it declines on
+  **4 of 4** unanswerable questions. Retrieval surfaces an answering document
+  for every answerable question; it asserts one for 60%, and shows the rest as
+  retrieved-but-unverified rather than hiding them. The known weakness is the opposite error — on 24% of
   answerable questions it finds the right document and declines to call it an
   answer, because a paraphrased question shares no words with the source it
   needs (20% on the fixture, 11% on the real repository), and it is now

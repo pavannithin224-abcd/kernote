@@ -125,6 +125,15 @@ def build_server(conn: sqlite3.Connection, project_id: str):
             # result set that had matches further down.
             limit=max(1, min(limit * 3 if memory_type else limit, 40)),
         )
+
+        def _type_of(item) -> str | None:
+            if item.source != "memory":
+                return None
+            row = conn.execute(
+                "SELECT type FROM memories WHERE id=?", (item.target_id,)
+            ).fetchone()
+            return row["type"] if row else None
+
         items = []
         for item in bundle.evidence:
             # The type lives on the memory, not on the evidence item, so it is
@@ -160,10 +169,25 @@ def build_server(conn: sqlite3.Connection, project_id: str):
                 f"{memory_type!r}. Evidence was not found for that type — this "
                 "is not the same as there being none in the project."
             )
+        # Records retrieved but not verifiable against the question's own
+        # words. Returned separately and never as evidence: an agent can weigh
+        # them, and the distinction is the same one a human reader gets.
+        related = [
+            {
+                "memory_type": _type_of(item),
+                "title": item.title,
+                "citation": item.citation,
+                "excerpt": item.excerpt,
+                "why_retrieved": item.why_ranked,
+            }
+            for item in bundle.related
+            if not memory_type or _type_of(item) == memory_type
+        ][:10]
         return {
             "outcome": outcome,
             "statement": statement,
             "evidence": items,
+            "related_but_unverified": related,
             "not_supported_by_any_source": bundle.unknowns,
         }
 

@@ -185,6 +185,7 @@ export interface AnswerBundle {
   outcome: 'evidence_found' | 'weak_evidence' | 'not_found'
   statement: string
   evidence: EvidenceItem[]
+  related: EvidenceItem[]
   unknowns: string[]
   semantic_available: boolean
   note: string | null
