@@ -16,6 +16,21 @@ from kernote.eval import runner
 from kernote.retrieval import answer as answer_mod
 
 
+def _scan(conn, root):
+    """Register and scan a directory, returning (project_id, memories)."""
+    from kernote.db.repositories import projects as project_repo
+    from kernote.domain.models import Project
+    from kernote.ingest.pipeline import scan_project
+
+    project = project_repo.create(
+        conn, Project(name="Planted", root_path=str(root), is_git_repo=False)
+    )
+    result = scan_project(
+        conn, project_id=project.id, root=root, max_file_bytes=1_000_000, max_files=100
+    )
+    return project.id, result.memories_created
+
+
 @pytest.fixture(scope="module")
 def question_set():
     return qmod.load()
@@ -190,3 +205,53 @@ def test_document_frequency_uses_the_index_not_a_full_scan(conn, scanned):
     assert counts["definitelynotinthiscorpus"] == 0
     assert counts["redis"] > 0, "a term that is in the corpus must be counted"
     assert all(0 <= c <= total for c in counts.values())
+
+
+# ─── Q5: leads are ordered by meaning (ADR-0032) ───────────────────────────
+
+
+def test_leads_are_ordered_by_meaning_not_by_the_failed_keywords(conn, tmp_path):
+    """When nothing is lexically supported the answer is a set of leads, and
+    the fusion ordering is the wrong one for that job: it is dominated by the
+    keyword hits that have already failed.
+
+    Driven with a planted corpus rather than the eval fixture, so the
+    assertion does not depend on a 31-question measurement: one document
+    answers a paraphrased question and never uses its words, and a decoy
+    shares the question's incidental vocabulary.
+    """
+    (tmp_path / "billing.md").write_text(
+        "# Billing\n\n## Totals\n\nTax is applied to the invoice total, never "
+        "per line, and the invoice total is what the customer pays.\n"
+    )
+    (tmp_path / "decoy.md").write_text(
+        "# Operations\n\n## Money\n\nThe money is worked out by the finance "
+        "team, who get the figures out on time every month without fail.\n"
+    )
+    project_id, _ = _scan(conn, tmp_path)
+    from kernote.retrieval import vector
+
+    if vector.build_index(conn, project_id=project_id).skipped:
+        pytest.skip("no embedding model cached; semantic ordering cannot be exercised")
+
+    bundle = answer_mod.ask(
+        conn,
+        project_id=project_id,
+        question="How does the money owed get worked out including what the taxman takes?",
+        limit=10,
+    )
+    assert bundle.outcome == "weak_evidence", bundle.statement
+    assert "ordered by meaning" in bundle.statement
+    assert bundle.evidence, "leads must still be returned"
+
+
+def test_the_lead_first_rate_is_reported(report):
+    """A lead is only useful if the reader does not have to hunt for it, so the
+    report states how often the right document came first among leads."""
+    leads = [r for r in report.results if r.verdict == "lead_only"]
+    if not leads:
+        pytest.skip("no leads in this run")
+    assert not math.isnan(report.lead_first_rate)
+    assert 0.0 <= report.lead_first_rate <= 1.0
+    assert all(r.answer_rank is None or r.answer_rank >= 1 for r in report.results)
+    assert "the right document was first" in runner.to_markdown(report)

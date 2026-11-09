@@ -1678,3 +1678,75 @@ finding does not return after `analyze`, and a subsequent edit still raises
 one. The finding a human closed staying closed is now part of what the demo
 checks, because this bug was invisible to every test that resolved a finding
 and then stopped.
+
+---
+
+## ADR-0032 — Q5 closed: assertion stays lexical; leads are ordered by meaning
+**Status:** accepted · 2026-11-09 · *resolves open question Q5 from ADR-0014a*
+
+**Context.** Q5 asked whether a semantically-retrieved document with no lexical
+overlap can ever be *asserted* as evidence. It was the named cause of the
+product's largest quality weakness: 20-24% false abstention, where the right
+document is retrieved and not called an answer. ADR-0014a left it open rather
+than guessing. This decides it on measurement.
+
+**What the measurement showed.** Three things, none of them what the question
+assumed.
+
+1. **The plausible relaxations do not help, and together they break the
+   guarantee.** Dropping corpus-absent terms from the information-share
+   denominator: no change to any verdict. Adding the missing function words to
+   the stopword list: no change, and citation correctness slightly down.
+   **Both together: useful abstention collapses from 66.7% to 33.3% and
+   wrongly-asserted answers double from 2 to 4.** The relaxation path buys
+   nothing and costs the one claim the product is built on.
+
+2. **The two worst "false abstentions" are not about semantics at all.** For
+   "why was MongoDB removed from the stack", the document that answers it
+   matched the question's *subject* — `mongodb` — and scored 0.283, while a
+   distractor matched one incidental rare word — `stack` — and scored 0.385,
+   above the bar. Inverse document frequency is standing in for centrality, and
+   in a small corpus an incidental rare word outweighs the subject of the
+   sentence. That is a real limitation of ADR-0030's rule, and it is a
+   different problem from Q5.
+
+3. **The lead path was ordered by exactly the wrong signal.** When nothing is
+   lexically supported, what comes back is a set of leads — and they were
+   ordered by the hybrid fusion, which is dominated by the keyword hits that
+   have just failed. On q29 the document that answers the question is first by
+   meaning, fourth by fusion and eleventh by keyword.
+
+**Decision.**
+1. **No.** Assertion continues to require lexical verification. A semantic
+   match is a similarity score; it is not something a reader can check by
+   reading, and `evidence_found` must keep meaning "a source says this". No
+   cosine threshold, and no LLM judge — ADR-0006 forbids one in the core loop
+   and it would be unverifiable anyway.
+2. When nothing is supported, **leads are ordered by meaning**, not by the
+   fusion. The statement says so, because an ordering the reader cannot
+   account for is its own kind of dishonesty.
+3. The evaluation reports **`lead_first_rate`** — of the questions that end as
+   leads, how often the right document came first. A lead is only useful if the
+   reader does not have to hunt for it, and a binary answered/not-answered hid
+   that entirely.
+
+**Consequences.** Measured under identical conditions with the vector index
+present, the right document is first among leads for **4 of 6 questions,
+against 2 of 6 before** — 33% to 67%. Abstention (66.7%), asserted answers (12)
+and citation correctness (52.2%) are all unchanged, so this is a gain on the
+lead path with no movement in the guarantee. It also improved the ranking
+metrics, since lead ordering is part of what they measure: Recall@1 0.560 to
+0.620, MRR 0.611 to 0.668, nDCG@10 0.663 to 0.700.
+
+One case got worse: on q28 the answering document moved from rank 3 to rank 5,
+because semantic similarity preferred a glossary entry about the same subject.
+A 4-of-6 gain for a 1-of-6 regression is worth taking, and it is recorded here
+rather than averaged away.
+
+**What this leaves open.** False abstention is still 20-24%, and Q5 is no
+longer the explanation for it. Finding 2 above is: the share rule cannot tell a
+question's subject from an incidental rare word. The next attempt at this
+number should weight terms by **centrality** — position in the question, or
+agreement between the question's terms and the document's title — not by
+rarity alone. That is a new question (Q6), and it is not a licence to weaken
+assertion; it is a request for a better lexical signal.

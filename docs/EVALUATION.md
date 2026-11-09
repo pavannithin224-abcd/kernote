@@ -16,19 +16,20 @@ generated answer to score for fluency, deliberately.
 
 | Measure | FTS5 keyword only | + MiniLM semantic (RRF) |
 |---|---|---|
-| Recall@1 | 0.560 | 0.560 |
+| Recall@1 | 0.560 | 0.620 |
 | Recall@5 | 0.600 | 0.700 |
 | Recall@10 | 0.600 | 0.700 |
-| MRR | 0.568 | 0.611 |
-| nDCG@10 | 0.592 | 0.663 |
+| MRR | 0.568 | 0.668 |
+| nDCG@10 | 0.592 | 0.700 |
 | Citation correctness | 43.4% | 52.2% |
 | Citation correctness (strict) | 34.9% | 41.3% |
 | Useful abstention | 66.7% | 66.7% |
 | False abstention | 20.0% | 24.0% |
 | Retrieved an answering doc | 60.0% | 72.0% |
 | ...and asserted it | 48.0% | 48.0% |
+| Of the leads, right doc first | 66.7% | 66.7% |
 
-Semantic indexing of this corpus took 4.6s on the development machine with `sentence-transformers/all-MiniLM-L6-v2` already cached.
+Semantic indexing of this corpus took 4.8s on the development machine with `sentence-transformers/all-MiniLM-L6-v2` already cached.
 
 ### Verdicts
 
@@ -65,16 +66,16 @@ Semantic indexing of this corpus took 4.6s on the development machine with `sent
 | q19 | Why do orders and billing share a single database? | evidence_found | yes | `ARCHITECTURE.md` |
 | q20 | Is order status data cached? | evidence_found | yes | `ARCHITECTURE.md` |
 | q21 | What is the contractual delivery SLA for next-day orders? | weak_evidence | yes | `docs/glossary.md` |
-| q22 | Who manages the on-call rota? | weak_evidence | yes | `README.md` |
+| q22 | Who manages the on-call rota? | weak_evidence | yes | `ARCHITECTURE.md` |
 | q23 | What is the retention period for customer personal data? | weak_evidence | yes | `docs/glossary.md` |
-| q24 | What is the password policy for operator accounts? | weak_evidence | yes | `CONTRIBUTING.md` |
+| q24 | What is the password policy for operator accounts? | weak_evidence | yes | `CHANGELOG.md` |
 | q25 | How do I add a new display language to the operator console? | evidence_found | **no** | `docs/adr/0003-no-graphql.md` |
 | q26 | What is the monthly cost of the managed Redis instance? | evidence_found | **no** | `docs/adr/0001-postgresql.md` |
 | q27 | Which data store holds the records? | evidence_found | **no** | `docs/adr/0005-timezones.md` |
-| q28 | Once a parcel is on its way to the customer, can it still be stopped? | weak_evidence | **no** | `docs/runbooks/redis-down.md` |
-| q29 | Where does the team write down why it picked one approach over another? | weak_evidence | **no** | `ARCHITECTURE.md` |
-| q30 | What stops two couriers from being promised the same slot? | weak_evidence | **no** | `CONTRIBUTING.md` |
-| q31 | How does the money owed get worked out including what the taxman takes? | weak_evidence | **no** | `docs/runbooks/duplicate-invoice.md` |
+| q28 | Once a parcel is on its way to the customer, can it still be stopped? | weak_evidence | **no** | `docs/glossary.md` |
+| q29 | Where does the team write down why it picked one approach over another? | weak_evidence | **no** | `README.md` |
+| q30 | What stops two couriers from being promised the same slot? | weak_evidence | **no** | `ARCHITECTURE.md` |
+| q31 | How does the money owed get worked out including what the taxman takes? | weak_evidence | **no** | `src/billing/invoice.py` |
 
 ## Failures (missed or wrongly asserted)
 
@@ -89,7 +90,7 @@ Semantic indexing of this corpus took 4.6s on the development machine with `sent
 - **q25** (unanswerable, evidence_found) — How do I add a new display language to the operator console? Retrieved `docs/adr/0003-no-graphql.md` instead.
 - **q26** (unanswerable, evidence_found) — What is the monthly cost of the managed Redis instance? Retrieved `docs/adr/0001-postgresql.md` instead. Label note: ADR-0002 says Redis is operated and ADR-0001 mentions 'operational cost is a managed instance'. Close enough to be tempting, nowhere near an answer.
 - **q27** (answerable, evidence_found) — Which data store holds the records? Retrieved `docs/adr/0005-timezones.md` instead. Label note: Paraphrase: the corpus says 'database' and 'PostgreSQL', never 'data store' or 'holds the records'.
-- **q28** (answerable, weak_evidence) — Once a parcel is on its way to the customer, can it still be stopped? Retrieved `docs/runbooks/redis-down.md` instead. Label note: Paraphrase of 'can a shipped order be cancelled'. Avoids 'shipped' and 'cancelled' entirely.
-- **q29** (answerable, weak_evidence) — Where does the team write down why it picked one approach over another? Retrieved `ARCHITECTURE.md` instead. Label note: Paraphrase: both files point at docs/adr/. The corpus word is 'architecture decision records'.
-- **q30** (answerable, weak_evidence) — What stops two couriers from being promised the same slot? Retrieved `CONTRIBUTING.md` instead. Label note: Paraphrase: the corpus says 'exclusion constraints' and 'overlapping delivery windows'.
-- **q31** (answerable, weak_evidence) — How does the money owed get worked out including what the taxman takes? Retrieved `docs/runbooks/duplicate-invoice.md` instead. Label note: Deliberately colloquial paraphrase of invoice totals and tax.
+- **q28** (answerable, weak_evidence) — Once a parcel is on its way to the customer, can it still be stopped? Retrieved `docs/glossary.md` instead. Label note: Paraphrase of 'can a shipped order be cancelled'. Avoids 'shipped' and 'cancelled' entirely.
+- **q29** (answerable, weak_evidence) — Where does the team write down why it picked one approach over another? Retrieved `README.md` instead. Label note: Paraphrase: both files point at docs/adr/. The corpus word is 'architecture decision records'.
+- **q30** (answerable, weak_evidence) — What stops two couriers from being promised the same slot? Retrieved `ARCHITECTURE.md` instead. Label note: Paraphrase: the corpus says 'exclusion constraints' and 'overlapping delivery windows'.
+- **q31** (answerable, weak_evidence) — How does the money owed get worked out including what the taxman takes? Retrieved `src/billing/invoice.py` instead. Label note: Deliberately colloquial paraphrase of invoice totals and tax.

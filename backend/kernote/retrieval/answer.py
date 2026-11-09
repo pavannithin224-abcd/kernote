@@ -393,6 +393,24 @@ def ask(
         return information_share(item) >= _MIN_INFORMATION_SHARE
 
     supported = [i for i in items if supports(i)]
+
+    # When nothing is lexically supported, the answer is a set of *leads*, and
+    # the fusion ordering is the wrong one for that job: it is dominated by
+    # keyword hits, which are precisely what has already failed. Measured on
+    # the Stage 8 labelled set, the document that actually answers a
+    # paraphrased question sits at rank 1 for 4 of 6 such questions under
+    # semantic ordering against 2 of 6 under the fusion -- on q29 it is first
+    # by meaning, fourth by fusion and eleventh by keyword. So leads are
+    # ordered by meaning when a semantic signal exists (ADR-0032).
+    semantic_rank = {
+        (r.target_kind, r.target_id): r.semantic_rank
+        for r in outcome.results
+        if r.semantic_rank is not None
+    }
+    leads_reordered = False
+    if not supported and semantic_rank:
+        items.sort(key=lambda i: semantic_rank.get((i.source, i.target_id), 10**6))
+        leads_reordered = True
     unmatched = sorted(content_terms - {t for i in items for t in i.matched_terms})
     # What the question turned on and no record mentioned, heaviest first.
     matched_anywhere = {t for i in items for t in i.matched_terms}
@@ -420,6 +438,12 @@ def ask(
                 "No source directly addresses that question. The closest records "
                 "are listed, but none of them mentions what makes the question "
                 "specific, so treat them as leads rather than as an answer."
+                + (
+                    " They are ordered by meaning rather than by keyword, "
+                    "because the keywords are what failed."
+                    if leads_reordered
+                    else ""
+                )
             ),
             evidence=items,
             unknowns=(

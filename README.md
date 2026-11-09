@@ -168,8 +168,10 @@ true rather than aspirational.
   67%**, Recall@5 0.70. The known weakness is the opposite error — on 24% of
   answerable questions it finds the right document and declines to call it an
   answer, because a paraphrased question shares no words with the source it
-  needs. `docs/EVALUATION.md` has the numbers and `docs/DECISIONS.md` ADR-0014a
-  has the reason.
+  needs. When it cannot assert an answer it returns leads ordered by meaning,
+  and the right document is first in 67% of those cases.
+  `docs/EVALUATION.md` has the numbers; ADR-0032 explains why assertion stays
+  lexical and ADR-0030 why the remaining gap is a centrality problem.
 - **Approval has no undo.** A consolidation merge preserves full lineage and
   nothing is ever silently dropped, so the information survives — but there is
   no one-click reverse of an approval.

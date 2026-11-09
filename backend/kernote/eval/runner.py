@@ -94,6 +94,13 @@ class QuestionResult:
     verdict: str = "missed"
     retrieved_answer: bool = False
     """A document graded as answering the question was in the top k."""
+    answer_rank: int | None = None
+    """Where the first answering document sits in what was returned.
+
+    Reported for leads especially: when the system cannot assert an answer, the
+    thing that decides whether it is still useful is whether the right document
+    is the first one the reader sees.
+    """
     retrieved: list[str] = field(default_factory=list)
     recall: dict[int, float] = field(default_factory=dict)
     reciprocal_rank: float = float("nan")
@@ -124,6 +131,9 @@ class EvalReport:
     verdicts: dict[str, int] = field(default_factory=dict)
     retrieval_success_rate: float = float("nan")
     answer_rate: float = float("nan")
+    lead_first_rate: float = float("nan")
+    """Of the questions that ended as leads, how often the right document was
+    first. A lead is only useful if the reader does not have to hunt."""
     citation_correctness: float = float("nan")
     citation_correctness_strict: float = float("nan")
     useful_abstention_rate: float = float("nan")
@@ -201,6 +211,10 @@ def _score(conn: sqlite3.Connection, question: Question, bundle, limit: int) -> 
     answering_cites = sum(1 for p in cited if grades.get(p, 0) >= metrics.RELEVANT)
 
     retrieved_answer = bool(set(ranked[:limit]) & question.answering)
+    answer_rank = next(
+        (i for i, path in enumerate(ranked[:limit], start=1) if path in question.answering),
+        None,
+    )
     if question.kind == "unanswerable":
         correct = abstained
         verdict = "correctly_declined" if abstained else "wrongly_asserted"
@@ -225,6 +239,7 @@ def _score(conn: sqlite3.Connection, question: Question, bundle, limit: int) -> 
         correct=correct,
         verdict=verdict,
         retrieved_answer=retrieved_answer,
+        answer_rank=answer_rank,
         retrieved=ranked[:limit],
         recall={k: metrics.recall_at_k(ranked, grades, k) for k in _reportable_ks(limit)},
         reciprocal_rank=metrics.reciprocal_rank(ranked, grades),
@@ -327,6 +342,11 @@ def run(
             if answerable
             else float("nan")
         ),
+        lead_first_rate=(
+            sum(1 for r in leads if r.answer_rank == 1) / len(leads)
+            if (leads := [r for r in answerable if r.verdict == "lead_only"])
+            else float("nan")
+        ),
         recall_at_k={
             k: metrics.mean([r.recall[k] for r in results]) for k in _reportable_ks(limit)
         },
@@ -403,6 +423,7 @@ def to_markdown(report: EvalReport) -> str:
         f"| Retrieved an answering document (top {report.retrieval_depth}) | "
         f"{pct(report.retrieval_success_rate)} |",
         f"| ...and asserted it as evidence | {pct(report.answer_rate)} |",
+        f"| Of the leads, the right document was first | " f"{pct(report.lead_first_rate)} |",
         "",
         "The gap between those two rows is the system finding the right "
         "document and declining to call it an answer, because none of the "

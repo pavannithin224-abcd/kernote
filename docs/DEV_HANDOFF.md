@@ -5,6 +5,80 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Q5 closed: assertion stays lexical, leads are ordered by meaning
+
+Q5 was the named cause of the product's largest quality weakness. Closing it
+properly meant measuring the obvious fix first, and the obvious fix was wrong.
+
+### What changed
+- **`retrieval/answer.py`** — when nothing is lexically supported, the returned
+  leads are ordered by semantic similarity rather than by the hybrid fusion,
+  and the statement says so (ADR-0032).
+- **`eval/runner.py`** — reports `answer_rank` per question and
+  `lead_first_rate` overall.
+- `docs/EVALUATION.md` regenerated. ADR-0032 added (46 ADRs).
+
+### The answer to Q5 is no, and here is the evidence
+Before changing anything I measured the two relaxations that would let a
+semantic match be asserted. Dropping corpus-absent terms from the
+information-share denominator changed **no verdict at all**. Adding the missing
+function words to the stopword list changed no verdict and lowered citation
+correctness. **Both together: useful abstention collapsed from 66.7% to 33.3%
+and wrongly-asserted answers doubled from 2 to 4.**
+
+So the relaxation path buys nothing measurable and costs the one claim the
+product is built on. Assertion keeps requiring lexical verification: a cosine
+score is not something a reader can check by reading.
+
+### Two findings that reframe the 20-24% false abstention
+**It is mostly not a semantic problem.** For "why was MongoDB removed from the
+stack", the document that answers it matched the question's *subject*
+(`mongodb`, share 0.283) and a distractor matched one incidental rare word
+(`stack`, 0.385) and cleared the bar. Inverse document frequency is standing in
+for centrality, and in a small corpus an incidental rare word outweighs the
+subject of the sentence. That is a limitation of ADR-0030's rule, not of Q5,
+and it is now **open question Q6**.
+
+**The lead path was ordered by the signal that had just failed.** Leads came
+back in hybrid-fusion order, which keyword hits dominate. On q29 the answering
+document is first by meaning, fourth by fusion and eleventh by keyword.
+
+### Verification performed
+- **392 tests pass, 5 skipped** (was 390). Two new, one driven by a planted
+  corpus so the assertion does not depend on a 31-question measurement.
+- Measured under identical conditions with the vector index present: the right
+  document is first among leads for **4 of 6 questions against 2 of 6 before**.
+  Abstention (66.7%), asserted answers (12) and citation correctness (52.2%)
+  all unchanged — a gain on the lead path with no movement in the guarantee.
+- Ranking metrics improved as a side effect, since lead ordering is part of
+  what they measure: Recall@1 0.560 → 0.620, MRR 0.611 → 0.668, nDCG@10
+  0.663 → 0.700.
+- `ruff` clean.
+- One regression recorded rather than averaged away: on q28 the answering
+  document moved from rank 3 to rank 5, because semantic similarity preferred a
+  glossary entry on the same subject.
+
+### Known issues / blockers
+1. **False abstention is still 20-24%, and Q5 is no longer the explanation.**
+   Q6 is: the share rule cannot distinguish a question's subject from an
+   incidental rare word. The next attempt should weight by centrality —
+   position in the question, or agreement with the document's title — not by
+   rarity alone.
+2. The lead ordering depends on the opt-in embedding index. With no model
+   cached there is no semantic signal and leads keep the fusion order; the
+   statement then omits the "ordered by meaning" sentence rather than claiming
+   it.
+3. No native-Windows verification. ADR-0009 still `proposed`.
+4. Approval has no undo; the include/exclude list is not configurable; the UI
+   has had no visual pass.
+
+### Next safe task
+**Windows verification**, which is the largest untested claim in the project
+and needs only the existing suite and `scripts/demo.py` run on native Windows.
+Then **Q6**, which is now the real lever on false abstention.
+
+---
+
 ## 2026-11-09 — Stage 9: release candidate
 
 The gate for this stage is a demo that runs end to end from a clean clone, and
