@@ -1257,3 +1257,86 @@ unaffected — an untouched proposal still merges, taking citations 1 → 2 with
 revisions. Also pinned: SQLite's parameter limit here is 250,000, not the 999
 often assumed, so Change Impact over a 1,100-file range works; that is now a
 test rather than an assumption.
+
+---
+
+## ADR-0027 — Logs go to stderr, resolved at write time
+**Status:** accepted · 2026-11-09
+
+**Context.** The MCP server speaks JSON-RPC over stdio, so **stdout is the
+transport**. `structlog` was configured with the default
+`ConsoleRenderer`, which writes to stdout — so the first log line the server
+emitted corrupted the protocol and the client hung with no error at all. The
+MCP client sat there until it was killed.
+
+This was invisible to unit tests. Calling the tool functions directly works
+perfectly; only driving a real server over stdio shows it.
+
+A second defect appeared in the first fix. Binding `sys.stderr` once at
+configure time meant anything replacing that stream afterwards left the logger
+holding a dead file: pytest's `capsys` does exactly that, and one test then
+poisoned every later log call in the suite with
+`ValueError: I/O operation on closed file`.
+
+**Decision.** A shared `kernote/logging.py` used by every entry point. Logs go
+to **stderr**, through a late-bound sink that resolves `sys.stderr` at write
+time and swallows `ValueError` if the stream has gone — diagnostics must never
+be the reason a request fails. `configure_logging()` is called before anything
+that might log, which for the MCP server means before the database is opened.
+
+**Alternatives.** *Silence logging in the MCP server* — loses the diagnostics
+exactly where they are hardest to get, inside a subprocess. *A file sink* —
+another path to configure, and a supervisor capturing stderr is the convention.
+*Keep binding the stream* — the `capsys` failure shows why not.
+
+**Consequences.** stderr is also right for the HTTP API, so this is a shared
+default rather than an MCP workaround. Two tests pin it: one asserts a log line
+reaches stderr and not stdout, and the MCP tests drive a real subprocess over
+stdio, which is the only way this class of bug surfaces.
+
+---
+
+## ADR-0028 — The MCP surface is four tools, and the dependency pins that made it possible
+**Status:** accepted · 2026-11-09 · *implements ADR-0008*
+
+**Context.** ADR-0008 fixed the MCP surface at four read-only tools. Building it
+surfaced a supply-chain problem of exactly the kind ADR-0010 risk R12 named.
+
+Installing `mcp==1.2.0` pulled `starlette 1.10.0`. FastAPI 0.115.6 requires
+`starlette<0.42`, and the mismatch **broke the entire application** —
+`Router.__init__() got an unexpected keyword argument 'on_startup'`, and all 328
+tests failed to even collect. One `pip install` for a `Should`-priority feature
+took down a `Must`-priority one.
+
+**Decision.**
+1. Four tools, all read-only: `kernote_search_memory`,
+   `kernote_project_summary`, `kernote_get_decision`,
+   `kernote_build_context`. A test asserts the advertised set is exactly these
+   four and that no name contains write, create, update, delete, archive,
+   merge or approve.
+2. The server is a second **adapter** over the same core as the HTTP API — the
+   same retrieval, bundle and repository functions — so the two cannot disagree
+   about what the project knows.
+3. `starlette==0.41.3` and `sse-starlette==2.1.3` are pinned in
+   `requirements.txt` **with the reason written next to them**, because a
+   future reader will otherwise "tidy up" an apparently arbitrary pin. Only the
+   stdio transport is used, so `sse-starlette` is inert; it is pinned purely so
+   a clean clone resolves. `pip check` reports no broken requirements and is
+   part of the Day-23 gate.
+4. `KERNOTE_PROJECT` selects the project. It is optional with one project
+   registered and **required with several** — silently picking one would serve
+   an agent a different project's knowledge.
+
+**Alternatives.** *A separate virtualenv for the MCP server* — real isolation,
+but two environments to install and keep in step for a feature that is first on
+the scope-cut list. *Upgrade FastAPI to match starlette 1.x* — a larger change
+to the `Must` half of the product in service of the `Should` half.
+
+**Consequences.** Verified against a real client over stdio: four tools
+advertised, `project_summary` returning 365 memories with citations,
+`get_decision("sqlite-vec")` returning ADR-0003 with its source, and
+`get_decision("quantum teleportation")` returning an explicit "evidence was not
+found" rather than a guess. The `memory_type` filter originally contained an
+`or True` and silently did nothing — a parameter that lies is worse than no
+parameter, so it now looks the type up on the memory and a test asserts it
+filters.

@@ -15,17 +15,14 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 
 from .api import deps
-from .api.routers import ask, maintenance, memories, projects
+from .api.routers import agents, ask, maintenance, memories, projects
 from .config import settings
 from .db.connection import open_db
+from .logging import configure_logging
 
-structlog.configure(
-    processors=[
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.dev.ConsoleRenderer(),
-    ]
-)
+# stderr, not stdout: see kernote/logging.py. Shared with the MCP server so
+# the two entry points cannot disagree about where diagnostics go.
+configure_logging()
 log = structlog.get_logger(__name__)
 
 
@@ -62,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(memories.router)
     app.include_router(maintenance.router)
     app.include_router(ask.router)
+    app.include_router(agents.router)
 
     @app.exception_handler(ValueError)
     async def _value_error(request: Request, exc: ValueError) -> JSONResponse:

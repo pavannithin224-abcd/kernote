@@ -28,5 +28,11 @@ tree-sitter-language-pack==0.4.0   # native wheel; risk R11
 unidiff==0.7.5          # diff hunk parsing for drift detection
 detect-secrets==1.5.0   # content-level secret refusal
 
-# --- Stage 7: agent delivery --- not yet installed
-# mcp==1.2.0
+# --- Stage 7: agent delivery ---
+mcp==1.2.0
+# Installing mcp pulled starlette 1.10.0, which fastapi 0.115.6 forbids
+# (starlette<0.42). That broke the whole application -- 328 tests could not
+# even be collected. Both pins below exist to keep `pip install -r` resolving
+# cleanly from a clean clone; `pip check` is part of the Day-23 gate.
+starlette==0.41.3
+sse-starlette==2.1.3    # transitive via mcp; only the stdio transport is used

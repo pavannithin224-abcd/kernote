@@ -5,6 +5,78 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 7: agent delivery
+
+### What changed
+- **`apply/context_bundle.py`** — the budgeted Markdown bundle. States its
+  token estimate, **lists what it dropped**, cites every claim, excludes
+  superseded records and marks interpretations.
+- **`mcp/server.py`** — four read-only tools over stdio (ADR-0028).
+- **`kernote/logging.py`** — shared logging to **stderr** with a late-bound
+  sink (ADR-0027).
+- **`api/routers/agents.py`** — `POST /context`, `GET /mcp`. 24 endpoints.
+- **Agent Integrations screen** — the MCP registration command with a copy
+  button, the tool list with "read-only" stated, and a bundle builder with a
+  budget control and a .md download.
+- ADR-0027 and ADR-0028 added (35 ADRs).
+
+### Verification performed
+- **342 tests pass** (was 328). 14 new, including three that drive a **real MCP
+  server as a subprocess over stdio**.
+- `ruff` clean, frontend builds, and **`pip check` reports no broken
+  requirements** — which matters because of the conflict below.
+- Live MCP client session: 4 tools advertised, none mutating;
+  `project_summary` returned 365 memories with cited decisions;
+  `get_decision("sqlite-vec")` returned ADR-0003 with its source;
+  `get_decision("quantum teleportation")` returned an explicit
+  "evidence was not found"; `build_context` came back at ~988 of 1000 tokens.
+
+### Three bugs, and why only one was findable by unit tests
+1. **`pip install mcp` broke the whole application.** It pulled
+   `starlette 1.10.0` against FastAPI's `<0.42`, and all 328 tests stopped
+   collecting. Risk R12 from ADR-0010, realised. Resolved by pinning
+   `starlette==0.41.3` and `sse-starlette==2.1.3` **with the reason beside
+   them**, since an unexplained pin invites a future tidy-up.
+2. **Logging to stdout corrupted the MCP protocol.** stdout *is* the JSON-RPC
+   transport; the first log line hung the client with no error. Calling the
+   tool functions directly works perfectly — only running a real server over
+   stdio shows it. Then the first fix bound `sys.stderr` at configure time,
+   so pytest's `capsys` closed it and one test poisoned every later log call
+   in the suite. The sink is now resolved at write time.
+3. **A parameter that silently did nothing.** `kernote_search_memory`'s
+   `memory_type` filter contained an `or True`, so it never filtered. It now
+   looks the type up on the memory, and a test asserts the result set is
+   actually narrowed.
+
+### Three test faults worth remembering
+The bundle tests failed for reasons that were mine, not the product's: a
+two-document fixture is ~277 tokens so **no budget would ever drop anything**;
+asserting `"Architecture" not in markdown` collides with the rendered section
+heading; and ranking a task of "which database and why" correctly prefers the
+README (which says "free of **database** imports") over an ADR that says
+"PostgreSQL" and "persistence" — the same Stage 5 limitation, now hit from a
+different direction.
+
+### Known issues / blockers
+1. **ADR-0014's four-way embedding benchmark is now the oldest open item**, and
+   it needs the labelled question set (P11). That plus `ranx` metrics is the
+   whole of what the Day-25 acceptance criteria measure.
+2. Approval still has no undo (Stage 6).
+3. The MCP server holds one SQLite connection for its lifetime and sees
+   whatever the UI writes, since both point at the same file — fine for a local
+   single-user tool, but untested under simultaneous use.
+4. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open. No Windows
+   verification of the native wheels.
+
+### Next safe task
+**Stage 8 (Days 23-24): polish and evaluation.** The labelled question set,
+`ranx` metrics (Recall@k, MRR, nDCG), citation-correctness and
+abstention-rate measurement, and ADR-0014's four-way embedding comparison.
+This is the oldest deferred work in the project and what the Day-25 criteria
+actually require.
+
+---
+
 ## 2026-11-09 — Stage 6 defect sweep
 
 ### Probed and found sound

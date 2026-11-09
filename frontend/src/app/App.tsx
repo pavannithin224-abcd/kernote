@@ -15,7 +15,7 @@ const NAV = [
   { to: '/intelligence', label: 'Project Intelligence', stage: 2 },
   { to: '/maintenance', label: 'Memory Intelligence', stage: 2 },
   { to: '/impact', label: 'Change Impact', stage: 2 },
-  { to: '/agents', label: 'Agent Integrations', stage: 7 },
+  { to: '/agents', label: 'Agent Integrations', stage: 2 },
   { to: '/settings', label: 'Settings & Evaluation', stage: 8 },
 ]
 

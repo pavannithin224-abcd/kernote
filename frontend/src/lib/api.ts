@@ -53,6 +53,27 @@ export interface Proposal {
   }
 }
 
+export interface ContextBundle {
+  markdown: string
+  task: string | null
+  token_budget: number
+  tokens_used: number
+  included: number
+  dropped: { title: string; citation: string }[]
+  note: string | null
+}
+
+export interface McpInfo {
+  server_name: string
+  transport: string
+  command: string
+  env: Record<string, string>
+  tools: { name: string; description: string }[]
+  writable: boolean
+  claude_code_snippet: string
+  note: string
+}
+
 export interface AffectedMemory {
   memory_id: string
   title: string
@@ -293,6 +314,12 @@ export const api = {
       `/projects/${id}/impact?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`,
     ),
   commits: (id: string) => call<Commit[]>(`/projects/${id}/commits`),
+  buildBundle: (id: string, task: string | null, tokenBudget: number) =>
+    call<ContextBundle>(`/projects/${id}/context`, {
+      method: 'POST',
+      body: JSON.stringify({ task, token_budget: tokenBudget }),
+    }),
+  mcpInfo: (id: string) => call<McpInfo>(`/projects/${id}/mcp`),
   embeddingStatus: (id: string) =>
     call<EmbeddingStatus>(`/projects/${id}/embeddings`),
   buildEmbeddings: (id: string, allowDownload: boolean) =>
