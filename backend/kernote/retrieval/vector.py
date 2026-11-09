@@ -11,6 +11,7 @@ Vectors are stored already L2-normalised, which makes cosine a dot product.
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from dataclasses import dataclass
 
@@ -48,32 +49,47 @@ def _from_blob(blob: bytes) -> np.ndarray:
     return np.frombuffer(blob, dtype=np.float32)
 
 
+def source_hash(text: str) -> str:
+    """Fingerprint of exactly what was embedded (migration 0004)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def _pending(
     conn: sqlite3.Connection, project_id: str, kind: str, model_id: str
 ) -> list[tuple[str, str]]:
-    """(id, text) for rows with no vector for this model yet.
+    """(id, text) for rows that need embedding.
 
-    Embedding is incremental: a rescan that adds ten memories re-embeds ten,
-    not the whole project.
+    A row qualifies when it has no vector for this model, **or** when its text
+    no longer matches the `source_hash` recorded with the vector. Without the
+    second condition an edited memory kept its old vector and semantic search
+    went on matching text the project no longer contains.
+
+    Still incremental: a rescan that adds ten memories embeds ten.
     """
     if kind == "memory":
         sql = (
             "SELECT m.id, m.title || ' ' || COALESCE(m.summary, '') "
-            "       || ' ' || m.content AS text "
-            "FROM memories m WHERE m.project_id = ? "
-            "AND m.status NOT IN ('superseded','archived') "
-            "AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.target_kind='memory' "
-            "                AND e.target_id = m.id AND e.model_id = ?)"
+            "       || ' ' || m.content AS text, e.source_hash AS stored "
+            "FROM memories m "
+            "LEFT JOIN embeddings e ON e.target_kind='memory' AND e.target_id = m.id "
+            "                       AND e.model_id = ? "
+            "WHERE m.project_id = ? AND m.status NOT IN ('superseded','archived')"
         )
     else:
         sql = (
-            "SELECT c.id, COALESCE(c.heading_path,'') || ' ' || c.text AS text "
+            "SELECT c.id, COALESCE(c.heading_path,'') || ' ' || c.text AS text, "
+            "       e.source_hash AS stored "
             "FROM chunks c JOIN source_files sf ON sf.id = c.source_file_id "
-            "WHERE c.project_id = ? AND sf.is_current = 1 "
-            "AND NOT EXISTS (SELECT 1 FROM embeddings e WHERE e.target_kind='chunk' "
-            "                AND e.target_id = c.id AND e.model_id = ?)"
+            "LEFT JOIN embeddings e ON e.target_kind='chunk' AND e.target_id = c.id "
+            "                       AND e.model_id = ? "
+            "WHERE c.project_id = ? AND sf.is_current = 1"
         )
-    return [(r["id"], r["text"]) for r in conn.execute(sql, (project_id, model_id))]
+    pending = []
+    for row in conn.execute(sql, (model_id, project_id)):
+        text = row["text"] or ""
+        if row["stored"] != source_hash(text[:4000]):
+            pending.append((row["id"], text))
+    return pending
 
 
 def build_index(
@@ -93,18 +109,25 @@ def build_index(
         rows = _pending(conn, project_id, kind, model_id)
         for start in range(0, len(rows), _BATCH):
             batch = rows[start : start + _BATCH]
-            vectors = embed.encode(
-                [text[:4000] for _, text in batch], allow_download=allow_download
-            )
+            truncated = [text[:4000] for _, text in batch]
+            vectors = embed.encode(truncated, allow_download=allow_download)
             if not vectors:
                 return IndexResult(skipped="encoding returned nothing")
             with transaction(conn):
-                for (target_id, _), vector in zip(batch, vectors, strict=True):
+                for (target_id, _), vector, text in zip(batch, vectors, truncated, strict=True):
                     conn.execute(
                         "INSERT OR REPLACE INTO embeddings"
-                        "(target_kind,target_id,model_id,dim,vector,built_at) "
-                        "VALUES(?,?,?,?,?,?)",
-                        (kind, target_id, model_id, len(vector), _to_blob(vector), utc_now()),
+                        "(target_kind,target_id,model_id,dim,vector,built_at,source_hash) "
+                        "VALUES(?,?,?,?,?,?,?)",
+                        (
+                            kind,
+                            target_id,
+                            model_id,
+                            len(vector),
+                            _to_blob(vector),
+                            utc_now(),
+                            source_hash(text),
+                        ),
                     )
             if kind == "memory":
                 result.embedded_memories += len(batch)

@@ -5,6 +5,62 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 5 defect sweep
+
+### Probed and found sound
+- **Latency.** 450 vectors: search p50 **5 ms**, a full ask **7 ms**. Loading
+  the whole matrix per query is not a problem at this scale.
+- **Index build.** 322 memories + 316 chunks in ~41 s, then fully incremental.
+
+### Bugs found and fixed (ADR-0024a, migration 0004)
+1. **An edited memory kept its old vector**, so semantic search matched text
+   the project no longer contained — the derived index diverging from the
+   source of truth. `embeddings.source_hash` now records exactly what was
+   embedded. `updated_at` was the tempting alternative and is wrong:
+   importance refinement touches it without changing a word.
+2. **Vectors outlived their targets.** `embeddings` has a polymorphic target so
+   it cannot carry a foreign key; deleting a project left its vectors forever.
+   `AFTER DELETE` triggers now do what the FK cannot.
+3. **The stemmer over-matched**: a fixed two-character chop turned "import"
+   into "impo", a prefix of "important". Now strips known suffixes and compares
+   whole stemmed tokens, with a `+e` variant for "deleted"/"delete".
+4. **`CI`, `DB`, `UI`, `ML` were unsearchable** — the content-term floor
+   excluded them, so "what does the CI do" could only abstain.
+
+### Verification performed
+- **301 tests pass** (was 287). 14 new sweep regressions.
+- `ruff check` / `format --check` clean; frontend typechecks and builds.
+- Both bugs re-probed after the fix: an edit now re-embeds exactly one record
+  and `search("Cassandra")` finds it; a project delete leaves **0** orphans.
+- 10 of 10 stemming cases correct in both directions.
+
+### A self-reference worth noting
+Asking *"what is the airspeed velocity of an unladen swallow"* against this
+repository now returns `evidence_found` — because ADR-0024 documents that exact
+sentence as its own worked example, so the corpus genuinely contains it. Not a
+regression: the controlled fixtures still assert abstention. The same
+self-reference bit the secret scanner in Stage 3, and it is worth remembering
+that a project documenting its own behaviour becomes part of its own corpus.
+
+### Known issues / blockers
+1. **ADR-0014's four-way benchmark is still outstanding.** `fastembed` does not
+   carry the potion models, so they need `model2vec` as a second runtime (an
+   ADR-0011 amendment), and the benchmark needs the labelled question set (P11).
+2. No `ranx` metrics yet — Recall@k, MRR, nDCG belong with that set.
+3. Stage 6 work: proposal approval, finding resolution, Change Impact.
+4. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open. No Windows
+   verification of the native wheels.
+
+No known Stage 5 defects remain open.
+
+### Next safe task
+**Stage 6 (Days 18-20) — the differentiating milestone.** Approval for
+consolidation proposals (writing revisions and `superseded_by` through the
+existing `supersede()` path), resolution for findings, and the Change Impact
+screen over a commit range. Both detection halves are already proven.
+
+---
+
 ## 2026-11-09 — Stage 5: recall and evidence retrieval
 
 ### What changed

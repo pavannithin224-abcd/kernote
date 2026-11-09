@@ -1081,3 +1081,55 @@ choose"* returns `weak_evidence`, because the ADR says "PostgreSQL" and
 "persistence" and never "database" — a human would answer it, term overlap
 cannot. That is the documented price of ADR-0006, and the right place to spend
 an optional model adapter later.
+
+---
+
+## ADR-0024a — Derived vectors track their source; matching is whole-token
+**Status:** accepted · 2026-11-09 · *amends ADR-0024; adds migration 0004*
+
+**Context.** Probing Stage 5 before Stage 6 found two correctness bugs and two
+precision/recall problems. Search latency was fine throughout (5 ms over 450
+vectors, 7 ms for a full ask), so none of this is about speed.
+
+1. **An edited memory kept its old vector.** `_pending` only selected rows with
+   *no* vector, so after an edit semantic search went on matching text the
+   project no longer contained. The derived index silently diverged from the
+   source of truth, which ADR-0002 exists to prevent.
+2. **Vectors outlived their targets.** `embeddings` has a polymorphic target
+   (`target_kind`, `target_id`) so it cannot carry a foreign key, and deleting
+   a project left its vectors behind permanently.
+3. **The stemmer over-matched.** Chopping a fixed two characters turned
+   "import" into "impo", a prefix of "important", so a question about imports
+   was "supported" by a sentence about importance.
+4. **Two-letter technical terms were unsearchable.** `len(t) > 2` excluded
+   `CI`, `DB`, `UI` and `ML`, leaving "what does the CI do" with no content
+   terms at all — it could only ever abstain.
+
+**Decision.**
+1. **Migration 0004** adds `embeddings.source_hash`, a SHA-256 of exactly the
+   text embedded. `_pending` re-embeds when the hash differs. `updated_at` was
+   the obvious alternative and is wrong: importance refinement touches
+   `updated_at` without changing a word, so it would re-embed the whole project
+   after every analysis.
+2. Migration 0004 also adds `AFTER DELETE` triggers on `memories` and `chunks`
+   that remove the corresponding vectors — the cleanup a foreign key cannot do.
+3. Stemming strips **known suffixes** (`s`, `es`, `ed`, `ing`, `ies` → `y`, …)
+   rather than a fixed number of characters, and comparison is against whole
+   **stemmed tokens** instead of substrings. A `+e` variant reunites
+   "deleted"/"delete" and "caches"/"cache" without reopening the substring hole:
+   "import" becomes "importe", which still does not match "important".
+4. The content-term floor drops to two characters. Stopwords already remove the
+   two-letter noise words.
+
+**Consequences.** 10 of 10 stemming cases now classify correctly, in both
+directions — `import`/`important`, `manage`/`management` and `vector`/`vectorise`
+are rejected while `secrets`/`secret`, `dependencies`/`dependency`,
+`deleted`/`delete` and `caches`/`cached` match. Re-indexing stays idempotent:
+an unchanged project embeds nothing, and a single edit re-embeds exactly one
+record.
+
+One amusing confirmation that retrieval works: after this session, asking *"what
+is the airspeed velocity of an unladen swallow"* against **this** repository
+returns `evidence_found`, because ADR-0024 above now contains that sentence
+verbatim as its own worked example. The controlled test fixtures still assert
+abstention, which is the behaviour that matters.

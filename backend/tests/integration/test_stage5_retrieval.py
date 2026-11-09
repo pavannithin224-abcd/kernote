@@ -473,3 +473,119 @@ def test_a_question_using_words_absent_from_the_source_abstains(conn, tmp_path):
         conn, project_id=project.id, question="which database did we choose", limit=5
     )
     assert bundle.outcome == "weak_evidence"
+
+
+# ===================== Stage 5 defect sweep regressions =====================
+
+
+def test_stemmer_does_not_match_unrelated_words():
+    """Chopping a fixed two characters made "import" into "impo", a prefix of
+    "important", so a question about imports was "supported" by a sentence
+    about importance."""
+    from kernote.retrieval.answer import _mentions, _stems_of
+
+    assert not _mentions(_stems_of("this is important work"), "import")
+    assert not _mentions(_stems_of("important"), "imports")
+    assert not _mentions(_stems_of("management overhead"), "manage")
+    assert not _mentions(_stems_of("a vectorise helper"), "vector")
+
+
+@pytest.mark.parametrize(
+    ("term", "text"),
+    [
+        ("secrets", "Secret refusal is two-tier"),
+        ("imports", "the import statement"),
+        ("dependencies", "a dependency list"),
+        ("deleted", "we delete nothing"),  # silent-e
+        ("caches", "a cached model"),  # silent-e
+        ("severity", "drift severity bands"),
+    ],
+)
+def test_stemmer_still_matches_real_inflections(term, text):
+    from kernote.retrieval.answer import _mentions, _stems_of
+
+    assert _mentions(_stems_of(text), term)
+
+
+@pytest.mark.parametrize("acronym", ["ci", "db", "ui", "ml"])
+def test_two_letter_technical_terms_are_searchable(acronym):
+    """Excluding them left "what does the CI do" with no content terms at all,
+    so it could only ever abstain."""
+    from kernote.retrieval.answer import _content_terms
+
+    assert acronym in _content_terms([acronym, "the", "is"])
+
+
+@pytest.mark.skipif(not SEMANTIC_AVAILABLE, reason="embedding model not cached")
+def test_editing_a_memory_refreshes_its_vector(conn, tmp_path):
+    """The index silently diverged from the source of truth: an edited memory
+    kept its old vector, so semantic search went on matching text the project
+    no longer contained."""
+    from kernote.db.repositories import memories as mrepo
+
+    project = _project(
+        conn,
+        tmp_path,
+        {"README.md": "# App\n\n## Storage\n\nWe store widgets in PostgreSQL.\n"},
+    )
+    vector.build_index(conn, project_id=project.id)
+    memory = mrepo.list_for_project(conn, project.id, limit=10)[0]
+    before = conn.execute(
+        "SELECT vector FROM embeddings WHERE target_id=?", (memory.id,)
+    ).fetchone()[0]
+
+    mrepo.update(
+        conn,
+        memory.id,
+        title="Storage uses Cassandra now",
+        content="We store widgets in Cassandra for durability.",
+        summary=None,
+        change_reason="migrated",
+    )
+    result = vector.build_index(conn, project_id=project.id)
+    assert result.embedded_memories >= 1, "the edited memory was not re-embedded"
+    after = conn.execute(
+        "SELECT vector FROM embeddings WHERE target_id=?", (memory.id,)
+    ).fetchone()[0]
+    assert before != after
+
+    hits = vector.search(conn, project_id=project.id, query="Cassandra", limit=5)
+    assert memory.id in {h.target_id for h in hits}
+
+
+@pytest.mark.skipif(not SEMANTIC_AVAILABLE, reason="embedding model not cached")
+def test_unchanged_content_is_not_re_embedded(conn, tmp_path):
+    """Freshness must not cost idempotency. `updated_at` was the obvious
+    alternative to a content hash and is wrong: importance refinement touches
+    it without changing a word."""
+    from kernote.maintain.importance import refine
+
+    project = _project(conn, tmp_path)
+    vector.build_index(conn, project_id=project.id)
+    refine(conn, project_id=project.id)
+    again = vector.build_index(conn, project_id=project.id)
+    assert again.embedded_memories == 0
+    assert again.embedded_chunks == 0
+
+
+def test_deleting_a_memory_removes_its_vector(conn, tmp_path):
+    """`embeddings` has a polymorphic target so it cannot carry a foreign key;
+    deleting a project left its vectors behind forever (migration 0004)."""
+    project = _project(conn, tmp_path)
+    conn.execute(
+        "INSERT INTO embeddings(target_kind,target_id,model_id,dim,vector,built_at) "
+        "SELECT 'memory', id, 'test-model', 2, X'0000', '2026-01-01' "
+        "FROM memories WHERE project_id=?",
+        (project.id,),
+    )
+    seeded = conn.execute(
+        "SELECT COUNT(*) FROM embeddings WHERE model_id='test-model'"
+    ).fetchone()[0]
+    assert seeded > 0
+    conn.execute("DELETE FROM projects WHERE id=?", (project.id,))
+    assert (
+        conn.execute("SELECT COUNT(*) FROM embeddings WHERE model_id='test-model'").fetchone()[
+            0
+        ]
+        == 0
+    ), "orphaned vectors survived the cascade"

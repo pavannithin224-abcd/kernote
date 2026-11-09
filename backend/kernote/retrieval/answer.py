@@ -22,6 +22,7 @@ answers to distinguish evidence, inference and unknowns.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 
@@ -59,26 +60,64 @@ _STOPWORDS = frozenset(
 
 
 def _content_terms(terms: list[str]) -> set[str]:
-    """Query terms that can actually support an answer."""
-    return {t for t in terms if t not in _STOPWORDS and len(t) > 2}
+    """Query terms that can actually support an answer.
+
+    Two characters is the floor, not three: `CI`, `DB`, `UI` and `ML` are real
+    technical terms, and excluding them left "what does the CI do" with no
+    content terms at all, so it could only ever abstain. Stopwords already
+    remove the two-letter noise words.
+    """
+    return {t for t in terms if t not in _STOPWORDS and len(t) >= 2}
+
+
+# Suffixes stripped for the overlap check, longest first. Chopping a fixed two
+# characters was the first attempt and over-matched badly: "import" became
+# "impo", which is a prefix of "important", so a question about imports was
+# "supported" by a sentence about importance.
+_SUFFIXES = ("ingly", "edly", "ing", "ies", "ied", "ers", "est", "ed", "es", "er", "ly", "s")
+_TOKEN = re.compile(r"[a-z0-9][a-z0-9_.]*")
 
 
 def _stem(term: str) -> str:
-    """Crude prefix stem for the overlap check.
+    """Strip a known inflection, never a fixed number of characters."""
+    for suffix in _SUFFIXES:
+        if len(term) > len(suffix) + 3 and term.endswith(suffix):
+            base = term[: -len(suffix)]
+            # "ies" -> "y" keeps "dependencies" and "dependency" together.
+            if suffix == "ies":
+                return base + "y"
+            return base
+    return term
 
-    An exact substring test reported "how are secrets kept out of the
-    database" as unsupported, because ADR-0020a says "**Secret** refusal" --
-    singular. FTS5 uses the porter tokenizer for retrieval; this only has to
-    agree with it well enough to decide whether an item mentions the thing
-    asked about.
+
+def _variants(word: str) -> set[str]:
+    """A word and its stem, plus the stem with a restored silent `e`.
+
+    Stripping "ed" from "deleted" gives "delet", which does not equal
+    "delete"; the same happens for "caches" and "cache". Adding the `e` form
+    reunites them without reintroducing substring matching -- "import" becomes
+    "importe", which still does not match "important".
     """
-    if len(term) <= 4:
-        return term
-    return term[: max(4, len(term) - 2)]
+    stem = _stem(word)
+    return {word, stem, stem + "e"}
 
 
-def _mentions(haystack: str, term: str) -> bool:
-    return term in haystack or _stem(term) in haystack
+def _mentions(haystack_stems: set[str], term: str) -> bool:
+    """Whole-token comparison, not substring.
+
+    A substring test is what let "import" match "important". Comparing stemmed
+    *tokens* means a term matches only when the source actually uses that word
+    or an inflection of it, which is what "this record mentions what you asked
+    about" has to mean.
+    """
+    return bool(_variants(term) & haystack_stems)
+
+
+def _stems_of(text: str) -> set[str]:
+    stems: set[str] = set()
+    for token in _TOKEN.findall(text.lower()):
+        stems |= _variants(token)
+    return stems
 
 
 @dataclass
@@ -217,8 +256,13 @@ def ask(
         # Support is decided against the item's *full* text, not the excerpt
         # shown to the reader: a 500-character preview can omit the very term
         # that makes the record relevant.
-        haystack = f"{title}\n{_full_text(conn, result.target_kind, result.target_id)}".lower()
-        matched = sorted(t for t in content_terms if _mentions(haystack, t))
+        # Support is decided against the item's *full* text, not the excerpt
+        # shown to the reader: a 500-character preview can omit the very term
+        # that makes the record relevant.
+        haystack_stems = _stems_of(
+            f"{title}\n{_full_text(conn, result.target_kind, result.target_id)}"
+        )
+        matched = sorted(t for t in content_terms if _mentions(haystack_stems, t))
         # A memory and the chunk it came from cite the same lines; showing both
         # pads the evidence list without adding a source.
         if citation in seen_citations:
