@@ -19,4 +19,8 @@ select = ["E", "F", "I", "UP", "B", "S", "C4", "RET", "SIM"]
 ignore = ["S101"]  # assert is how tests assert
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106", "S108"]
+# S105/S106/S108: deliberately fake credentials and temp paths in fixtures.
+# S603/S607: test helpers build throwaway git repositories with fixed argument
+# lists under tmp_path. Production code's single `git` invocation carries its
+# own documented noqa in ingest/gitmeta.py.
+"tests/**" = ["S105", "S106", "S108", "S603", "S607"]

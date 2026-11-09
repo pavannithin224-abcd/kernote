@@ -300,6 +300,114 @@ def supersede(
         return refreshed, new
 
 
+def supersede_into(
+    conn: sqlite3.Connection,
+    *,
+    absorb_id: str,
+    keep_id: str,
+    merged_content: str,
+    reason: str,
+) -> tuple[Memory, Memory] | None:
+    """Merge one memory into an existing one, losing nothing.
+
+    Differs from `supersede()` in that the replacement already exists: a
+    consolidation keeps one of the two records rather than creating a third.
+
+    What this guarantees, and what the tests assert:
+
+    * the absorbed record keeps every byte it had, gains `superseded_by`, and
+      stays fetchable by id forever (invariant 5);
+    * **every source ref from the absorbed record is copied onto the keeper**,
+      so no citation is lost -- this is the promise the merge preview makes;
+    * both records gain a revision, so the merge is in the audit trail;
+    * it is one transaction, because a half-applied merge would either lose
+      citations or leave two records both claiming to be current.
+    """
+    with transaction(conn):
+        absorb = get(conn, absorb_id)
+        keep = get(conn, keep_id)
+        if absorb is None or keep is None:
+            return None
+        if absorb_id == keep_id:
+            raise ValueError("a memory cannot be merged into itself")
+        if absorb.project_id != keep.project_id:
+            raise ValueError("cannot merge across projects")
+        if absorb.superseded_by:
+            raise ValueError(
+                f"memory {absorb_id} is already superseded by {absorb.superseded_by}"
+            )
+
+        # Carry the absorbed record's provenance onto the keeper, skipping any
+        # citation it already has.
+        existing = {
+            (r.rel_path, r.line_start, r.line_end, r.url, r.user_note) for r in keep.source_refs
+        }
+        copied = 0
+        for ref in absorb.source_refs:
+            key = (ref.rel_path, ref.line_start, ref.line_end, ref.url, ref.user_note)
+            if key in existing:
+                continue
+            _write_ref(conn, keep_id, ref)
+            copied += 1
+
+        # New revision on the keeper recording the merged wording.
+        keep_parent = conn.execute(
+            "SELECT current_revision FROM memories WHERE id=?", (keep_id,)
+        ).fetchone()["current_revision"]
+        keep_revision = new_id()
+        merged = keep.model_copy(update={"content": merged_content, "updated_at": utc_now()})
+        conn.execute(
+            "UPDATE memories SET content=?,updated_at=?,current_revision=? WHERE id=?",
+            (merged_content, merged.updated_at, keep_revision, keep_id),
+        )
+        _write_revision(
+            conn,
+            merged,
+            keep_revision,
+            keep_parent,
+            f"absorbed {absorb_id}: {reason} ({copied} citation(s) carried over)",
+            "user",
+        )
+
+        # Close the absorbed record.
+        absorb_parent = conn.execute(
+            "SELECT current_revision FROM memories WHERE id=?", (absorb_id,)
+        ).fetchone()["current_revision"]
+        absorb_revision = new_id()
+        conn.execute(
+            "UPDATE memories SET superseded_by=?,status=?,updated_at=?,valid_until=?,"
+            "current_revision=? WHERE id=?",
+            (
+                keep_id,
+                MemoryStatus.SUPERSEDED.value,
+                utc_now(),
+                absorb.valid_until or utc_now(),
+                absorb_revision,
+                absorb_id,
+            ),
+        )
+        _write_revision(
+            conn,
+            absorb.model_copy(
+                update={"superseded_by": keep_id, "status": MemoryStatus.SUPERSEDED}
+            ),
+            absorb_revision,
+            absorb_parent,
+            f"merged into {keep_id}: {reason}",
+            "user",
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO memory_links(src_id,dst_id,kind,reason,created_at) "
+            "VALUES(?,?,'supersedes',?,?)",
+            (keep_id, absorb_id, f"consolidation: {reason}", utc_now()),
+        )
+
+        refreshed_keep = get(conn, keep_id)
+        refreshed_absorb = get(conn, absorb_id)
+        assert refreshed_keep is not None and refreshed_absorb is not None
+        return refreshed_keep, refreshed_absorb
+
+
 def _row(conn: sqlite3.Connection, row: sqlite3.Row) -> Memory:
     refs = conn.execute(
         "SELECT rel_path,line_start,line_end,content_hash,git_blob_hash,git_commit,"

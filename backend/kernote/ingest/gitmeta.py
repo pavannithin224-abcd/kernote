@@ -45,6 +45,44 @@ def head_commit(root: Path) -> str | None:
     return _git(root, "rev-parse", "HEAD")
 
 
+def resolve(root: Path, ref: str) -> str | None:
+    """A ref's commit sha, or None if it does not exist."""
+    return _git(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+
+
+def changed_files(root: Path, base: str, head: str = "HEAD") -> list[str] | None:
+    """Paths changed between two refs, or None if either ref is unknown."""
+    if resolve(root, base) is None or resolve(root, head) is None:
+        return None
+    out = _git(root, "diff", "--name-only", f"{base}..{head}")
+    if out is None:
+        return None
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def file_diff(root: Path, base: str, head: str, rel_path: str) -> str | None:
+    """Unified diff for one path with no context lines.
+
+    `-U0` for the same reason as ADR-0019: with context, a hunk spans unchanged
+    lines either side of the edit and the overlap test reports citations that
+    merely sit near a change.
+    """
+    return _git(root, "diff", "-U0", f"{base}..{head}", "--", rel_path)
+
+
+def recent_commits(root: Path, limit: int = 20) -> list[dict[str, str]]:
+    """Recent commits, newest first, for choosing a range in the UI."""
+    out = _git(root, "log", f"-{limit}", "--date=short", "--format=%h%x1f%ad%x1f%s")
+    if not out:
+        return []
+    commits = []
+    for line in out.splitlines():
+        parts = line.split("\x1f")
+        if len(parts) == 3:
+            commits.append({"sha": parts[0], "date": parts[1], "subject": parts[2]})
+    return commits
+
+
 def blob_hashes(root: Path) -> dict[str, str]:
     """rel_path -> git blob hash for tracked files. Empty outside a repo.
 

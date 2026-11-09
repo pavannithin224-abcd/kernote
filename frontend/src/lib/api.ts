@@ -53,6 +53,44 @@ export interface Proposal {
   }
 }
 
+export interface AffectedMemory {
+  memory_id: string
+  title: string
+  memory_type: string
+  status: string
+  citation: string
+  rel_path: string
+  overlap: 'direct' | 'same_file'
+  changed_lines: number[][]
+  reason: string
+}
+
+export interface ImpactReport {
+  base: string
+  head: string
+  resolved: boolean
+  changed_files: string[]
+  files_with_memories: string[]
+  affected: AffectedMemory[]
+  note: string | null
+  direct: number
+}
+
+export interface Commit {
+  sha: string
+  date: string
+  subject: string
+}
+
+export interface ApprovalResult {
+  proposal_id: string
+  kept_id: string
+  absorbed_id: string
+  citations_before: number
+  citations_after: number
+  revisions_written: number
+}
+
 export interface EvidenceItem {
   kind: 'evidence' | 'inference'
   source: 'memory' | 'chunk'
@@ -230,6 +268,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ question, session_id: sessionId ?? null }),
     }),
+  approveProposal: (projectId: string, proposalId: string, note?: string) =>
+    call<ApprovalResult>(
+      `/proposals/${proposalId}/approve?project_id=${encodeURIComponent(projectId)}`,
+      { method: 'POST', body: JSON.stringify({ note: note ?? null }) },
+    ),
+  rejectProposal: (projectId: string, proposalId: string, note?: string) =>
+    call<{ rejected: boolean; note: string }>(
+      `/proposals/${proposalId}/reject?project_id=${encodeURIComponent(projectId)}`,
+      { method: 'POST', body: JSON.stringify({ note: note ?? null }) },
+    ),
+  resolveFinding: (
+    projectId: string,
+    findingId: string,
+    verdict: 'accepted' | 'rejected' | 'resolved',
+    note?: string,
+  ) =>
+    call<{ verdict: string; memories_returned_to_active: string[] }>(
+      `/findings/${findingId}/resolve?project_id=${encodeURIComponent(projectId)}`,
+      { method: 'POST', body: JSON.stringify({ verdict, note: note ?? null }) },
+    ),
+  impact: (id: string, base: string, head = 'HEAD') =>
+    call<ImpactReport>(
+      `/projects/${id}/impact?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`,
+    ),
+  commits: (id: string) => call<Commit[]>(`/projects/${id}/commits`),
   embeddingStatus: (id: string) =>
     call<EmbeddingStatus>(`/projects/${id}/embeddings`),
   buildEmbeddings: (id: string, allowDownload: boolean) =>

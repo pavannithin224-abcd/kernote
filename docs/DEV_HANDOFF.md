@@ -5,6 +5,71 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 6: the review flow
+
+The differentiating milestone. Detection was proven by the P4/P5 spikes; this
+is the half where a human decides and the decision is recorded.
+
+### What changed
+- **`memories.supersede_into()`** — merge into an *existing* record, in one
+  transaction: carries the absorbed record's citations onto the keeper, writes
+  revisions on both, closes the absorbed one with `superseded_by` and a
+  `valid_until`, records a typed edge. Nothing deleted (ADR-0025).
+- **`maintain/review.py`** — `approve_proposal`, `reject_proposal`,
+  `resolve_finding`. Approval **verifies its own promise**: it compares the
+  citations the preview advertised against the keeper's actual citations and
+  rolls back if any is missing.
+- **`maintain/impact.py`** — Change Impact over a commit range, with `direct`
+  vs `same_file` classification (ADR-0026).
+- **`ingest/gitmeta.py`** — `resolve`, `changed_files`, `file_diff`,
+  `recent_commits`.
+- **Migration 0005** — `feedback.verdict` now allows `'resolved'`.
+- **API** — approve, reject, resolve, impact, commits. 22 endpoints.
+- **UI** — the Memory Intelligence Center's buttons now do something:
+  *Approve merge* / *Not a duplicate* on proposals, *Needs attention* /
+  *False positive* on findings, with the citation delta reported back. New
+  **Change Impact** screen with a commit picker.
+- ADR-0025 and ADR-0026 added (33 ADRs).
+
+### Verification performed
+- **321 tests pass** (was 301). 20 new.
+- `ruff check` / `format --check` clean; frontend typechecks and builds.
+- **Live over HTTP on this repository:** scan 105 files / 348 memories →
+  analyze → approve a real proposal → **citations 1 → 2, 2 revisions, promise
+  held**, absorbed record still fetchable with its wording intact, second
+  approval returns **409**. Resolve a conflict finding → 200. Change Impact
+  `HEAD~1..HEAD` → 6 files, 41 memories in them, **5 directly affected**.
+
+### Two bugs found while building
+1. **A CHECK constraint disagreed with the code.** `findings.status` has always
+   allowed `'resolved'`, but `feedback.verdict` did not, so resolving a finding
+   as resolved passed every application check and then failed on the last
+   statement — the review flow's own happy path. Migration 0005 rebuilds the
+   table; SQLite cannot alter a CHECK.
+2. **A fixture produced no memories** because its section body was under the
+   40-character floor, which surfaced as an `IndexError` rather than a clear
+   failure. Lengthened; worth remembering that the extractor's minimum body
+   length is a silent filter in tests.
+
+### Known issues / blockers
+1. **Approval is not reversible.** Superseding is recorded and the absorbed
+   record is intact, so an undo is *possible* — but there is no endpoint for
+   it. Worth adding before anyone relies on the merge button.
+2. Resolved findings are closed, not re-openable.
+3. **ADR-0014's four-way benchmark is still the biggest gap**, and it needs the
+   labelled question set (P11). That plus `ranx` metrics is the Stage 8 story.
+4. Proposal items P3, P6-P13 unapplied. ADR-0009 and Q1/Q2/Q4 open. No Windows
+   verification of the native wheels.
+
+### Next safe task
+Either the **Stage 6 defect sweep**, or **Stage 7 (Days 21-22): agent
+delivery** — the context-bundle export and the four read-only MCP tools. Note
+that F9 is the first thing on the scope-cut list, so Stage 8's evaluation work
+(the labelled question set, `ranx` metrics, the embedding benchmark) is the
+higher-value target if time is short.
+
+---
+
 ## 2026-11-09 — Stage 5 defect sweep
 
 ### Probed and found sound

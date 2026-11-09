@@ -15,9 +15,25 @@ function severityTone(severity: Finding['severity']) {
   return severity === 'high' ? 'warn' : severity === 'medium' ? 'accent' : 'neutral'
 }
 
-/** Diff-style before/after. Nothing is merged until it is approved. */
-function ProposalPreview({ proposal }: { proposal: import('../lib/api').Proposal }) {
+/** Diff-style before/after, with the decision that applies it. */
+function ProposalPreview({
+  proposal,
+  projectId,
+  onDecided,
+}: {
+  proposal: import('../lib/api').Proposal
+  projectId: string
+  onDecided: () => void
+}) {
   const { before, after, guarantees } = proposal.preview
+  const approve = useMutation({
+    mutationFn: () => api.approveProposal(projectId, proposal.id, 'approved in review'),
+    onSuccess: onDecided,
+  })
+  const reject = useMutation({
+    mutationFn: () => api.rejectProposal(projectId, proposal.id, 'not a duplicate'),
+    onSuccess: onDecided,
+  })
   return (
     <div className="space-y-3">
       <div className="grid md:grid-cols-2 gap-2">
@@ -71,10 +87,84 @@ function ProposalPreview({ proposal }: { proposal: import('../lib/api').Proposal
           <li key={g}>· {g}</li>
         ))}
       </ul>
-      <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
-        Approval lands in Stage 6. Until then this is a preview only — nothing has
-        been merged.
-      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => approve.mutate()}
+          disabled={approve.isPending || reject.isPending}
+          className="rounded-md px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-50"
+          style={{ background: 'var(--ok)' }}
+        >
+          {approve.isPending ? 'Merging…' : 'Approve merge'}
+        </button>
+        <button
+          onClick={() => reject.mutate()}
+          disabled={approve.isPending || reject.isPending}
+          className="rounded-md border px-2.5 py-1 text-[12px] font-medium disabled:opacity-50"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          {reject.isPending ? 'Dismissing…' : 'Not a duplicate'}
+        </button>
+        <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
+          Approving supersedes the absorbed record; it is never deleted.
+        </span>
+      </div>
+
+      {approve.isError && <ErrorNote error={approve.error} />}
+      {reject.isError && <ErrorNote error={reject.error} />}
+      {approve.data && (
+        <div
+          className="rounded-md px-2.5 py-2 text-[12px]"
+          style={{ background: 'var(--ok-soft)', color: 'var(--ok)' }}
+        >
+          Merged. Citations {approve.data.citations_before} →{' '}
+          {approve.data.citations_after}, {approve.data.revisions_written} revisions
+          written, absorbed record kept as history.
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Closing a finding is a recorded decision, not a dismissal (ADR-0007). */
+function FindingActions({
+  finding,
+  projectId,
+  onDecided,
+}: {
+  finding: Finding
+  projectId: string
+  onDecided: () => void
+}) {
+  const act = useMutation({
+    mutationFn: (verdict: 'accepted' | 'rejected') =>
+      api.resolveFinding(
+        projectId,
+        finding.id,
+        verdict,
+        verdict === 'rejected' ? 'false positive' : 'needs attention',
+      ),
+    onSuccess: onDecided,
+  })
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-1">
+      <button
+        onClick={() => act.mutate('accepted')}
+        disabled={act.isPending}
+        className="rounded border px-2 py-0.5 text-[11px] disabled:opacity-50"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        Needs attention
+      </button>
+      <button
+        onClick={() => act.mutate('rejected')}
+        disabled={act.isPending}
+        className="rounded border px-2 py-0.5 text-[11px] disabled:opacity-50"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        False positive
+      </button>
+      {act.isError && <ErrorNote error={act.error} />}
     </div>
   )
 }
@@ -156,7 +246,16 @@ export default function MaintenanceCenter() {
         <Panel title={`Consolidation proposals (${proposals.data!.length})`}>
           <div className="space-y-5">
             {proposals.data!.map((p) => (
-              <ProposalPreview key={p.id} proposal={p} />
+              <ProposalPreview
+                key={p.id}
+                proposal={p}
+                projectId={projectId}
+                onDecided={() => {
+                  qc.invalidateQueries({ queryKey: ['proposals', projectId] })
+                  qc.invalidateQueries({ queryKey: ['findings', projectId] })
+                  qc.invalidateQueries({ queryKey: ['memories'] })
+                }}
+              />
             ))}
           </div>
         </Panel>
@@ -201,6 +300,14 @@ export default function MaintenanceCenter() {
                         {f.detector}
                       </span>
                     </div>
+                    <FindingActions
+                      finding={f}
+                      projectId={projectId}
+                      onDecided={() => {
+                        qc.invalidateQueries({ queryKey: ['findings', projectId] })
+                        qc.invalidateQueries({ queryKey: ['memories'] })
+                      }}
+                    />
                   </li>
                 )
               })}

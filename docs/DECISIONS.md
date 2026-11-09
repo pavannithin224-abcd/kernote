@@ -1133,3 +1133,84 @@ is the airspeed velocity of an unladen swallow"* against **this** repository
 returns `evidence_found`, because ADR-0024 above now contains that sentence
 verbatim as its own worked example. The controlled test fixtures still assert
 abstention, which is the behaviour that matters.
+
+---
+
+## ADR-0025 — Consolidation merges into an existing record and verifies its own promise
+**Status:** accepted · 2026-11-09 · *completes F4; implements the Stage 6 review flow*
+
+**Context.** The duplicate preview (ADR-0021) promises three things: the
+absorbed record is superseded and never deleted, every citation from both
+records is retained, and no wording is paraphrased. Those promises are what
+make it reasonable for a human to approve a merge they have skim-read. Until
+Stage 6 they were only prose.
+
+`supersede()` already existed but creates a *new* memory as the replacement. A
+consolidation keeps one of the two records, so a second primitive was needed.
+
+**Decision.**
+1. `memories.supersede_into(absorb_id, keep_id, merged_content, reason)` — one
+   transaction that copies the absorbed record's source refs onto the keeper
+   (skipping duplicates), writes the merged wording as a **new revision** on
+   the keeper, closes the absorbed record with `superseded_by`, a closing
+   revision and a `valid_until`, and records a typed `supersedes` edge.
+2. **The approval verifies its own promise.** After merging, it compares the
+   citations the preview advertised against the keeper's actual citations and
+   **raises, rolling the transaction back, if any is missing**. Trusting the
+   merge code to be correct is not the same as checking, and silently dropping
+   provenance is the one failure this feature cannot have.
+3. Rejection leaves both memories byte-identical — asserted by a test that
+   snapshots status, content and ref count.
+4. Every decision writes a `feedback` row. MEMORY_MODEL stage 9 is explicit
+   feedback only: this is what a human chose, and it is what any later
+   threshold tuning must rest on.
+5. Resolving a finding records a verdict and never edits memory content.
+   `rejected` returns a `needs_review` memory to `active` and stamps
+   `last_verified_at`, so the same unchanged source does not re-raise it.
+
+**Alternatives.** *Create a third memory and supersede both* — more uniform,
+but it orphans the surviving record's identity, so every existing link and
+citation would point at a superseded row. *Delete the absorbed record* —
+forbidden outright. *Trust the preview without re-checking* — the cheap option,
+and the one that would let a provenance bug ship silently.
+
+**Consequences.** Live on this repository: approving a real proposal moved the
+keeper from 1 citation to 2, wrote 2 revisions, left the absorbed record
+fetchable with its wording intact, and a second approval returned HTTP 409
+rather than merging twice. Migration 0005 was required because
+`feedback.verdict` forbade `'resolved'` while `findings.status` allowed it — a
+CHECK constraint disagreeing with the code, which failed on the review flow's
+own happy path and was caught by a Stage 6 test.
+
+---
+
+## ADR-0026 — Change Impact diffs refs; "affected" still means overlapping lines
+**Status:** accepted · 2026-11-09
+
+**Context.** Drift (ADR-0019) answers "has the file on disk moved under a
+pinned claim?" by diffing the stored capture against the working tree. Change
+Impact answers a different question — "I am reviewing this commit range; what
+knowledge does it touch?" — which needs two *refs*, not a capture.
+
+**Decision.** `maintain/impact.py` resolves both refs, lists changed paths with
+`git diff --name-only`, and for each path takes `git diff -U0` and parses hunks
+with `unidiff`. `-U0` for the same reason as ADR-0019: with context lines a
+hunk spans unchanged lines either side of the edit, and citations that merely
+sit near a change get reported.
+
+A memory is **`direct`** only when the changed hunks overlap its cited line
+range, and **`same_file`** otherwise — shown separately and described as
+"likely unaffected". An unresolvable ref, or a project root that is not a
+repository, returns `resolved: false` with a readable note rather than an error.
+
+**Alternatives.** *List every memory whose file appears in the diff* — the
+obvious implementation, and measurably useless here: `HEAD~1..HEAD` touches 6
+files holding **41** memories, of which **5** are directly affected. Reporting
+41 is how a reviewer learns to ignore the screen. *Reuse the drift path* —
+wrong input; drift compares against a stored capture, which says nothing about
+what changed between two commits.
+
+**Consequences.** The 41-versus-5 ratio is the feature. A test asserts both
+halves: the edited section is flagged `direct`, and the untouched section in
+the same file is flagged `same_file` — if every memory in a changed file were
+reported as affected, that test fails.
