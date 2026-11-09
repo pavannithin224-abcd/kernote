@@ -16,18 +16,18 @@ generated answer to score for fluency, deliberately.
 
 | Measure | FTS5 keyword only | + MiniLM semantic (RRF) |
 |---|---|---|
-| Recall@1 | 0.560 | 0.620 |
-| Recall@5 | 0.600 | 0.740 |
-| Recall@10 | 0.600 | 0.740 |
-| MRR | 0.568 | 0.678 |
-| nDCG@10 | 0.592 | 0.711 |
-| Citation correctness | 37.9% | 51.6% |
-| Citation correctness (strict) | 30.5% | 41.1% |
+| Recall@1 | 0.560 | 0.660 |
+| Recall@5 | 0.640 | 0.780 |
+| Recall@10 | 0.640 | 0.780 |
+| MRR | 0.578 | 0.718 |
+| nDCG@10 | 0.622 | 0.755 |
+| Citation correctness | 43.1% | 54.7% |
+| Citation correctness (strict) | 34.3% | 43.4% |
 | Useful abstention | 83.3% | 83.3% |
-| False abstention | 28.0% | 28.0% |
-| Retrieved an answering doc | 60.0% | 76.0% |
-| ...and asserted it | 48.0% | 48.0% |
-| Of the leads, right doc first | 66.7% | 57.1% |
+| False abstention | 20.0% | 20.0% |
+| Retrieved an answering doc | 64.0% | 80.0% |
+| ...and asserted it | 60.0% | 60.0% |
+| Of the leads, right doc first | 0.0% | 40.0% |
 
 Semantic indexing of this corpus took 4.7s on the development machine with `sentence-transformers/all-MiniLM-L6-v2` already cached.
 
@@ -79,9 +79,9 @@ recorded, not averaged away.
 
 | Verdict | Keyword | Hybrid | Meaning |
 |---|---|---|---|
-| `answered` | 12 | 12 | retrieved a document that answers it **and** asserted it |
-| `lead_only` | 3 | 7 | retrieved it, then declined to call it an answer |
-| `missed` | 10 | 6 | never retrieved it — the only unambiguous retrieval failure |
+| `answered` | 15 | 15 | retrieved a document that answers it **and** asserted it |
+| `lead_only` | 1 | 5 | retrieved it, then declined to call it an answer |
+| `missed` | 9 | 5 | never retrieved it — the only unambiguous retrieval failure |
 | `correctly_declined` | 5 | 5 | unanswerable, and it declined |
 | `wrongly_asserted` | 1 | 1 | unanswerable, and it asserted an answer anyway |
 

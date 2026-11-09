@@ -5,6 +5,72 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Q6 closed: a title match is worth the overlap bar
+
+The last open question on retrieval quality, and the measurement redirected it
+twice.
+
+### What changed
+- **`retrieval/answer.py`** — a term matched in a record's own title counts
+  **2.0** toward both the overlap count and the information share (ADR-0035).
+- `docs/EVALUATION.md` regenerated; Q6 struck through in the spec.
+- ADR-0035 added (52 ADRs).
+
+### Four signals, measured rather than argued
+For every answerable question on both corpora, the answering record was
+compared against the best-scoring wrong one:
+
+| Signal | Favours the answer | Favours a distractor |
+|---|---|---|
+| **term is in the record's title** | **5** | **0** |
+| term is an extracted entity | 2 | 0 |
+| term was capitalised in the question | 2 | 0 |
+| *position in the question* | 1 | **2** |
+
+**Position is actively harmful** — and it is the signal Q6 proposed first. That
+is the most useful thing the measurement produced.
+
+### The blocker was not the share
+Boosting the share changed **no verdict** at any multiplier from 1.3 to 3.0,
+which took a second measurement to understand: `_MIN_OVERLAP` is 2, the
+MongoDB record matches *one* term, so it was rejected for matching "only one
+word" and never reached the share test. The flat two-term bar was doing the
+refusing. Once the title weight applied to the overlap count as well, 2.0
+cleared it — and 2.0 is structural, not fitted: it is exactly "a term in the
+record's own title is worth the overlap bar by itself".
+
+### Verification performed
+- **413 tests pass, 5 skipped** (was 411). Two new, one of them asserting the
+  boost cannot reach past the ADR-0033 veto.
+- Fixture: false abstention **28.0% → 20.0%**, answered **12 → 15**,
+  `lead_only` 3 → 1, citation correctness **51.6% → 54.7%**, Recall@5
+  **0.740 → 0.780**, MRR 0.678 → 0.718 — with **useful abstention (83.3%) and
+  wrongly-asserted (1) unchanged**. Answers bought without spending the
+  guarantee.
+- Real repository **completely unaffected**: abstention 100%, false abstention
+  11.1%, zero wrongly asserted. The right outcome for a fix aimed at a defect
+  the fixture had and it did not.
+- Windows: **404 passed, 3 failed** (the Git-dependent Change Impact tests).
+  `ruff` clean, demo passes on Linux.
+
+### Known issues / blockers
+1. **False abstention is 20% / 11% and is now dominated by `missed`** —
+   documents retrieval never surfaced — rather than by records found and not
+   asserted. That is a retrieval problem, not a support-rule one, which is why
+   Q6 closes rather than being renamed.
+2. `lead_first_rate` reads lower (57.1% → 40.0%) only because there are fewer
+   leads to be first among. The denominator changed, not the behaviour.
+3. Git is not installed on the Windows machine, so Change Impact is unverified
+   there. The frontend build is untested on Windows.
+4. The UI has had no visual pass. The RC tag predates all post-RC work.
+
+### Next safe task
+**The UI visual pass**, which needs your reference stills, or **retrieval
+recall** — the `missed` bucket is now the largest single source of failure on
+both corpora.
+
+---
+
 ## 2026-11-09 — Code symbols work on Windows: language-pack 0.4.0 → 1.25.0
 
 ADR-0009a left two Windows caveats. One is now gone.

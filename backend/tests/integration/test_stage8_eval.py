@@ -319,3 +319,57 @@ def test_the_questions_own_subject_still_asserts(conn, tmp_path):
         limit=10,
     )
     assert bundle.outcome == "evidence_found", bundle.statement
+
+
+# ─── Q6: a title match is worth the overlap bar (ADR-0035) ─────────────────
+
+
+def test_a_record_whose_title_names_the_subject_can_answer_alone(conn, tmp_path):
+    """The Q6 case. "Why was MongoDB removed from the stack" matches one term
+    in the record that answers it -- `mongodb` -- and a flat two-term overlap
+    bar rejected it for matching "only one word", never reaching the share
+    test. But that word is the question's subject and the record's title names
+    it, which is evidence a reader can check by looking."""
+    (tmp_path / "0006-mongo.md").write_text(
+        "# ADR-0006: Event archive in MongoDB\n\nStatus: superseded\n\n"
+        "## Decision\n\nArchive events into MongoDB nightly.\n\n"
+        "## Consequences\n\nThis ran for four months and was removed.\n",
+        encoding="utf-8",
+    )
+    for index in range(6):
+        (tmp_path / f"topic{index}.md").write_text(
+            f"# Topic {index}\n\n## Stack {index}\n\nThe stack for subsystem "
+            f"{index} covers billing, delivery windows and operator sessions.\n",
+            encoding="utf-8",
+        )
+    project_id, _ = _scan(conn, tmp_path)
+    bundle = answer_mod.ask(
+        conn,
+        project_id=project_id,
+        question="Why was MongoDB removed from the stack?",
+        limit=10,
+    )
+    assert bundle.outcome == "evidence_found", bundle.statement
+    cited = [item.citation.split(":")[0] for item in bundle.evidence]
+    assert "0006-mongo.md" in cited
+
+
+def test_a_title_match_cannot_answer_a_question_the_corpus_cannot(conn, tmp_path):
+    """The boost must not reach past the ADR-0033 veto: a question whose terms
+    are absent stays unanswered however well its one present term matches."""
+    (tmp_path / "redis.md").write_text(
+        "# Redis\n\n## Queue\n\nRedis streams carry the job queue.\n", encoding="utf-8"
+    )
+    for index in range(6):
+        (tmp_path / f"other{index}.md").write_text(
+            f"# Other {index}\n\n## Part {index}\n\nUnrelated subsystem {index}.\n",
+            encoding="utf-8",
+        )
+    project_id, _ = _scan(conn, tmp_path)
+    bundle = answer_mod.ask(
+        conn,
+        project_id=project_id,
+        question="What is the monthly licensing cost of Redis Enterprise in euros?",
+        limit=10,
+    )
+    assert bundle.outcome != "evidence_found", bundle.statement

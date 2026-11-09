@@ -86,6 +86,31 @@ _MIN_INFORMATION_SHARE = 0.30
 # false abstention, where the peak rule reached 3 of 4 and cost two answers.
 _MAX_ABSENT_TERM_SHARE = 0.30
 
+# A term matched in a record's own *title* counts for more than one mentioned
+# in passing. Inverse document frequency says how *rare* a term is, not how
+# *central* it is to the question, and in a small corpus an incidental rare
+# word outranks the subject: for "why was MongoDB removed from the stack" the
+# document that answers it matched `mongodb` and scored 0.283, while a
+# distractor matched `stack` alone and scored 0.385 (open question Q6).
+#
+# Title agreement was chosen by measurement over the three other candidates.
+# Across both corpora it favoured the answering record 5 times and a
+# distractor 0 times; entity membership scored 2-0, question capitalisation
+# 2-0, and *position in the question* -- which the open question suggested --
+# was actively harmful at 1 for and 2 against.
+#
+# It applies to both tests a record must pass -- the overlap count and the
+# information share -- because the flat two-term overlap bar is what actually
+# refused the Q6 case. The share is capped at 1.0, so a boost can rescue a
+# record that was below the bar but never manufacture support for a question
+# whose terms are absent; the ADR-0033 veto still stands in front of both.
+#
+# 2.0 is structural rather than fitted: `_MIN_OVERLAP` is 2, so this is exactly
+# "a term in the record's own title is worth the overlap bar by itself". 1.6
+# changed no verdict because it could not clear that bar; 3.0 changed none
+# either, so the value is not balanced on a knife edge.
+_TITLE_MATCH_BOOST = 2.0
+
 # Stopwords are kept for *retrieval* (bm25 handles them, and dropping them
 # would hurt recall on short questions) but must not count as support.
 # Without this, "what is the airspeed velocity of an unladen swallow" matched
@@ -409,10 +434,35 @@ def ask(
         # by dividing by a negative number.
         if whole <= 0:
             return 1.0
-        return sum(weights.get(t, 0.0) for t in item.matched_terms) / whole
+        title_stems = _stems_of(item.title or "")
+        total = 0.0
+        for term in item.matched_terms:
+            weight = weights.get(term, 0.0)
+            if _mentions(title_stems, term):
+                weight *= _TITLE_MATCH_BOOST
+            total += weight
+        # Capped, so a boost can only ever rescue a record, never invent a
+        # share above the whole question.
+        return min(1.0, total / whole)
+
+    def effective_overlap(item: EvidenceItem) -> float:
+        """Matched terms, counting a title match for more.
+
+        A flat two-term bar is what actually refused the Q6 case: for "why was
+        MongoDB removed from the stack" the record that answers it matches one
+        term -- `mongodb` -- and was rejected for matching "only one word",
+        never reaching the share test at all. But that word is the question's
+        subject and the record's title is "Event archive in MongoDB", which is
+        evidence a reader can see.
+        """
+        title_stems = _stems_of(item.title or "")
+        return sum(
+            _TITLE_MATCH_BOOST if _mentions(title_stems, term) else 1.0
+            for term in item.matched_terms
+        )
 
     def supports(item: EvidenceItem) -> bool:
-        if len(item.matched_terms) < required:
+        if effective_overlap(item) < required:
             return False
         return information_share(item) >= _MIN_INFORMATION_SHARE
 

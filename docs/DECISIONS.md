@@ -2047,3 +2047,65 @@ ADR-0009a had to be narrowed at the same time — it globbed from the repository
 root and swept in a virtualenv's site-packages as soon as one appeared under a
 name its exclusion list had not predicted (`.venv-win`). It now checks named
 source roots, and a planted offender confirms it still fires.
+
+---
+
+## ADR-0035 — Q6 closed: a title match is worth the overlap bar on its own
+**Status:** accepted · 2026-11-09 · *resolves open question Q6, amends ADR-0030*
+
+**Context.** Q6 asked whether term weighting can tell a question's *subject*
+from an incidental rare word. Inverse document frequency says how **rare** a
+term is, not how **central** it is, and in a small corpus the two part company:
+for *"why was MongoDB removed from the stack"* the record that answers it
+matched `mongodb` and scored 0.283, while a distractor matched `stack` alone and
+scored 0.385, above the bar.
+
+**Four candidate signals, measured rather than argued.** For every answerable
+question on both corpora, the answering record was compared against the
+best-scoring wrong one, and each signal scored on whether it favoured the right
+record or the wrong one:
+
+| Signal | Favours the answer | Favours a distractor |
+|---|---|---|
+| **term is in the record's title** | **5** | **0** |
+| term is an extracted entity | 2 | 0 |
+| term was capitalised in the question | 2 | 0 |
+| *position in the question* | 1 | **2** |
+
+Position — the signal the open question proposed first — is **actively
+harmful**, and that is the most useful thing the measurement produced. Title
+agreement was the clear winner and is also the most explainable: "the record's
+title names the thing you asked about" is evidence a reader can check by
+looking.
+
+**The real blocker was not the share at all.** Boosting the share changed *no
+verdict* at any multiplier from 1.3 to 3.0, which took a second measurement to
+understand: `_MIN_OVERLAP` is 2, the MongoDB record matches **one** term, so it
+was rejected for matching "only one word" and never reached the share test. The
+flat two-term bar was the thing refusing it.
+
+**Decision.** A term matched in a record's own title counts **2.0** toward both
+tests a record must pass — the overlap count and the information share. The
+value is structural, not fitted: `_MIN_OVERLAP` is 2, so this is exactly *"a
+term in the record's own title is worth the overlap bar by itself"*. 1.6 changed
+no verdict because it could not clear that bar, and 3.0 changed none either, so
+the value is not balanced on a knife edge. The share stays capped at 1.0 and the
+ADR-0033 absent-term veto still runs in front of both tests.
+
+**Consequences.** On the fixture: false abstention **28.0% → 20.0%**, answered
+**12 → 15**, `lead_only` 3 → 1, `missed` 10 → 9, citation correctness
+**51.6% → 54.7%**, Recall@5 **0.740 → 0.780**, MRR 0.678 → 0.718. Crucially
+**useful abstention (83.3%) and wrongly-asserted (1) are unchanged**, so this
+bought answers without spending the guarantee. The real repository is
+**completely unaffected** — abstention 100%, false abstention 11.1%, zero
+wrongly asserted — which is the right outcome for a change aimed at a defect
+the fixture exhibited and it did not.
+
+`lead_first_rate` reads lower (57.1% → 40.0%) only because there are now fewer
+leads to be first among; the denominator changed, not the behaviour.
+
+**What remains.** False abstention is 20% on the fixture and 11% on the real
+repository, and it is now dominated by `missed` — documents retrieval never
+surfaced — rather than by records it found and would not assert. That is a
+retrieval problem, not a support-rule problem, so Q6 closes here rather than
+being renamed.
