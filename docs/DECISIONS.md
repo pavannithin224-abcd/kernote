@@ -1420,3 +1420,145 @@ retrieval's own count. The screen's tool list is derived from the live
 **Consequences.** Five regression tests, and the whole surface re-verified
 against a real client over stdio. A test asserts the advertised set equals the
 derived manifest, so the two can no longer drift.
+
+---
+
+## ADR-0029 — The labelled question set, and metrics we can defend
+**Status:** accepted · 2026-11-09 · *implements proposal item P11*
+
+**Context.** Days 23–24 require retrieval reported as **citation correctness**
+and **useful-abstention rate**. Both need labels, and the existing
+`samples/demo-repo` is 67 lines — on a corpus that small every metric comes out
+at 1.0 and measures nothing.
+
+**Decision.**
+1. A fixture corpus, `samples/eval-repo`: 22 files of a plausible service —
+   README, architecture, six ADRs, three runbooks, conventions, source, two
+   manifests — plus **deliberate distractors** (a CHANGELOG that names
+   PostgreSQL three times and answers nothing, a glossary, an onboarding page
+   that points elsewhere) and a stale `docs/legacy-setup.md` that contradicts
+   the README on port and install command. Without distractors a question set
+   measures nothing but itself.
+2. A question set of **31 labelled questions** at `eval/questions.json`, graded
+   2 (answers it), 1 (related, does not answer) — nDCG needs the distinction,
+   Recall@k counts only grade 2. Six are **unanswerable**, chosen to share
+   vocabulary with the corpus: "what is the retention period for customer
+   personal data" against a runbook that says snapshots are "retained for 7
+   days". Five (q27–q31) are deliberate **paraphrases** that avoid the corpus's
+   own words, because every other question was written while looking at the
+   document that answers it — a set without them is biased towards keyword
+   search and cannot fairly test embeddings.
+3. The set lives **outside** the corpus. Inside it, the questions and their
+   answers would be scanned into the vault being measured.
+4. Labels are **validated against the corpus on load** and a set with a label
+   pointing at a missing file is refused. A rotted label silently lowers every
+   score, which is worse than an error.
+5. Metrics are implemented in `kernote/eval/metrics.py`, and `ranx` — the tool
+   ADR-0014 named — is pinned in `requirements-eval.txt` as the *authority* we
+   check against, not a runtime dependency. It pulls 22 packages (numba,
+   llvmlite, pandas, scipy, matplotlib, seaborn) for five formulas, which
+   cannot be a prerequisite for `pytest` in a product that claims to run on a
+   modest laptop. A test asserts agreement to 1e-9 and skips when ranx is
+   absent.
+6. **Retrieving and asserting are scored separately.** See ADR-0014a for why
+   that distinction turned out to carry the whole result.
+
+**Consequences.** The cross-check earned its place immediately: our nDCG used
+the exponential `2**grade - 1` gain where `ranx` uses the linear Järvelin gain.
+Our figure was 0.305 against ranx's 0.319 — a 4% error that nothing else would
+have caught, and far more dangerous than a crash. The default is now the linear
+form, with `exponential_gain=True` available for `trec_eval` comparisons.
+
+Recall and MRR return `float("nan")` for a question with no answer, and the
+mean ignores it. Scoring an unanswerable question 0.0 would make honest
+abstention look like failed retrieval and drag every average down.
+
+**Honest limit.** 31 questions over 51 memories, all written by the same author
+as the corpus. These numbers bound a regression, not the product's quality on
+real repositories.
+
+---
+
+## ADR-0030 — Support requires a share of the question's information
+**Status:** accepted · 2026-11-09 · *amends the ADR-0006 support rule*
+
+**Context.** The first evaluation run returned a **useful-abstention rate of
+0 out of 6**. The product's central claim — that it says "evidence was not
+found" when that is the truth — failed every unanswerable question in the set.
+
+The cause was a fixed bar: an item supported the question if it mentioned any
+**two** content terms. Ask "what is the contractual delivery SLA for next-day
+orders" and the architecture document matches "delivery" and "orders" — two
+words that appear across half the corpus — and the answer came back
+`evidence_found`. "SLA" and "contractual", the entire point of the question,
+appear nowhere in the corpus.
+
+**Decision.** Support still requires two matched terms, and now also that the
+matched terms carry at least **30% of the question's inverse-document-frequency
+weight**, computed over the project's own records. A term absent from the corpus
+carries the *most* weight, deliberately: if a question turns on a word no record
+contains, that word is exactly what makes it unanswerable.
+
+**This is a trade-off, not a separating line, and the data says so.** On the
+labelled set the classes overlap — the weakest answerable question scores 0.26
+and the strongest unanswerable one 0.54 — so no threshold gets both right. 0.30
+buys 4 of 6 correct abstentions for 1 false abstention in 20. It is **one
+parameter fitted on 31 questions with no held-out split**, so the measured
+abstention gain is optimistic.
+
+**Alternatives.** *A proportional bar (match 60% of terms)* — ignores that
+terms differ in value; "orders" and "SLA" are not worth the same. *An LLM
+judge* — forbidden in the core loop by ADR-0006, and unverifiable. *Leave it* —
+the measurement makes that untenable.
+
+**Consequences.** Useful abstention 0% → 66.7%, citation correctness 53.8% →
+60.3% on the then-current set, with all 355 existing tests still passing. False
+abstention is now the headline weakness at 20–24%. The `weak_evidence`
+statement names the heaviest unmatched term, so a user is told *what* was
+missing rather than just that something was.
+
+---
+
+## ADR-0014a — Stop benchmarking embedding models; the gate downstream discards the gain
+**Status:** accepted · 2026-11-09 · *resolves ADR-0014, which stays `proposed` and unimplemented*
+
+**Context.** ADR-0014 proposed benchmarking `potion-base-8M` against
+`all-MiniLM-L6-v2` on our own labelled set with `ranx`, and adopting the faster
+model if our metrics held. That set now exists, so the question was finally
+measurable — and the measurement redirected it.
+
+**The measurement** (31 questions, 51 memories, `docs/EVALUATION.md`):
+
+| | FTS5 only | + MiniLM |
+|---|---|---|
+| Retrieved an answering document | 60.0% | **72.0%** |
+| ...and asserted it as evidence | 48.0% | **48.0%** |
+| `missed` | 10 | **7** |
+| `lead_only` | 3 | **6** |
+| `answered` | 12 | **12** |
+
+Semantic retrieval finds three more correct documents and **every one of them
+becomes a lead rather than an answer**. The reason is ADR-0030's support gate:
+it is lexical, and a paraphrase has no lexical overlap by construction. Ask
+"how does the money owed get worked out including what the taxman takes" and the
+invoice module is retrieved at rank 2 — and never says "taxman", so nothing can
+verify it. All five paraphrase questions fail under both configurations.
+
+**Decision.** ADR-0014's four-way benchmark is **not worth running**, and
+`model2vec` is not added. Swapping MiniLM for a faster model would optimise a
+stage whose output is currently discarded downstream. The embedding comparison
+is only worth doing once the support gate can use what semantic retrieval
+finds.
+
+**What this does not say.** Not that embeddings are useless: they move
+retrieval success 60% → 72% and nDCG 0.592 → 0.663, which is why ADR-0023's
+opt-in semantic search stays. The limit is in the composer, not the model.
+
+**Open question (Q5, new).** Can a semantically-retrieved document with no
+lexical overlap ever be *asserted* as evidence? Honestly, not deterministically
+— and ADR-0006 forbids an LLM in the core loop, so there is nothing to verify
+with. A high cosine similarity is a plausible third tier between "lead" and
+"evidence", but it would be the first claim in Kernote not backed by something
+a user can check by reading, so it needs its own ADR and is not slipped in
+here. Leaving it unresolved is the conservative choice: the product currently
+under-claims, which is the right direction to err.

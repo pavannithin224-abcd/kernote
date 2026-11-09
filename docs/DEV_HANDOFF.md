@@ -5,6 +5,103 @@ Newest entry first.
 
 ---
 
+## 2026-11-09 — Stage 8: evaluation, and what it found
+
+The first honest measurement of retrieval quality, and it immediately failed
+the product's central claim. That is what an evaluation is for.
+
+### What changed
+- **`samples/eval-repo/`** — a 22-file fixture corpus with deliberate
+  distractors and a stale document that contradicts the README. The old
+  `samples/demo-repo` is 67 lines; on a corpus that small every metric is 1.0.
+- **`eval/questions.json`** — 31 labelled questions, graded 2/1, of which 6 are
+  unanswerable and 5 are deliberate paraphrases (ADR-0029). Labels are
+  validated against the corpus on load, because a rotted label silently lowers
+  every score.
+- **`kernote/eval/`** — `metrics.py` (Recall@k, MRR, nDCG, precision),
+  `questions.py` (typed, validated loader), `runner.py` (scores a run and
+  renders a report).
+- **`requirements-eval.txt`** — `ranx` as the *authority* we check against,
+  never a runtime dependency.
+- **`api/routers/evaluation.py`** + a real **Settings & Evaluation screen** —
+  the last placeholder screen is now live. 26 endpoints.
+- **`docs/EVALUATION.md`** — the measured results, both configurations.
+- ADR-0029, ADR-0030, ADR-0014a (42 ADRs).
+
+### Three findings, in order of how much they matter
+
+**1. Useful abstention was 0 out of 6.** The claim that Kernote says "evidence
+was not found" when that is the truth failed every unanswerable question. A
+fixed bar of two matched terms let "what is the contractual delivery SLA for
+next-day orders" match "delivery" and "orders" — words in half the corpus — and
+answer confidently, while "SLA" appears nowhere. Support now also requires 30%
+of the question's inverse-document-frequency weight (ADR-0030). **0% → 66.7%**,
+citation correctness **53.8% → 60.3%**, all 355 existing tests still passing.
+
+The threshold is one parameter fitted on 31 questions with no held-out split,
+and the classes overlap (weakest answerable 0.26, strongest unanswerable 0.54),
+so no threshold gets both right. The gain is real but optimistic.
+
+**2. Embeddings buy retrieval that the support gate throws away.** This
+resolves ADR-0014 and cancels its four-way benchmark. Adding MiniLM moves
+retrieval success **60% → 72%** and `missed` from 10 to 7 — and `answered`
+stays at **12**, because every newly found document becomes a `lead_only`. The
+support gate is lexical and a paraphrase has no lexical overlap: ask about
+"what the taxman takes" and the invoice module is retrieved at rank 2 and never
+says "taxman". All five paraphrase questions fail under both configurations.
+Benchmarking potion-8M against MiniLM would optimise a stage whose output is
+discarded. Recorded as ADR-0014a with open question Q5.
+
+**3. Our nDCG was 4% wrong, and `ranx` caught it.** We used the exponential
+`2**grade - 1` gain where `ranx` uses the linear Järvelin gain: 0.305 against
+0.319. A metric that is quietly 4% off is far more dangerous than one that
+crashes, and nothing but the cross-check would have found it. This is the
+clearest argument for the library-as-authority pattern in ADR-0029.
+
+### Two mistakes of my own worth recording
+- **The abstention metric was wrong before the product was.** It counted only
+  `not_found` as declining, scoring 0% while the system was correctly declining
+  on four of six questions via `weak_evidence`. I nearly "fixed" a product that
+  was already behaving correctly. Only `evidence_found` asserts an answer.
+- **The first embedding comparison was measuring my own labelling bias.** It
+  showed semantic retrieval adding nothing, because every question had been
+  written while looking at the document that answers it. Adding five paraphrase
+  questions reversed the conclusion. A question set written from the corpus
+  flatters keyword search.
+
+### Verification performed
+- **376 tests pass, 5 skipped** (was 355). The 5 skips are the ranx
+  cross-checks; run under `requirements-eval.txt` they pass, verified
+  separately: **12 passed**.
+- `ruff check` and `ruff format --check` clean; `tsc -b` and `npm run build`
+  clean.
+- Measured numbers in `docs/EVALUATION.md` come from a real run over the
+  fixture corpus, both configurations, not from a fixture.
+- A test asserts the evaluation does not leak its fixture corpus into the
+  user's vault.
+
+### Known issues / blockers
+1. **False abstention is now the headline weakness at 20-24%**, and the
+   `lead_only` gap is its cause: the system finds the right document and
+   declines to call it an answer. Open question Q5 (ADR-0014a) is the decision
+   that would close it, and it deliberately has no answer yet.
+2. `answer_rate` is 48%. On a corpus this small that is a bound for regression
+   detection, not a quality claim.
+3. The support threshold is fitted on the same 31 questions the metrics are
+   reported on. A held-out split needs more questions.
+4. Approval still has no undo (Stage 6).
+5. Proposal items P3, P6-P10, P12-P13 unapplied. ADR-0009 open; Q1/Q2/Q4 open,
+   Q5 new. No Windows verification of the native wheels.
+
+### Next safe task
+**Stage 9 (Day 25): the release candidate.** Tag, README, demo script that runs
+end to end from a clean clone, and a known-limitations list that now has
+measured numbers behind it rather than estimates. The honest headline for the
+RC is citation correctness 51% and useful abstention 67% on our own labelled
+set, with the `lead_only` gap named as the known weakness.
+
+---
+
 ## 2026-11-09 — Stage 7 defect sweep: a stated number must describe what was delivered
 
 Every defect here is the same shape: **a confident number or claim that was

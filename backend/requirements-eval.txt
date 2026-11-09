@@ -1,0 +1,15 @@
+# Evaluation-only dependencies. NEVER installed by CI, by the application, or
+# by `requirements-dev.txt` -- exactly like `requirements-ml.txt`.
+#
+# `ranx` is the authority we check our own ranking metrics against: 22 packages
+# (numba, llvmlite, pandas, scipy, matplotlib, seaborn) for five formulas, which
+# is far too heavy to make a prerequisite for `pytest` in a product whose claim
+# is that it runs on a modest laptop with no heavy stack. So the formulas live
+# in `kernote/eval/metrics.py` and `tests/unit/test_eval_metrics.py` asserts
+# they agree with ranx to 1e-9, skipping when ranx is absent.
+#
+# That cross-check has already earned its place: it caught our nDCG using the
+# exponential `2**grade - 1` gain where ranx uses the linear Jarvelin gain, a
+# 4% error that nothing else would have noticed.
+-r requirements-dev.txt
+ranx==0.3.21

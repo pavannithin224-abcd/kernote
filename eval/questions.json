@@ -1,0 +1,295 @@
+{
+  "version": 1,
+  "corpus": "../samples/eval-repo",
+  "about": [
+    "The labelled question set (proposal item P11). Every question is answered",
+    "by a file in the corpus, or by nothing at all \u2014 and the unanswerable ones",
+    "are the point: a system that always answers cannot be trusted when it",
+    "does. Several of them share vocabulary with the corpus on purpose.",
+    "",
+    "Grades are 2 for a document that answers the question, 1 for one that is",
+    "genuinely related but does not answer it, and absent for irrelevant. nDCG",
+    "needs the distinction; Recall@k counts only grade 2.",
+    "",
+    "This file lives outside the corpus deliberately. Inside it, the questions",
+    "and their answers would be scanned into the vault being measured.",
+    "",
+    "q27-q31 are deliberate paraphrases: they ask about things the corpus does",
+    "cover, using words the corpus does not use. Without them the set is biased",
+    "towards keyword search, because every other question was written while",
+    "looking at the document that answers it. They are the only questions on",
+    "which semantic retrieval can show an advantage, so a comparison that omits",
+    "them is not a fair test of embeddings."
+  ],
+  "questions": [
+    {
+      "id": "q01",
+      "question": "What port does the API serve on when running locally?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2,
+        "docs/legacy-setup.md": 1
+      },
+      "note": "legacy-setup.md says 8000 and contradicts the README's 8080. It is graded 1, not 2: it is about the right subject and is wrong."
+    },
+    {
+      "id": "q02",
+      "question": "How do I install the project dependencies?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2,
+        "docs/legacy-setup.md": 1,
+        "pyproject.toml": 1
+      }
+    },
+    {
+      "id": "q03",
+      "question": "Which database does this project use and why was it chosen?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/adr/0001-postgresql.md": 2,
+        "ARCHITECTURE.md": 1,
+        "README.md": 1
+      },
+      "note": "CHANGELOG.md mentions PostgreSQL three times and answers nothing. It is the distractor this question exists to catch."
+    },
+    {
+      "id": "q04",
+      "question": "Why was MongoDB removed from the stack?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/adr/0006-deprecated-mongo.md": 2
+      }
+    },
+    {
+      "id": "q05",
+      "question": "Why does the queue use Redis streams instead of Celery?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/adr/0002-redis-queue.md": 2
+      }
+    },
+    {
+      "id": "q06",
+      "question": "How are operator login sessions stored?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/adr/0004-auth.md": 2,
+        "docs/glossary.md": 1,
+        "web/src/api.ts": 1
+      }
+    },
+    {
+      "id": "q07",
+      "question": "Why did the team decide against GraphQL?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/adr/0003-no-graphql.md": 2
+      }
+    },
+    {
+      "id": "q08",
+      "question": "In what timezone are timestamps stored?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/adr/0005-timezones.md": 2,
+        "src/orders/windows.py": 1
+      }
+    },
+    {
+      "id": "q09",
+      "question": "Which module is allowed to convert time zones?",
+      "kind": "answerable",
+      "relevant": {
+        "src/orders/windows.py": 2,
+        "docs/adr/0005-timezones.md": 1,
+        "ARCHITECTURE.md": 1
+      }
+    },
+    {
+      "id": "q10",
+      "question": "What are the possible order statuses?",
+      "kind": "answerable",
+      "relevant": {
+        "src/orders/state.py": 2,
+        "web/src/api.ts": 1,
+        "docs/glossary.md": 1
+      }
+    },
+    {
+      "id": "q11",
+      "question": "Can an order be cancelled after it has shipped?",
+      "kind": "answerable",
+      "relevant": {
+        "src/orders/state.py": 2,
+        "ARCHITECTURE.md": 1
+      }
+    },
+    {
+      "id": "q12",
+      "question": "How do I deploy a new release?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/runbooks/deploy.md": 2
+      }
+    },
+    {
+      "id": "q13",
+      "question": "How do I roll back a bad deploy?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/runbooks/deploy.md": 2
+      }
+    },
+    {
+      "id": "q14",
+      "question": "What should I do if a customer was invoiced twice?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/runbooks/duplicate-invoice.md": 2,
+        "docs/runbooks/redis-down.md": 1
+      }
+    },
+    {
+      "id": "q15",
+      "question": "Is tax applied per invoice line or to the invoice total?",
+      "kind": "answerable",
+      "relevant": {
+        "src/billing/invoice.py": 2
+      }
+    },
+    {
+      "id": "q16",
+      "question": "What is the maximum line length for code?",
+      "kind": "answerable",
+      "relevant": {
+        "CONTRIBUTING.md": 2,
+        "pyproject.toml": 1
+      }
+    },
+    {
+      "id": "q17",
+      "question": "How many approvals does a change to billing need?",
+      "kind": "answerable",
+      "relevant": {
+        "CONTRIBUTING.md": 2
+      }
+    },
+    {
+      "id": "q18",
+      "question": "Can orders still be accepted while Redis is down?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/runbooks/redis-down.md": 2
+      }
+    },
+    {
+      "id": "q19",
+      "question": "Why do orders and billing share a single database?",
+      "kind": "answerable",
+      "relevant": {
+        "ARCHITECTURE.md": 2,
+        "docs/adr/0001-postgresql.md": 1
+      }
+    },
+    {
+      "id": "q20",
+      "question": "Is order status data cached?",
+      "kind": "answerable",
+      "relevant": {
+        "ARCHITECTURE.md": 2
+      }
+    },
+    {
+      "id": "q21",
+      "question": "What is the contractual delivery SLA for next-day orders?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "The corpus discusses delivery windows at length but never states an SLA. Heavy vocabulary overlap, no answer."
+    },
+    {
+      "id": "q22",
+      "question": "Who manages the on-call rota?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "On-call shifts and runbooks are both mentioned; who owns the rota is not."
+    },
+    {
+      "id": "q23",
+      "question": "What is the retention period for customer personal data?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "The hardest abstention in the set. deploy.md says snapshots are 'retained for 7 days', which shares the keyword and is a different subject entirely. Answering 7 days here would be a confident wrong answer of exactly the kind this product exists to prevent."
+    },
+    {
+      "id": "q24",
+      "question": "What is the password policy for operator accounts?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "ADR-0004 covers session handling, not credential rules."
+    },
+    {
+      "id": "q25",
+      "question": "How do I add a new display language to the operator console?",
+      "kind": "unanswerable",
+      "relevant": {}
+    },
+    {
+      "id": "q26",
+      "question": "What is the monthly cost of the managed Redis instance?",
+      "kind": "unanswerable",
+      "relevant": {},
+      "note": "ADR-0002 says Redis is operated and ADR-0001 mentions 'operational cost is a managed instance'. Close enough to be tempting, nowhere near an answer."
+    },
+    {
+      "id": "q27",
+      "question": "Which data store holds the records?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/adr/0001-postgresql.md": 2,
+        "ARCHITECTURE.md": 1,
+        "README.md": 1
+      },
+      "note": "Paraphrase: the corpus says 'database' and 'PostgreSQL', never 'data store' or 'holds the records'."
+    },
+    {
+      "id": "q28",
+      "question": "Once a parcel is on its way to the customer, can it still be stopped?",
+      "kind": "answerable",
+      "relevant": {
+        "src/orders/state.py": 2,
+        "ARCHITECTURE.md": 1
+      },
+      "note": "Paraphrase of 'can a shipped order be cancelled'. Avoids 'shipped' and 'cancelled' entirely."
+    },
+    {
+      "id": "q29",
+      "question": "Where does the team write down why it picked one approach over another?",
+      "kind": "answerable",
+      "relevant": {
+        "README.md": 2,
+        "docs/onboarding.md": 2
+      },
+      "note": "Paraphrase: both files point at docs/adr/. The corpus word is 'architecture decision records'."
+    },
+    {
+      "id": "q30",
+      "question": "What stops two couriers from being promised the same slot?",
+      "kind": "answerable",
+      "relevant": {
+        "docs/adr/0001-postgresql.md": 2,
+        "src/orders/windows.py": 1
+      },
+      "note": "Paraphrase: the corpus says 'exclusion constraints' and 'overlapping delivery windows'."
+    },
+    {
+      "id": "q31",
+      "question": "How does the money owed get worked out including what the taxman takes?",
+      "kind": "answerable",
+      "relevant": {
+        "src/billing/invoice.py": 2
+      },
+      "note": "Deliberately colloquial paraphrase of invoice totals and tax."
+    }
+  ]
+}

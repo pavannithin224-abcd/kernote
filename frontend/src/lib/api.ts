@@ -66,6 +66,50 @@ export interface ContextBundle {
   note: string | null
 }
 
+export interface EvalQuestionSet {
+  version: number
+  corpus: string
+  about: string[]
+  questions: number
+  answerable: number
+  unanswerable: number
+  measures: string[]
+}
+
+export interface EvalResult {
+  id: string
+  question: string
+  kind: string
+  outcome: string
+  verdict: string
+  retrieved: string[]
+  note: string | null
+}
+
+export interface EvalReport {
+  corpus: string
+  questions: number
+  answerable: number
+  unanswerable: number
+  memories_scanned: number
+  semantic: boolean
+  elapsed_seconds: number
+  recall_at_k: Record<string, number | null>
+  mrr: number | null
+  ndcg_at_10: number | null
+  precision_at_5: number | null
+  citation_correctness: number | null
+  citation_correctness_strict: number | null
+  useful_abstention_rate: number | null
+  false_abstention_rate: number | null
+  retrieval_success_rate: number | null
+  answer_rate: number | null
+  outcomes: Record<string, number>
+  verdicts: Record<string, number>
+  results: EvalResult[]
+  markdown: string
+}
+
 export interface McpInfo {
   server_name: string
   transport: string
@@ -323,6 +367,12 @@ export const api = {
       body: JSON.stringify({ task, token_budget: tokenBudget }),
     }),
   mcpInfo: (id: string) => call<McpInfo>(`/projects/${id}/mcp`),
+  evalQuestionSet: () => call<EvalQuestionSet>('/evaluation/question-set'),
+  runEvaluation: (allowDownload: boolean) =>
+    call<EvalReport>('/evaluation/run', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 10, allow_download: allowDownload }),
+    }),
   embeddingStatus: (id: string) =>
     call<EmbeddingStatus>(`/projects/${id}/embeddings`),
   buildEmbeddings: (id: string, allowDownload: boolean) =>

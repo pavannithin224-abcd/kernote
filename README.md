@@ -23,7 +23,7 @@ registry clearance — see `docs/PRODUCT_SPEC.md` §9.
 
 ## Status
 
-**Stage 7 of 9 complete** (Day 4 of a 25-day build ending 2026-11-30), each
+**Stage 8 of 9 complete** (Day 4 of a 25-day build ending 2026-11-30), each
 stage followed by a defect sweep against real data.
 
 The app runs end to end: register a local project, scan it read-only, browse
@@ -33,8 +33,9 @@ conflict findings, approve a consolidation with lineage preserved, and serve
 the result to a coding agent over a read-only MCP surface. All of it survives
 a restart.
 
-Still to come: Stage 8 (polish and evaluation — the labelled question set and
-retrieval metrics) and Stage 9 (the release candidate). Read
+Retrieval quality is measured against a labelled question set rather than
+asserted — see [docs/EVALUATION.md](docs/EVALUATION.md). Still to come: Stage 9
+(the release candidate). Read
 `docs/DEV_HANDOFF.md` for exactly where things stand, what is verified and
 what is not.
 
@@ -86,6 +87,7 @@ separated experiments.
 | [docs/MEMORY_MODEL.md](docs/MEMORY_MODEL.md) | The four data layers, nine lifecycle stages, record design, provenance, intelligence behaviours, invariants |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones with dates, vertical slices, per-milestone definition of done, scope-control order |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | ADRs with alternatives and consequences |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | Measured retrieval quality: citation correctness, abstention, Recall@k, nDCG |
 | [docs/COMPETITIVE_LANDSCAPE.md](docs/COMPETITIVE_LANDSCAPE.md) | Who else ships this, where the real gap is, platform risk, pricing signal, recommended scope changes |
 | [docs/TOOLING.md](docs/TOOLING.md) | What we build vs borrow, every dependency and what it replaces, prior-art repos to study, license policy |
 | [docs/DEV_HANDOFF.md](docs/DEV_HANDOFF.md) | Current state, verification performed, known blockers, next safe task |
@@ -137,7 +139,13 @@ true rather than aspirational.
   claimed as supported yet.
 - Retrieval answers are **extractive**, not generated prose. Kernote does not
   compete with frontier-LLM codebase chat on fluency; it competes on whether the
-  citations are correct and the abstentions are honest.
+  citations are correct and the abstentions are honest. Measured on our own
+  31-question labelled set: **citation correctness 51%**, **useful abstention
+  67%**, Recall@5 0.70. The known weakness is the opposite error — on 24% of
+  answerable questions it finds the right document and declines to call it an
+  answer, because a paraphrased question shares no words with the source it
+  needs. `docs/EVALUATION.md` has the numbers and `docs/DECISIONS.md` ADR-0014a
+  has the reason.
 - The agent-memory space is crowded and partly free. Kernote's claim is narrow
   and specific: knowledge **update** and **conflict resolution**, the two
   competencies published benchmarks show no system masters.

@@ -22,6 +22,7 @@ answers to distinguish evidence, inference and unknowns.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -40,6 +41,26 @@ log = structlog.get_logger(__name__)
 # single coincidental word out of four. Capped at the number of terms actually
 # asked, so a one-word question still works.
 _MIN_OVERLAP = 2
+
+# Support also requires matching a meaningful share of what makes the question
+# *specific*, measured as inverse document frequency over this project's own
+# records. Two common words are not evidence: in a repository about orders,
+# matching "delivery" and "orders" says nothing.
+#
+# Measured, not guessed. With an absolute bar of two terms, the Stage 8
+# labelled set abstained on 0 of 6 unanswerable questions -- "what is the
+# contractual delivery SLA for next-day orders" matched "delivery" and
+# "orders" in the architecture document and came back `evidence_found`, while
+# "SLA" and "contractual", the whole point of the question, appear nowhere in
+# the corpus.
+#
+# 0.30 is a deliberate trade-off, not a separating line. On that set the two
+# classes overlap: the weakest answerable question scores 0.26 and the
+# strongest unanswerable one 0.54, so no threshold gets both right. 0.30 buys
+# 4 of 6 correct abstentions for 1 false abstention in 20. It is one parameter
+# fitted on 26 questions with no held-out split, so treat the measured
+# abstention gain as optimistic -- see docs/DEV_HANDOFF.md.
+_MIN_INFORMATION_SHARE = 0.30
 
 # Stopwords are kept for *retrieval* (bm25 handles them, and dropping them
 # would hurt recall on short questions) but must not count as support.
@@ -111,6 +132,53 @@ def _mentions(haystack_stems: set[str], term: str) -> bool:
     about" has to mean.
     """
     return bool(_variants(term) & haystack_stems)
+
+
+def _document_frequency(
+    conn: sqlite3.Connection, project_id: str, terms: set[str]
+) -> tuple[dict[str, int], int]:
+    """How many of the project's records mention each term, and how many exist.
+
+    Deterministic and explainable: it is a count over the records already
+    stored, so a user can be told *why* a term was treated as uninformative.
+    """
+    total = conn.execute(
+        "SELECT (SELECT COUNT(*) FROM memories WHERE project_id=?) + "
+        "       (SELECT COUNT(*) FROM chunks c JOIN source_files sf "
+        "        ON sf.id=c.source_file_id WHERE sf.project_id=?) AS c",
+        (project_id, project_id),
+    ).fetchone()["c"]
+    if not total:
+        return {term: 0 for term in terms}, 0
+
+    counts: dict[str, int] = {}
+    rows = conn.execute(
+        "SELECT COALESCE(title,'') || ' ' || COALESCE(summary,'') || ' ' || "
+        "       COALESCE(content,'') AS t FROM memories WHERE project_id=? "
+        "UNION ALL "
+        "SELECT COALESCE(c.heading_path,'') || ' ' || c.text AS t FROM chunks c "
+        "JOIN source_files sf ON sf.id=c.source_file_id WHERE sf.project_id=?",
+        (project_id, project_id),
+    ).fetchall()
+    for row in rows:
+        stems = _stems_of(row["t"])
+        for term in terms:
+            if _mentions(stems, term):
+                counts[term] = counts.get(term, 0) + 1
+    return {term: counts.get(term, 0) for term in terms}, total
+
+
+def _term_weights(frequencies: dict[str, int], total: int) -> dict[str, float]:
+    """How much each term would tell us, as inverse document frequency.
+
+    A term absent from the corpus carries the *most* weight, deliberately: if a
+    question turns on a word no record contains, that word is precisely what
+    makes the question unanswerable, and nothing should be able to support the
+    question without it.
+    """
+    if not total:
+        return dict.fromkeys(frequencies, 1.0)
+    return {term: math.log(total / (1 + count)) for term, count in frequencies.items()}
 
 
 def _stems_of(text: str) -> set[str]:
@@ -283,12 +351,28 @@ def ask(
         )
 
     required = min(_MIN_OVERLAP, len(content_terms)) if content_terms else 1
-    supported = [i for i in items if len(i.matched_terms) >= required]
-    unmatched = sorted(content_terms - {t for i in items for t in i.matched_terms})
+    frequencies, corpus_size = _document_frequency(conn, project_id, content_terms)
+    weights = _term_weights(frequencies, corpus_size)
+    whole = sum(weights.values())
 
-    if content_terms and not supported and items:
-        # Retrieval found things; none of them mentions what was asked.
-        pass
+    def information_share(item: EvidenceItem) -> float:
+        if whole <= 0:
+            return 1.0
+        return sum(weights.get(t, 0.0) for t in item.matched_terms) / whole
+
+    def supports(item: EvidenceItem) -> bool:
+        if len(item.matched_terms) < required:
+            return False
+        return information_share(item) >= _MIN_INFORMATION_SHARE
+
+    supported = [i for i in items if supports(i)]
+    unmatched = sorted(content_terms - {t for i in items for t in i.matched_terms})
+    # What the question turned on and no record mentioned, heaviest first.
+    matched_anywhere = {t for i in items for t in i.matched_terms}
+    missing_distinctive = sorted(
+        (t for t in content_terms - matched_anywhere),
+        key=lambda t: -weights.get(t, 0.0),
+    )
     if not items:
         bundle = AnswerBundle(
             question=question,
@@ -307,13 +391,17 @@ def ask(
             outcome="weak_evidence",
             statement=(
                 "No source directly addresses that question. The closest records "
-                "are listed, but none mentions the terms asked about, so treat "
-                "them as leads rather than as an answer."
+                "are listed, but none of them mentions what makes the question "
+                "specific, so treat them as leads rather than as an answer."
             ),
             evidence=items,
-            unknowns=[f"not mentioned in any source: {', '.join(unmatched[:8])}"]
-            if unmatched
-            else [],
+            unknowns=(
+                [f"not mentioned in any source: {', '.join(missing_distinctive[:8])}"]
+                if missing_distinctive
+                else [f"not mentioned in any source: {', '.join(unmatched[:8])}"]
+                if unmatched
+                else []
+            ),
             semantic_available=outcome.semantic_available,
             note=outcome.note,
         )
