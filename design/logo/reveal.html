@@ -40,7 +40,10 @@
     .run .k .lo-a  { --len:10.66; animation-delay:.62s; animation-duration:.34s; }
     .run .k .lo-b  { --len:8.36;  animation-delay:1.18s; animation-duration:.32s; }
     .run .word { animation:rise .5s cubic-bezier(.22,.61,.36,1) 1.3s backwards; }
+    .run .k { transform-box:fill-box; transform-origin:center;
+              animation:settle .4s cubic-bezier(.22,.61,.36,1) 1.42s backwards; }
     @keyframes draw { from { stroke-dashoffset:var(--len); } }
+    @keyframes settle { from { transform:scale(1.015); } }
     @keyframes rise { from { opacity:0; transform:translateX(-6px); } }
   }
 </style>

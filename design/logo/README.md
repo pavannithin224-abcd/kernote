@@ -30,6 +30,11 @@ Without it this is a letter drawing itself. 1.5s end to end; the wordmark
 arrives at 1.3s, on the pause, so the eye is already at the break when the name
 lands.
 
+It ends with a **settle** — 1.5% of scale over 0.4s, felt rather than seen.
+That is the one thing worth taking from a 3D motion-design reveal that an
+inline SVG can honestly offer; the rest of that look needs After Effects and
+ships as video.
+
 The finished mark is the **base** state and the animation only runs under
 `prefers-reduced-motion: no-preference`, so a reader who has asked for less
 motion gets the mark rather than a blank frame.

@@ -39,6 +39,12 @@
       /* The gap: the arm stops, and only then finishes. */
       .k .lo-b  { --len: 8.36;  animation-delay: 1.18s; animation-duration: 0.32s; }
       @keyframes draw { from { stroke-dashoffset: var(--len); } }
+      /* A reveal should come to rest, not stop dead. 1.5% over 0.4s, which is
+         felt rather than seen. The only thing worth taking from a 3D
+         After Effects reveal that an inline SVG can honestly offer. */
+      .k { transform-box: fill-box; transform-origin: center;
+           animation: settle 0.4s cubic-bezier(.22,.61,.36,1) 1.42s backwards; }
+      @keyframes settle { from { transform: scale(1.015); } }
     }
   </style>
   <g class="k">
