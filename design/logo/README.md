@@ -16,8 +16,23 @@ rather than "memory" in the abstract.
 | `kernote-mark-solid.svg` | Below 24px, where the gap goes sub-pixel. |
 | `kernote-lockup.svg` | Mark plus wordmark. **Outline the text before publishing.** |
 | `preview.html` | The mark at size, on both backgrounds, as a favicon tile. Open it in a browser. |
+| `kernote-reveal.svg` | The animated reveal, self-contained. Will **not** animate in a GitHub README, which strips `<style>` from inline SVG — export a GIF or video for that. |
+| `reveal.html` | The reveal with a replay button and a theme toggle, plus the lockup version. |
 | `../../frontend/public/favicon.svg` | The tile, solid arm, accent background. |
 | `../../frontend/src/components/Mark.tsx` | The in-app component; picks the variant from the size. |
+
+## The reveal
+
+It draws in the order the product works: the stem (the record), the upper arm
+outward (the claim, verified), then the lower arm starting — stopping —
+finishing. **The pause before the final segment is the whole animation.**
+Without it this is a letter drawing itself. 1.5s end to end; the wordmark
+arrives at 1.3s, on the pause, so the eye is already at the break when the name
+lands.
+
+The finished mark is the **base** state and the animation only runs under
+`prefers-reduced-motion: no-preference`, so a reader who has asked for less
+motion gets the mark rather than a blank frame.
 
 ## Rules that matter
 

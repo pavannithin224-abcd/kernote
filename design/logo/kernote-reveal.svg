@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img"
+     aria-label="Kernote">
+  <title>Kernote</title>
+  <!--
+    The reveal. It draws the mark in the order the product works:
+
+      1. the stem, top to bottom   - the record
+      2. the upper arm, outward    - the claim, verified
+      3. the lower arm starts...   - the same claim
+      4. ...stops, pauses, resumes - the code moved under it; the break is
+                                     the last beat, because it is the point
+
+    The pause before the final segment is the whole animation. Without it
+    this is just a letter drawing itself.
+
+    Self-contained: the CSS lives in the file, so it animates wherever an SVG
+    is rendered as a document. It will NOT animate in a GitHub README, which
+    strips style blocks from inline SVG — use a GIF or video there.
+
+    The finished mark is the *base* state and the animation only runs under
+    `prefers-reduced-motion: no-preference`, so a reader who has asked for
+    less motion gets the static mark rather than a flash of nothing.
+  -->
+  <style>
+    .k path {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 5;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .k path {
+        stroke-dasharray: var(--len);
+        stroke-dashoffset: 0;
+        animation: draw 0.5s cubic-bezier(.22,.61,.36,1) backwards;
+      }
+      .k .stem  { --len: 28;    animation-delay: 0s;    }
+      .k .upper { --len: 23.02; animation-delay: 0.3s;  }
+      .k .lo-a  { --len: 10.66; animation-delay: 0.62s; animation-duration: 0.34s; }
+      /* The gap: the arm stops, and only then finishes. */
+      .k .lo-b  { --len: 8.36;  animation-delay: 1.18s; animation-duration: 0.32s; }
+      @keyframes draw { from { stroke-dashoffset: var(--len); } }
+    }
+  </style>
+  <g class="k">
+    <path class="stem"  d="M14 10 V 38" />
+    <path class="upper" d="M16 24 L 35 11" />
+    <path class="lo-a"  d="M16 24 L 24.8 30.02" />
+    <path class="lo-b"  d="M28.1 32.28 L 35 37" />
+  </g>
+</svg>
