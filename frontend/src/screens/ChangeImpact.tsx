@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
 
 export default function ChangeImpact() {
   const { projectId } = useProject()
@@ -66,13 +66,9 @@ export default function ChangeImpact() {
             className="mono rounded-md border px-2 py-1.5 text-[13px] sm:w-44"
             style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
           />
-          <button
-            type="submit"
-            className="rounded-md px-3 py-1.5 text-[12px] font-medium text-white"
-            style={{ background: 'var(--accent)' }}
-          >
+          <Button primary type="submit">
             Analyse
-          </button>
+          </Button>
         </form>
 
         {(commits.data ?? []).length > 0 && (
@@ -89,7 +85,7 @@ export default function ChangeImpact() {
                 }}
                 className="block w-full text-left text-[12px] hover:underline"
               >
-                <span className="mono" style={{ color: 'var(--accent)' }}>{c.sha}</span>{' '}
+                <span className="mono" style={{ color: 'var(--chip-text)' }}>{c.sha}</span>{' '}
                 <span style={{ color: 'var(--muted)' }}>{c.date}</span> {c.subject.slice(0, 68)}
               </button>
             ))}

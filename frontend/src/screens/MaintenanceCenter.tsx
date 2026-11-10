@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Finding } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
 
 const KIND_LABEL: Record<Finding['kind'], string> = {
   stale_risk: 'May be stale',
@@ -12,7 +12,7 @@ const KIND_LABEL: Record<Finding['kind'], string> = {
 }
 
 function severityTone(severity: Finding['severity']) {
-  return severity === 'high' ? 'warn' : severity === 'medium' ? 'accent' : 'neutral'
+  return severity === 'high' ? 'warn' : severity === 'medium' ? 'info' : 'neutral'
 }
 
 /** Diff-style before/after, with the decision that applies it. */
@@ -69,7 +69,7 @@ function ProposalPreview({
 
       <div
         className="rounded-md border p-2.5"
-        style={{ borderColor: 'var(--accent)', background: 'var(--accent-soft)' }}
+        style={{ borderColor: 'var(--border)', background: 'var(--chip)' }}
       >
         <div className="text-[12px] font-medium mb-1">After approval</div>
         <div className="flex flex-wrap gap-1 mb-1.5">
@@ -212,14 +212,14 @@ export default function MaintenanceCenter() {
             marked wrong without you.
           </p>
         </div>
-        <button
+        <Button
+          primary
           onClick={() => analyze.mutate()}
           disabled={analyze.isPending}
-          className="shrink-0 rounded-md px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-50"
-          style={{ background: 'var(--accent)' }}
+          className="shrink-0"
         >
           {analyze.isPending ? 'Analysing…' : 'Run analysis'}
-        </button>
+        </Button>
       </header>
 
       {analyze.isError && <ErrorNote error={analyze.error} />}

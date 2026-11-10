@@ -129,10 +129,42 @@ directly. Component-library sites are ordinary web pages; I can fetch those.
 
 ---
 
-## Proposed order
+## Done: accent discipline (2026-11-10)
 
-1. **Accent discipline** — small, mechanical, affects every screen, and is the
-   single change with the best ratio of improvement to risk.
+`var(--accent)` now appears in **exactly one place in the codebase** — the
+`Button` component — and every screen with an action has exactly one
+`<Button primary>`. The rule is a repo invariant checked by
+`backend/tests/unit/test_accent_is_reserved.py`, because it was true once
+before and drifted.
+
+What moved:
+
+| Was accent | Now | Why |
+|---|---|---|
+| six primary buttons | `<Button primary>` | the rule, in one component |
+| every `<Citation>` | `--chip` / `--chip-text` | you read a citation, you do not press it |
+| inline file paths, MCP tool names | `--chip-text` | reference, not action |
+| the memory-type badge (`tone="accent"`) | `tone="info"` on the chip | a category is not a control |
+| the Maintenance Center panel border | `--border` / `--chip` | a container is not an action |
+| the active nav item's text | `--text` on `--accent-soft` | position, not action |
+
+Two things this turned up that were not in the brief:
+
+**The Ask screen had two primary buttons** — "Ask" and "Download 90 MB and
+index". The download is an opt-in, so it is secondary now.
+
+**A contrast failure in dark mode.** The primary button was `text-white` on
+`var(--accent)`, and the dark accent is a *light* blue: white on `#8ba2ff`
+measures **2.41:1**, below even the 3:1 floor for interface elements. It had
+been there since the buttons were written. There is now an
+`--accent-contrast` token — white in light, near-black in dark — which takes
+it to **7.69:1**. A third test asserts every theme block defines every token,
+because a token present in one theme and missing from another is invisible
+until someone switches.
+
+## Remaining order
+
+1. ~~Accent discipline~~ — done, above.
 2. **Dashboard as the pilot** — lead with a KPI row, fix the panel rhythm. One
    screen, so we can judge the direction before it spreads.
 3. **Everything else waits** on seeing the pilot, and on the library list.

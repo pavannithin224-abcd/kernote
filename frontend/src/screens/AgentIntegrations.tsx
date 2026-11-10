@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
 
 export default function AgentIntegrations() {
   const { projectId } = useProject()
@@ -70,7 +70,7 @@ export default function AgentIntegrations() {
           <div className="space-y-1.5 mb-3">
             {mcp.data.tools.map((t) => (
               <div key={t.name} className="text-[12px]">
-                <span className="mono" style={{ color: 'var(--accent)' }}>{t.name}</span>
+                <span className="mono" style={{ color: 'var(--chip-text)' }}>{t.name}</span>
                 <span style={{ color: 'var(--muted)' }}> — {t.description}</span>
               </div>
             ))}
@@ -125,14 +125,9 @@ export default function AgentIntegrations() {
             className="mono rounded-md border px-2 py-1.5 text-[13px] sm:w-28"
             style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
           />
-          <button
-            type="submit"
-            disabled={bundle.isPending}
-            className="rounded-md px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
-            style={{ background: 'var(--accent)' }}
-          >
+          <Button primary type="submit" disabled={bundle.isPending}>
             {bundle.isPending ? 'Building…' : 'Build bundle'}
-          </button>
+          </Button>
         </form>
         {bundle.isError && <div className="mt-2"><ErrorNote error={bundle.error} /></div>}
       </Panel>

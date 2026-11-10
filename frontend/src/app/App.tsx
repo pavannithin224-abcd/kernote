@@ -46,7 +46,7 @@ export default function App() {
               className="flex items-center justify-between rounded-md px-2.5 py-1.5 text-[13px] mb-0.5"
               style={({ isActive }) => ({
                 background: isActive ? 'var(--accent-soft)' : 'transparent',
-                color: isActive ? 'var(--accent)' : 'var(--text)',
+                color: 'var(--text)',
                 fontWeight: isActive ? 600 : 400,
               })}
             >

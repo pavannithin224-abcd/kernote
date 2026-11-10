@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type AnswerBundle } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Citation, Empty, ErrorNote, Panel } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel } from '../components/ui'
 
 const OUTCOME: Record<AnswerBundle['outcome'], { label: string; tone: 'ok' | 'warn' | 'neutral' }> = {
   evidence_found: { label: 'Evidence found', tone: 'ok' },
@@ -64,14 +64,13 @@ export default function ProjectIntelligence() {
             <span className="mono">{emb.cache_path}</span>. Model weights only — no
             telemetry, and nothing about your code leaves the machine.
           </p>
-          <button
+          <Button
             onClick={() => build.mutate(true)}
             disabled={build.isPending}
-            className="mt-2 rounded-md px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-50"
-            style={{ background: 'var(--accent)' }}
+            className="mt-2"
           >
             {build.isPending ? 'Downloading and indexing…' : `Download ${emb.download_mb} MB and index`}
-          </button>
+          </Button>
           {build.isError && <div className="mt-2"><ErrorNote error={build.error} /></div>}
         </Panel>
       )}
@@ -105,14 +104,9 @@ export default function ProjectIntelligence() {
           className="flex-1 rounded-md border px-2.5 py-1.5 text-[13px]"
           style={{ borderColor: 'var(--border)', background: 'var(--panel)', color: 'var(--text)' }}
         />
-        <button
-          type="submit"
-          disabled={ask.isPending || !question.trim()}
-          className="rounded-md px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
-          style={{ background: 'var(--accent)' }}
-        >
+        <Button primary type="submit" disabled={ask.isPending || !question.trim()}>
           {ask.isPending ? 'Searching…' : 'Ask'}
-        </button>
+        </Button>
       </form>
 
       {ask.isError && <ErrorNote error={ask.error} />}

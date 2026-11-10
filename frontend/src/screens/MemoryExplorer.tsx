@@ -108,7 +108,7 @@ export default function MemoryExplorer() {
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <Badge tone="accent">{TYPE_LABEL[m.type]}</Badge>
+                      <Badge tone="info">{TYPE_LABEL[m.type]}</Badge>
                       {m.status !== 'active' && <Badge tone="warn">{m.status.replace('_', ' ')}</Badge>}
                       {m.source_refs[0] && <Citation>{citationOf(m.source_refs[0])}</Citation>}
                     </div>

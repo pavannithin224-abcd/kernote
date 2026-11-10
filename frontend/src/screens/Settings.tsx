@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
 
 function ScanConfigPanel() {
   const { projectId } = useProject()
@@ -51,14 +51,9 @@ function ScanConfigPanel() {
     <Panel
       title="Scan configuration"
       right={
-        <button
-          onClick={() => save.mutate()}
-          disabled={!dirty || save.isPending}
-          className="rounded border px-2 py-0.5 text-[11px]"
-          style={{ borderColor: 'var(--border)' }}
-        >
+        <Button primary onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
           {save.isPending ? 'Saving…' : 'Save override'}
-        </button>
+        </Button>
       }
     >
       <p className="text-[12px] mb-2">
@@ -187,14 +182,9 @@ export default function Settings() {
       <Panel
         title="Retrieval evaluation"
         right={
-          <button
-            onClick={() => run.mutate()}
-            disabled={run.isPending}
-            className="rounded border px-2 py-0.5 text-[11px]"
-            style={{ borderColor: 'var(--border)' }}
-          >
+          <Button onClick={() => run.mutate()} disabled={run.isPending}>
             {run.isPending ? 'Running…' : 'Run evaluation'}
-          </button>
+          </Button>
         }
       >
         <p className="text-[12px] mb-2">

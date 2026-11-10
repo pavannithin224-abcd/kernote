@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ScanResult } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
 
 const REASON_TEXT: Record<string, string> = {
   secret_suspected: 'refused as possible secret — never read',
@@ -66,14 +66,9 @@ export default function Dashboard() {
         title="Project"
         right={
           projectId && (
-            <button
-              onClick={() => runScan.mutate()}
-              disabled={runScan.isPending}
-              className="rounded-md px-2.5 py-1 text-[12px] font-medium text-white disabled:opacity-50"
-              style={{ background: 'var(--accent)' }}
-            >
+            <Button primary onClick={() => runScan.mutate()} disabled={runScan.isPending}>
               {runScan.isPending ? 'Scanning…' : 'Scan now'}
-            </button>
+            </Button>
           )
         }
       >
