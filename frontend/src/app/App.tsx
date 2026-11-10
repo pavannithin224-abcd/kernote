@@ -8,6 +8,7 @@ import MaintenanceCenter from '../screens/MaintenanceCenter'
 import ChangeImpact from '../screens/ChangeImpact'
 import AgentIntegrations from '../screens/AgentIntegrations'
 import SettingsScreen from '../screens/Settings'
+import { Mark } from '../components/Mark'
 
 const NAV = [
   { to: '/dashboard', label: 'Dashboard', stage: 2 },
@@ -29,8 +30,11 @@ export default function App() {
         style={{ borderColor: 'var(--border)', background: 'var(--panel)' }}
       >
         <div className="px-4 py-4">
-          <div className="text-[15px] font-semibold tracking-tight">Kernote</div>
-          <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+          <div className="flex items-center gap-2">
+            <Mark size={26} />
+            <div className="text-[15px] font-semibold tracking-tight">Kernote</div>
+          </div>
+          <div className="text-[11px] mt-0.5" style={{ color: 'var(--muted)' }}>
             Reviewable project memory
           </div>
         </div>

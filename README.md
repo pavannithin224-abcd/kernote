@@ -17,7 +17,8 @@ an agent memory server — see
 > not complete just because it can save a record.
 
 `Kernote` is a **provisional working name** pending trademark, domain and
-registry clearance — see `docs/PRODUCT_SPEC.md` §9.
+registry clearance — see `docs/PRODUCT_SPEC.md` §9. The mark in
+[design/logo/](design/logo/) needs the same clearance before public use.
 
 ---
 

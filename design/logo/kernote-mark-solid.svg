@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img"
+     aria-label="Kernote">
+  <title>Kernote</title>
+  <!--
+    The solid variant, for anything under roughly 24px and for favicons. The
+    broken arm is the whole point of the mark, but below that size the gap is
+    under a pixel and reads as a rendering fault rather than as meaning.
+  -->
+  <g fill="none" stroke="currentColor" stroke-width="5">
+    <path d="M14 10 V 38" />
+    <path d="M16 24 L 35 11" />
+    <path d="M16 24 L 35 37" />
+  </g>
+</svg>

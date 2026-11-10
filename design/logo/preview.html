@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kernote mark</title>
+<style>
+  :root { --bg:#fbfbfd; --panel:#fff; --border:#e3e3e9; --text:#16161d; --muted:#6b6b7b; --accent:#3b5bdb; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg:#0f1013; --panel:#171920; --border:#2a2d38; --text:#e8e8ef; --muted:#9a9aad; --accent:#8ba2ff; } }
+  :root[data-theme="dark"] { --bg:#0f1013; --panel:#171920; --border:#2a2d38; --text:#e8e8ef; --muted:#9a9aad; --accent:#8ba2ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 16px; background:var(--bg); color:var(--text);
+         font:14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 17px; margin: 0 0 4px; letter-spacing: -0.2px; }
+  p.lede { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  section { background: var(--panel); border: 1px solid var(--border);
+            border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+       color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .row { display:flex; align-items:flex-end; gap:22px; flex-wrap:wrap; }
+  .cell { text-align:center; }
+  .cell small { display:block; color:var(--muted); font-size:11px; margin-top:6px; }
+  .onDark { background:#0f1013; color:#e8e8ef; border-radius:8px; padding:14px; }
+  .onLight { background:#fff; color:#16161d; border-radius:8px; padding:14px; border:1px solid var(--border); }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .acc { color: var(--accent); }
+  svg { display:block; margin:0 auto; }
+  @media (max-width:560px){ .pair{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Kernote — mark</h1>
+  <p class="lede">The upper arm is whole: a claim still verified against its source.
+     The lower arm is broken: the same claim after the code moved under it, held open
+     for review. Drift and conflict are the differentiator, so they are what the mark carries.</p>
+
+  <section>
+    <h2>At size — broken arm</h2>
+    <div class="row">
+      <div class="cell"><svg width="128" height="128" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></svg><small>128</small></div>
+      <div class="cell"><svg width="64" height="64" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></svg><small>64</small></div>
+      <div class="cell"><svg width="40" height="40" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></svg><small>40</small></div>
+      <div class="cell"><svg width="24" height="24" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></svg><small>24 — gap closing</small></div>
+      <div class="cell"><svg width="16" height="16" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></svg><small>16 — too small</small></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>At size — solid variant, for 24px and below</h2>
+    <div class="row">
+      <div class="cell"><svg width="40" height="40" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 35 37"/></svg><small>40</small></div>
+      <div class="cell"><svg width="24" height="24" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 35 37"/></svg><small>24</small></div>
+      <div class="cell"><svg width="16" height="16" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 35 37"/></svg><small>16</small></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>On both backgrounds, and in the accent colour</h2>
+    <div class="pair">
+      <div class="onLight"><svg width="56" height="56" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></svg></div>
+      <div class="onDark"><svg width="56" height="56" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></svg></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div class="cell acc"><svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></svg><small>accent</small></div>
+      <div class="cell"><svg width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#3b5bdb"/><g fill="none" stroke="#fff" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 35 37"/></g></svg><small>favicon tile</small></div>
+      <div class="cell"><svg width="32" height="32" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#3b5bdb"/><g fill="none" stroke="#fff" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 35 37"/></g></svg><small>32</small></div>
+      <div class="cell"><svg width="16" height="16" viewBox="0 0 48 48"><rect width="48" height="48" rx="11" fill="#3b5bdb"/><g fill="none" stroke="#fff" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 35 37"/></g></svg><small>16</small></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Lockup</h2>
+    <div class="row">
+      <div class="cell">
+        <svg width="196" height="48" viewBox="0 0 196 48">
+          <g fill="none" stroke="currentColor" stroke-width="5"><path d="M14 10 V 38"/><path d="M16 24 L 35 11"/><path d="M16 24 L 24.8 30.02"/><path d="M28.1 32.28 L 35 37"/></g>
+          <text x="50" y="33" fill="currentColor" font-size="26" font-weight="600" letter-spacing="-0.6" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif">ernote</text>
+        </svg>
+        <small>the mark carries the K, so the word continues from it</small>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

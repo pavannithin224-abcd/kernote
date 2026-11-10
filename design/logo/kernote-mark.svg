@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img"
+     aria-label="Kernote">
+  <title>Kernote</title>
+  <!--
+    A K whose two arms say what the product does.
+
+    The upper arm is whole: a claim still verified against its source. The
+    lower arm is broken: the same claim after the code moved under it, held
+    open for review rather than quietly dropped. Drift and conflict are the
+    differentiator (ADR-0015), so they are what the mark carries.
+
+    Deliberately not a brain, a lightbulb, a database cylinder, a speech
+    bubble, a memory chip or a graph of nodes.
+
+    Butt caps, not round or square: a cap extends half the stroke width at
+    each end, which on a 5-wide stroke would close most of the gap and leave
+    the broken arm looking merely smudged. The gap is drawn as two explicit
+    segments, so it is exact at every size.
+
+    `currentColor` throughout, so it takes the surrounding text colour and
+    needs no separate light and dark artwork.
+  -->
+  <g fill="none" stroke="currentColor" stroke-width="5">
+    <path d="M14 10 V 38" />
+    <path d="M16 24 L 35 11" />
+    <path d="M16 24 L 24.8 30.02" />
+    <path d="M28.1 32.28 L 35 37" />
+  </g>
+</svg>
