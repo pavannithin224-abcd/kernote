@@ -162,11 +162,35 @@ it to **7.69:1**. A third test asserts every theme block defines every token,
 because a token present in one theme and missing from another is invisible
 until someone switches.
 
+## Done: the Dashboard pilot (2026-11-10)
+
+**It now leads with the numbers**, where it previously led with a project
+selector and a registration form and buried the figures at position four.
+
+The tiles changed as well as their position. `Captures` and `Scans` were two of
+the four headline numbers, and both are plumbing. **`Needs review` replaces
+`Scans`** — it reads `counts.open_findings`, which the API has always returned
+and the Dashboard has never shown, despite `PRODUCT_SPEC.md` §6 listing a review
+queue and despite the review flow being the differentiator. The tile links to
+the Maintenance Center and turns `--warn` when it is not zero: a figure telling
+you something needs attention without saying where is half a feature. The scan
+count moved into the project line, which is where context belongs.
+
+**Registration is a setup task and no longer holds second place for ever.** It
+shows expanded only when no project is registered; after that it is a collapsed
+`Register another project` at the foot of the screen.
+
+`Stat` gained `to` and `tone` to support this. `tone="warn"` is the warn colour,
+which carries its own meaning — not the accent, which still marks only the one
+action a screen is for.
+
+Measured against this repository: Memories 546, **Needs review 3**, Source files
+149, Captures 137.
+
 ## Remaining order
 
 1. ~~Accent discipline~~ — done, above.
-2. **Dashboard as the pilot** — lead with a KPI row, fix the panel rhythm. One
-   screen, so we can judge the direction before it spreads.
+2. ~~Dashboard pilot~~ — done, above.
 3. **Everything else waits** on seeing the pilot, and on the library list.
 
 What I will not do is a blind pass across all seven screens. They hold real

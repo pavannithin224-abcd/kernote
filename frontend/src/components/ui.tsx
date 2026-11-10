@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 
 export function Panel({ title, children, right }: {
   title?: string; children: ReactNode; right?: ReactNode
@@ -117,15 +118,58 @@ export function Empty({ title, hint }: { title: string; hint?: string }) {
   )
 }
 
-export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
-  return (
-    <div className="rounded-md border px-3 py-2.5" style={{ borderColor: 'var(--border)' }}>
+/**
+ * A number worth leading with.
+ *
+ * `to` makes the whole tile a link: a figure that tells you something needs
+ * attention without saying where is half a feature. `tone="warn"` colours the
+ * figure when it is a number you would rather were zero -- that is the warn
+ * colour, which carries its own meaning, never the accent, which marks the one
+ * action a screen is for.
+ */
+export function Stat({
+  label,
+  value,
+  hint,
+  to,
+  tone = 'neutral',
+}: {
+  label: string
+  value: ReactNode
+  hint?: string
+  to?: string
+  tone?: 'neutral' | 'warn'
+}) {
+  const body = (
+    <>
       <div className="text-[11px] uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
         {label}
       </div>
-      <div className="mt-0.5 text-xl font-semibold tabular-nums">{value}</div>
+      <div
+        className="mt-0.5 text-xl font-semibold tabular-nums"
+        style={tone === 'warn' ? { color: 'var(--warn)' } : undefined}
+      >
+        {value}
+      </div>
       {hint && <div className="text-[11px]" style={{ color: 'var(--muted)' }}>{hint}</div>}
-    </div>
+    </>
+  )
+  const className = 'block rounded-md border px-3 py-2.5'
+  if (!to) {
+    return (
+      <div className={className} style={{ borderColor: 'var(--border)' }}>
+        {body}
+      </div>
+    )
+  }
+  return (
+    <Link
+      to={to}
+      className={className + ' transition-colors hover:border-current'}
+      style={{ borderColor: 'var(--border)', color: 'inherit' }}
+    >
+      {body}
+    </Link>
   )
 }
 

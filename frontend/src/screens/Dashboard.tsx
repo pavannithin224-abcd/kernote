@@ -48,6 +48,7 @@ export default function Dashboard() {
     },
   })
 
+  const hasProjects = (projects.data?.length ?? 0) > 0
   const counts = detail.data?.counts
   const recent = (memories.data ?? []).slice(0, 6)
 
@@ -61,6 +62,21 @@ export default function Dashboard() {
       </header>
 
       {projects.isError && <ErrorNote error={projects.error} />}
+
+      {counts && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Stat label="Memories" value={counts.memories} hint="active, not archived" />
+          <Stat
+            label="Needs review"
+            value={counts.open_findings ?? 0}
+            hint={counts.open_findings ? 'open findings — go and look' : 'nothing waiting'}
+            tone={counts.open_findings ? 'warn' : 'neutral'}
+            to="/maintenance"
+          />
+          <Stat label="Source files" value={counts.source_files} hint="current revision" />
+          <Stat label="Captures" value={counts.captures} hint="content-addressed" />
+        </div>
+      )}
 
       <Panel
         title="Project"
@@ -90,6 +106,9 @@ export default function Dashboard() {
                 {detail.data.project.is_git_repo
                   ? <Badge tone="ok">git repo</Badge>
                   : <Badge tone="warn">not a git repo — drift limited to file hashes</Badge>}
+                <span>
+                  {counts?.scans ?? 0} scan{counts?.scans === 1 ? '' : 's'}
+                </span>
               </div>
             )}
           </div>
@@ -98,41 +117,34 @@ export default function Dashboard() {
         )}
       </Panel>
 
-      <Panel title="Register a local project">
-        <form
-          className="flex flex-col sm:flex-row gap-2"
-          onSubmit={(e) => { e.preventDefault(); register.mutate() }}
-        >
-          <input
-            value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="Name" required
-            className="rounded-md border px-2 py-1.5 text-[13px] sm:w-44"
-            style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
-          />
-          <input
-            value={path} onChange={(e) => setPath(e.target.value)}
-            placeholder="/absolute/path/to/repo" required
-            className="mono flex-1 rounded-md border px-2 py-1.5 text-[13px]"
-            style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
-          />
-          <button
-            type="submit" disabled={register.isPending}
-            className="rounded-md border px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
-            style={{ borderColor: 'var(--border)' }}
-          >
-            {register.isPending ? 'Adding…' : 'Add project'}
-          </button>
-        </form>
-        {register.isError && <div className="mt-2"><ErrorNote error={register.error} /></div>}
-      </Panel>
-
-      {counts && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Stat label="Memories" value={counts.memories} hint="active, not archived" />
-          <Stat label="Source files" value={counts.source_files} hint="current revision" />
-          <Stat label="Captures" value={counts.captures} hint="content-addressed" />
-          <Stat label="Scans" value={counts.scans} />
-        </div>
+      {!hasProjects && (
+        <Panel title="Register a local project">
+                <form
+                  className="flex flex-col sm:flex-row gap-2"
+                  onSubmit={(e) => { e.preventDefault(); register.mutate() }}
+                >
+                  <input
+                    value={name} onChange={(e) => setName(e.target.value)}
+                    placeholder="Name" required
+                    className="rounded-md border px-2 py-1.5 text-[13px] sm:w-44"
+                    style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                  />
+                  <input
+                    value={path} onChange={(e) => setPath(e.target.value)}
+                    placeholder="/absolute/path/to/repo" required
+                    className="mono flex-1 rounded-md border px-2 py-1.5 text-[13px]"
+                    style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                  />
+                  <button
+                    type="submit" disabled={register.isPending}
+                    className="rounded-md border px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
+                    style={{ borderColor: 'var(--border)' }}
+                  >
+                    {register.isPending ? 'Adding…' : 'Add project'}
+                  </button>
+                </form>
+                {register.isError && <div className="mt-2"><ErrorNote error={register.error} /></div>}
+        </Panel>
       )}
 
       {runScan.isError && <ErrorNote error={runScan.error} />}
@@ -195,6 +207,41 @@ export default function Dashboard() {
               </ul>
             )}
       </Panel>
+
+      {hasProjects && (
+        <details className="rounded-md border" style={{ borderColor: 'var(--border)' }}>
+          <summary className="cursor-pointer px-3 py-2 text-[12px] font-medium">
+            Register another project
+          </summary>
+          <div className="px-3 pb-3">
+                  <form
+                    className="flex flex-col sm:flex-row gap-2"
+                    onSubmit={(e) => { e.preventDefault(); register.mutate() }}
+                  >
+                    <input
+                      value={name} onChange={(e) => setName(e.target.value)}
+                      placeholder="Name" required
+                      className="rounded-md border px-2 py-1.5 text-[13px] sm:w-44"
+                      style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                    />
+                    <input
+                      value={path} onChange={(e) => setPath(e.target.value)}
+                      placeholder="/absolute/path/to/repo" required
+                      className="mono flex-1 rounded-md border px-2 py-1.5 text-[13px]"
+                      style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                    />
+                    <button
+                      type="submit" disabled={register.isPending}
+                      className="rounded-md border px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      {register.isPending ? 'Adding…' : 'Add project'}
+                    </button>
+                  </form>
+                  {register.isError && <div className="mt-2"><ErrorNote error={register.error} /></div>}
+          </div>
+        </details>
+      )}
     </div>
   )
 }
