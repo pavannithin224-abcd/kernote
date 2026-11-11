@@ -27,6 +27,12 @@ Two minutes per reel:
    that text into the chat**. A name is worth more than a screenshot: I can go
    and read the source.
 
+## What is here
+
+| File | What it is |
+|---|---|
+| `01-dashboard-target.png` | The approved dashboard design. See `../DASHBOARD_BRIEF.md`. |
+
 ## Naming
 
 `NN-topic-what.png`, lowest number first, so the order is the order you want me
