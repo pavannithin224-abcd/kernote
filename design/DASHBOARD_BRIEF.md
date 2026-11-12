@@ -1,6 +1,8 @@
 # Dashboard redesign — brief
 
-**Received 2026-11-11. Not started.** Agreed to begin next session.
+**Received 2026-11-11. Not started.** One of two agreed tracks; the other is
+`STARTUP_ANIMATION_BRIEF.md`. This one is suggested first, because the
+animation ends by revealing the dashboard.
 
 Reference: `design/refs/01-dashboard-target.png` (1918×946). That image is the
 primary visual reference and takes precedence over this prose where the two
