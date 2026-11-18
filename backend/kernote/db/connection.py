@@ -73,6 +73,15 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
         conn.execute("COMMIT")
 
 
+def current_version(conn: sqlite3.Connection) -> int:
+    """The schema version this database is at.
+
+    Public because restore has to compare an incoming file against it, and
+    refuse anything newer than this build understands.
+    """
+    return _current_version(conn)
+
+
 def _current_version(conn: sqlite3.Connection) -> int:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_meta'"

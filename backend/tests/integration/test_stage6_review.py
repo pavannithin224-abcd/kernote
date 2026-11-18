@@ -12,7 +12,7 @@ import pytest
 from kernote.db.repositories import memories as mrepo
 from kernote.db.repositories import projects as prepo
 from kernote.db.repositories.findings import open_findings
-from kernote.domain.models import Project
+from kernote.domain.models import ClaimKind, Memory, MemoryType, Project, SourceRef
 from kernote.ingest.pipeline import scan_project
 from kernote.maintain import impact, review
 from kernote.maintain.duplicates import detect_duplicates, pending_proposals
@@ -572,9 +572,29 @@ def test_a_resolved_finding_does_not_come_back_on_the_next_analyze(conn, tmp_pat
         encoding="utf-8",
     )
     scan_project(conn, **scan)
+    # Changed 2026-11-15 (ADR-0049): a re-scan now *supersedes* the claim it
+    # re-read rather than leaving the old one active beside a new duplicate,
+    # so there is nothing stale to flag -- the memory was refreshed from the
+    # same source the finding would have pointed at. Drift still fires for
+    # the ordinary case, a file edited *without* re-scanning; that is what
+    # `test_drift_spike.py` covers.
+    assert not open_findings(conn, project.id), "a re-scanned claim is updated, not stale"
+    superseded = conn.execute(
+        "SELECT COUNT(*) FROM memories WHERE project_id=? AND status='superseded'",
+        (project.id,),
+    ).fetchone()[0]
+    assert superseded == 1, "the previous reading should have been superseded"
+
+    # The rest of this test is about a finding not recurring, so raise one the
+    # ordinary way: edit the file and do not re-scan.
+    target.write_text(
+        "# Architecture\n\n## Queue\n\nWe use Celery with RabbitMQ, edited "
+        "again without re-scanning.\n",
+        encoding="utf-8",
+    )
     detect_drift(conn, project_id=project.id, root=tmp_path)
     found = open_findings(conn, project.id)
-    assert found, "the edit should raise a staleness finding"
+    assert found, "an edit without a re-scan should raise a staleness finding"
 
     resolve_finding(conn, project_id=project.id, finding_id=found[0]["id"], verdict="resolved")
     detect_drift(conn, project_id=project.id, root=tmp_path)
@@ -583,12 +603,100 @@ def test_a_resolved_finding_does_not_come_back_on_the_next_analyze(conn, tmp_pat
     assert not after, f"the resolved finding came back as {[f['id'] for f in after]}"
 
     # ...but a further edit is genuinely new, because the dedupe key carries
-    # the file's content hash.
+    # the file's content hash. No re-scan here: re-scanning would refresh the
+    # claim and leave nothing to flag, which is what the top of this test
+    # now asserts.
     target.write_text(
         "# Architecture\n\n## Queue\n\nWe use Kafka now, which is a third "
         "answer again and must be flagged.\n",
         encoding="utf-8",
     )
-    scan_project(conn, **scan)
     detect_drift(conn, project_id=project.id, root=tmp_path)
     assert open_findings(conn, project.id), "a new edit must still raise a finding"
+
+
+# ===================== nesting, and what it must not hide =====================
+
+
+def test_the_same_region_extracted_twice_is_not_nesting(conn, tmp_path):
+    """Regression: identical citations were read as parent and child.
+
+    `_is_nested` used `<=` on both bounds, which is also true when the two
+    ranges are *equal* -- so two memories citing exactly the same lines of
+    the same file were excluded as "a section and the block inside it".
+    They are the same region extracted twice, which is the clearest
+    duplicate there is. Measured on a real 932-memory vault: 9 pairs with
+    byte-identical titles and bodies were hidden this way.
+    """
+    from kernote.maintain.duplicates import _is_nested
+
+    project = prepo.create(conn, Project(name="n", root_path=str(tmp_path)))
+    rows = []
+    for title in ("Same claim", "Same claim"):
+        memory = mrepo.create(
+            conn,
+            Memory(
+                project_id=project.id,
+                type=MemoryType.DECISION,
+                title=title,
+                content="Identical body.",
+                claim_kind=ClaimKind.SOURCE_FACT,
+                extraction_method="rule:adr",
+                importance=0.5,
+                importance_reason="t",
+                confidence=0.5,
+                confidence_reason="t",
+                source_refs=[SourceRef(rel_path="docs/ADR.md", line_start=10, line_end=20)],
+            ),
+            change_reason="t",
+            actor="rule",
+        )
+        rows.append(memory)
+
+    assert (
+        _is_nested(conn, rows[0].id, rows[1].id) is False
+    ), "identical line ranges are the same region twice, not nesting"
+
+
+def test_genuine_nesting_is_still_excluded(conn, tmp_path):
+    """The guard's real job: a section is not a duplicate of the block in it."""
+    from kernote.maintain.duplicates import _is_nested
+
+    project = prepo.create(conn, Project(name="n2", root_path=str(tmp_path)))
+    outer = mrepo.create(
+        conn,
+        Memory(
+            project_id=project.id,
+            type=MemoryType.PROCEDURE,
+            title="Setup",
+            content="The whole section.",
+            claim_kind=ClaimKind.SOURCE_FACT,
+            extraction_method="rule:markdown",
+            importance=0.5,
+            importance_reason="t",
+            confidence=0.5,
+            confidence_reason="t",
+            source_refs=[SourceRef(rel_path="README.md", line_start=10, line_end=40)],
+        ),
+        change_reason="t",
+        actor="rule",
+    )
+    inner = mrepo.create(
+        conn,
+        Memory(
+            project_id=project.id,
+            type=MemoryType.PROCEDURE,
+            title="Setup: commands",
+            content="Just the block.",
+            claim_kind=ClaimKind.SOURCE_FACT,
+            extraction_method="rule:markdown",
+            importance=0.5,
+            importance_reason="t",
+            confidence=0.5,
+            confidence_reason="t",
+            source_refs=[SourceRef(rel_path="README.md", line_start=15, line_end=20)],
+        ),
+        change_reason="t",
+        actor="rule",
+    )
+    assert _is_nested(conn, outer.id, inner.id) is True

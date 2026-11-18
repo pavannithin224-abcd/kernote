@@ -1,0 +1,22 @@
+-- 0009_finding_effect.sql — record what resolving a finding actually changed.
+--
+-- Forward-only. Earlier migrations are never edited.
+--
+-- Resolving a finding as 'rejected' or 'resolved' flips any memory it names
+-- from 'needs_review' back to 'active' and stamps `last_verified_at`. Until
+-- now it recorded that it had happened but not *what* it touched, and those
+-- status changes write no revision -- unlike a consolidation, where
+-- `memory_revisions.snapshot_json` makes the previous state recoverable
+-- (ADR-0040).
+--
+-- That makes the resolution unreversible except by guessing. The obvious
+-- guess -- "set every memory this finding names back to needs_review" -- is
+-- wrong: a memory that was already 'active' before the resolution was never
+-- touched by it, and flipping that one to 'needs_review' would invent a
+-- review requirement a human never created.
+--
+-- So the resolution now writes down its own effect, and undo replays it
+-- backwards. JSON rather than a side table because it is a small, fixed
+-- record read only alongside its own finding.
+
+ALTER TABLE findings ADD COLUMN effect_json TEXT;

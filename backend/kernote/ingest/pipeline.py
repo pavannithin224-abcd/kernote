@@ -47,6 +47,8 @@ def scan_project(
     run_id = source_repo.start_scan(conn, project_id, commit)
     captures_created = 0
     memories_created = 0
+    memories_superseded = 0
+    memories_repinned = 0
     secrets_refused = 0
     secret_warnings: list[SecretWarning] = []
     found: list[Found] = []
@@ -114,7 +116,12 @@ def scan_project(
             # memories missing -- and the next scan sees the capture as already
             # known, so the extraction is never retried.
             with transaction(conn):
-                new_captures, new_memories = _ingest_one_file(
+                (
+                    new_captures,
+                    new_memories,
+                    new_superseded,
+                    new_repinned,
+                ) = _ingest_one_file(
                     conn,
                     project_id=project_id,
                     item=item,
@@ -125,6 +132,8 @@ def scan_project(
                 )
             captures_created += new_captures
             memories_created += new_memories
+            memories_superseded += new_superseded
+            memories_repinned += new_repinned
 
         source_repo.finish_scan(
             conn,
@@ -168,6 +177,8 @@ def scan_project(
         files_skipped=len(skipped) + secrets_refused,
         captures_created=captures_created,
         memories_created=memories_created,
+        memories_superseded=memories_superseded,
+        memories_repinned=memories_repinned,
         skipped=source_repo.skipped_for_run(conn, run_id),
         secret_warnings=secret_warnings,
     )
@@ -182,10 +193,12 @@ def _ingest_one_file(
     run_id: str,
     blobs: dict[str, str],
     commit: str | None,
-) -> tuple[int, int]:
+) -> tuple[int, int, int, int]:
     """Capture, chunk and extract one file. The caller owns the transaction."""
     captures_created = 0
     memories_created = 0
+    memories_superseded = 0
+    memories_repinned = 0
 
     if source_repo.upsert_capture(
         conn, project_id, cap.content_hash, cap.text, cap.byte_size, cap.encoding
@@ -284,14 +297,47 @@ def _ingest_one_file(
         )
 
     for mem in candidates:
-        # Curate before store: an identical claim from identical content is not
-        # a new memory. This is what keeps a re-scan idempotent.
+        # Curate before store. Three outcomes, and only the third is new.
+        #
+        # 1. The whole file is byte-identical to a capture this claim already
+        #    cites: nothing to do. The cheap path.
         if memory_repo.exists_same_claim(conn, project_id, mem.title, cap.content_hash):
             continue
+
+        # 2. The file changed, but is this claim one we already hold? Identity
+        #    is the heading in the document, which survives edits to the body.
+        #    Without this step a single edit anywhere in a file re-created
+        #    *every* memory extracted from it -- 345 new memories from a day of
+        #    documentation edits on this repository, and 91 duplicate proposals
+        #    to clean up after.
+        cited = mem.source_refs[0].rel_path if mem.source_refs else None
+        existing = memory_repo.find_same_claim(conn, project_id, mem.title, cited)
+        if existing is not None:
+            if existing["content"] == mem.content:
+                # Same claim, same words, moved line numbers. Re-pin the
+                # citation so drift detection compares against where the text
+                # actually is now, and leave the record alone.
+                memory_repo.repin(conn, existing["id"], mem)
+                memories_repinned += 1
+                continue
+            # Same claim, new wording: the old reading is *superseded*, not
+            # duplicated. The old record keeps every byte and stays fetchable
+            # (MEMORY_MODEL invariant 5); what changes is which one is served.
+            memory_repo.supersede(
+                conn,
+                existing["id"],
+                mem,
+                reason=f"re-scanned: {cited} changed",
+            )
+            memories_superseded += 1
+            entities.link(conn, project_id, mem)
+            continue
+
+        # 3. Genuinely new.
         memory_repo.create(conn, mem)
         # Entity links are what make duplicate candidates and importance
         # fan-in possible; without them both features compare every pair.
         entities.link(conn, project_id, mem)
         memories_created += 1
 
-    return captures_created, memories_created
+    return captures_created, memories_created, memories_superseded, memories_repinned

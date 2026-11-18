@@ -1,6 +1,6 @@
 # Dashboard redesign — brief
 
-**Received 2026-11-11. Not started.** One of two agreed tracks; the other is
+**Received 2026-11-11. Built 2026-11-14, reviewed and accepted.** One of two agreed tracks; the other is
 `STARTUP_ANIMATION_BRIEF.md`. This one is suggested first, because the
 animation ends by revealing the dashboard.
 

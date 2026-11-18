@@ -1,60 +1,98 @@
 @import "tailwindcss";
 
-/* Design tokens, defined once on :root and redefined for dark mode.
-   Deliberately un-nested: flat @media blocks are what the CSS pipeline
-   handles reliably. A compact, readable developer workspace -- evidence
-   must be legible, never decorative. */
+/* Design tokens, written out in full for every theme rather than patched.
+   Three blocks that must stay in step -- a token defined in one and missing
+   from another is invisible until somebody switches themes, which is what
+   `test_accent_is_reserved.py` checks.
+
+   Colour carries meaning here, and each hue means one thing:
+     accent  cyan    the one action a screen is for
+     ok      green   healthy, indexed, verified
+     warn    amber   needs a human eye
+     rel     violet  a relationship between records: conflicts, duplicates
+     stale   red     a claim the code has moved out from under
+
+   Deliberately un-nested: flat @media blocks are what the pipeline handles
+   reliably. Evidence must be legible, never decorative. */
 :root {
-  --bg: #fbfbfd;
+  /* The same identity in daylight. Neon does not survive a white
+     background, so each hue is taken to its darkest legible form and the
+     meanings are preserved rather than the exact pigments. */
+  --bg: #f7f8fa;
   --panel: #ffffff;
-  --border: #e3e3e9;
-  --text: #16161d;
-  --muted: #6b6b7b;
-  --accent: #3b5bdb;
+  --border: #dfe4ea;
+  --grid: #eef1f5;
+  --text: #11161b;
+  --muted: #55626d;
+  --accent: #0b6e86;
   --accent-contrast: #ffffff;
-  --accent-soft: #edf0fd;
-  --chip: #f1f1f5;
-  --chip-text: #4a4a59;
-  --warn: #b45309;
-  --warn-soft: #fef5e7;
-  --ok: #157f5a;
-  --ok-soft: #e8f6f0;
+  --accent-soft: #e4f6fa;
+  --chip: #eef1f4;
+  --chip-text: #44515c;
+  --ok: #3d6b10;
+  --ok-soft: #eef7e2;
+  --warn: #9a5b05;
+  --warn-soft: #fdf3e3;
+  --rel: #6d28d9;
+  --rel-soft: #f1ebfe;
+  --stale: #b23a26;
+  --stale-soft: #fdecea;
+  /* Glow is a dark-mode device. On white it reads as a printing fault, so
+     both knobs go to zero and every .neon rule below becomes a no-op. */
+  --glow-alpha: 0%;
+  --glow-blur: 0px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1013;
-    --panel: #171920;
-    --border: #2a2d38;
-    --text: #e8e8ef;
-    --muted: #9a9aad;
-    --accent: #8ba2ff;
-    --accent-contrast: #10131c;
-    --accent-soft: #1d2234;
-    --chip: #20222b;
-    --chip-text: #b9b9c9;
-    --warn: #f0b357;
-    --warn-soft: #2e2415;
-    --ok: #5ddbab;
-    --ok-soft: #13241d;
+    /* The workbench. Near-black charcoal, neon used sparingly. */
+    --bg: #0b0d10;
+    --panel: #11151a;
+    --border: #1e2630;
+    --grid: #141a21;
+    --text: #d6e1ea;
+    --muted: #7a8894;
+    --accent: #22e5ff;
+    --accent-contrast: #04171c;
+    --accent-soft: #0b2730;
+    --chip: #161c23;
+    --chip-text: #9fb0bd;
+    --ok: #a6ff3d;
+    --ok-soft: #14210a;
+    --warn: #ffb454;
+    --warn-soft: #2a1d08;
+    --rel: #a78bfa;
+    --rel-soft: #1b1630;
+    --stale: #ff6b5a;
+    --stale-soft: #2a1210;
+    --glow-alpha: 45%;
+    --glow-blur: 9px;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0f1013;
-  --panel: #171920;
-  --border: #2a2d38;
-  --text: #e8e8ef;
-  --muted: #9a9aad;
-  --accent: #8ba2ff;
-  --accent-contrast: #10131c;
-  --accent-soft: #1d2234;
-  --chip: #20222b;
-  --chip-text: #b9b9c9;
-  --warn: #f0b357;
-  --warn-soft: #2e2415;
-  --ok: #5ddbab;
-  --ok-soft: #13241d;
+  /* The workbench. Near-black charcoal, neon used sparingly. */
+  --bg: #0b0d10;
+  --panel: #11151a;
+  --border: #1e2630;
+  --grid: #141a21;
+  --text: #d6e1ea;
+  --muted: #7a8894;
+  --accent: #22e5ff;
+  --accent-contrast: #04171c;
+  --accent-soft: #0b2730;
+  --chip: #161c23;
+  --chip-text: #9fb0bd;
+  --ok: #a6ff3d;
+  --ok-soft: #14210a;
+  --warn: #ffb454;
+  --warn-soft: #2a1d08;
+  --rel: #a78bfa;
+  --rel-soft: #1b1630;
+  --stale: #ff6b5a;
+  --stale-soft: #2a1210;
+  --glow-alpha: 45%;
+  --glow-blur: 9px;
 }
 
 html,
@@ -76,4 +114,387 @@ code,
 pre,
 .mono {
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* The faint technical grid. Two 1px lines repeated, at a weight that reads as
+   texture rather than as a table -- and dropped entirely for anyone who has
+   asked for less motion or contrast noise. */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, var(--grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* A terminal cursor. Used once, after the wordmark. */
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.cursor {
+  animation: blink 1.1s steps(1, end) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cursor { animation: none; }
+}
+
+/* ------------------------------------------------------------------ neon
+
+   The lit treatment, from the reference mock. An element opts in by naming
+   its hue -- `style={{ '--neon': 'var(--rel)' }}` -- and the glow follows the
+   theme: real in the dark, absent in daylight, because the two knobs above go
+   to zero there and `color-mix` at 0% yields transparent.
+
+   Deliberately not applied to everything. The glow marks the records the
+   queue wants a human to look at, and the freshness bars. Body text, panels
+   and chrome stay flat, or the whole screen hums and nothing stands out. */
+
+.neon-outline {
+  border-color: var(--neon);
+  color: var(--neon);
+  background: transparent;
+  box-shadow:
+    0 0 var(--glow-blur) color-mix(in srgb, var(--neon) var(--glow-alpha), transparent),
+    inset 0 0 var(--glow-blur) color-mix(in srgb, var(--neon) calc(var(--glow-alpha) / 3), transparent);
+}
+
+/* A lit bar: the filled portion glows, the track does not. */
+.neon-bar {
+  background: var(--neon);
+  box-shadow: 0 0 var(--glow-blur) color-mix(in srgb, var(--neon) var(--glow-alpha), transparent);
+}
+
+/* Inline emphasis in a metadata line -- the value a finding is actually about. */
+.neon-text {
+  color: var(--neon);
+  text-shadow: 0 0 calc(var(--glow-blur) * 0.9)
+    color-mix(in srgb, var(--neon) var(--glow-alpha), transparent);
+}
+
+/* ------------------------------------------------------- the startup reveal
+
+   A knowledge graph forming, resolving into the wordmark, over status lines
+   that report real checks (`components/Boot.tsx`).
+
+   The repo's established rule applies, from the logo reveal: **the finished
+   state is the base state**, and movement is added only under
+   `prefers-reduced-motion: no-preference`. Someone who has asked for less
+   motion gets the wordmark and the status lines immediately -- the end frame,
+   never a blank one waiting for an animation that will not play.
+
+   Everything animates `opacity` and `transform` only, plus one
+   `stroke-dashoffset` for the links, so this stays off the layout path. */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  opacity: 1;
+  transition: opacity 300ms ease;
+}
+.boot-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot-stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  padding: 24px;
+  width: min(380px, calc(100vw - 48px));
+}
+
+.boot-graph {
+  width: 100%;
+  height: auto;
+  max-height: 34vh;
+  /* The graph is the backdrop the wordmark lands on; it must never push the
+     status lines off a short laptop screen. */
+}
+
+.boot-word {
+  font-size: clamp(26px, 6vw, 34px);
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.boot-lines {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+  display: grid;
+  gap: 3px;
+}
+.boot-line {
+  font-size: 11px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .boot-node {
+    fill: var(--neon);
+    opacity: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation:
+      boot-node-in 420ms ease-out var(--d) forwards,
+      boot-converge 520ms cubic-bezier(0.5, 0, 0.2, 1) 760ms forwards;
+    /* Reuses the theme glow knobs, so the nodes are lit in the dark and
+       flat in daylight like everything else. */
+    filter: drop-shadow(0 0 var(--glow-blur) var(--neon));
+  }
+
+  .boot-link {
+    stroke: var(--accent);
+    stroke-width: 1;
+    opacity: 0.55;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation:
+      boot-draw 480ms ease-out var(--d) forwards,
+      boot-fade 420ms ease-in 820ms forwards;
+  }
+
+  .boot-word-in {
+    animation: boot-word-in 520ms cubic-bezier(0.2, 0.7, 0.2, 1) 900ms both;
+  }
+
+  .boot-lines-in {
+    animation: boot-rise 420ms ease-out 1120ms both;
+  }
+}
+
+@keyframes boot-node-in {
+  from { opacity: 0; transform: scale(0.2); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Inward and out: the scattered records resolving into one name. Scaling the
+   whole group toward the centre is what "move inward" costs here -- one
+   transform on each node, no per-frame geometry. */
+@keyframes boot-converge {
+  from { opacity: 1; }
+  to   { opacity: 0; transform: scale(0.72); }
+}
+
+@keyframes boot-draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes boot-fade {
+  to { opacity: 0; }
+}
+
+@keyframes boot-word-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes boot-rise {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------ the memory network
+
+   Used by Memory Pulse and the Knowledge Graph. All movement is inside
+   `no-preference`, so reduced motion gets the network drawn still — the end
+   state, which for a graph is the useful one.
+
+   Everything animates `opacity`, `transform` or `r`, so nothing touches
+   layout and the browser can keep it off the main thread. There is no
+   animation loop anywhere in this feature. */
+
+@media (prefers-color-scheme: dark) {
+  .graph-canvas:not([data-theme='light'] *) {
+    background:
+      radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 62%);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A slow breath, staggered per node so the field never pulses in unison. */
+  .pulse-node {
+    animation: node-breathe 4.2s ease-in-out infinite;
+    animation-delay: var(--d, 0ms);
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  /* One expanding ring, when a memory is genuinely captured. */
+  .capture-ring {
+    animation: capture-ring 1100ms cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  }
+}
+
+@keyframes node-breathe {
+  0%, 100% { opacity: 0.68; transform: scale(1); }
+  50%      { opacity: 1;    transform: scale(1.22); }
+}
+
+@keyframes capture-ring {
+  from { r: 2;  opacity: 0.85; stroke-width: 2; }
+  to   { r: 96; opacity: 0;    stroke-width: 0.4; }
+}
+
+/* Hover highlighting: dim the field, keep the hovered record and its
+   neighbours lit. A CSS-only concern, so hovering costs no React render. */
+.graph-dim { opacity: 0.12; transition: opacity 140ms ease; }
+.graph-lit { opacity: 1; transition: opacity 140ms ease; }
+
+/* --------------------------------------------------- the graph, on React Flow
+
+   Ported from a throwaway comparison app (`design/reactflow-demo`, since
+   deleted; see ADR-0039). That demo hardcoded the dark palette; here
+   everything is a theme token, so the graph works in daylight too — React Flow ships a light stylesheet of its own and these
+   overrides sit on top of it.
+
+   The glow uses the same `--glow-blur` / `--glow-alpha` knobs as the rest of
+   the app, which means it lights up in the dark and goes flat in light mode
+   without a second set of rules. */
+
+.rf-dot-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+}
+
+.rf-dot {
+  width: var(--size, 9px);
+  height: var(--size, 9px);
+  border-radius: 50%;
+  background: var(--neon);
+  box-shadow:
+    0 0 calc(var(--glow-blur) * 0.7) var(--neon),
+    0 0 var(--glow-blur) color-mix(in srgb, var(--neon) var(--glow-alpha), transparent);
+  cursor: pointer;
+  transition: transform 160ms ease;
+}
+.rf-dot:hover { transform: scale(1.5); }
+.rf-selected .rf-dot { transform: scale(1.6); }
+
+/* The circling loop. Dashes are what make the rotation legible — a plain
+   circle spinning looks static. */
+.rf-orbit {
+  position: absolute;
+  inset: -11px;
+  border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--neon) 70%, transparent);
+  pointer-events: none;
+}
+.rf-orbit-particle {
+  position: absolute;
+  inset: -11px;
+  pointer-events: none;
+}
+.rf-orbit-particle::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 calc(var(--glow-blur) * 0.9) var(--accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rf-orbit { animation: rf-spin 6s linear infinite; }
+  .rf-orbit-particle { animation: rf-spin 2.6s linear infinite reverse; }
+  .rf-breathe { animation: rf-breathe 4.2s ease-in-out infinite; animation-delay: var(--d, 0ms); }
+  .rf-popup { animation: rf-pop 150ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The ring stays as a selection marker; only the motion goes. */
+  .rf-orbit-particle { display: none; }
+}
+
+@keyframes rf-spin { to { transform: rotate(360deg); } }
+@keyframes rf-breathe {
+  0%, 100% { opacity: 0.72; }
+  50%      { opacity: 1; }
+}
+@keyframes rf-pop {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.rf-popup {
+  min-width: 190px;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--neon);
+  background: var(--panel);
+  box-shadow: 0 0 var(--glow-blur) color-mix(in srgb, var(--neon) var(--glow-alpha), transparent);
+  color: var(--text);
+  text-align: left;
+}
+
+/* React Flow's own chrome, in the product's palette rather than its default
+   white-on-grey. */
+.rf-canvas .react-flow__controls-button {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  fill: var(--text);
+}
+.rf-canvas .react-flow__controls-button:hover { background: var(--chip); }
+.rf-canvas .react-flow__minimap {
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+.rf-canvas .react-flow__attribution {
+  background: transparent;
+  color: var(--muted);
+}
+.rf-canvas .react-flow__attribution a { color: var(--muted); }
+
+/* ------------------------------------------------------------ keyboard
+
+   Two things that apply to every screen.
+
+   **A visible focus ring.** Nothing defined one, so keyboard users got
+   whatever the browser drew — which on this palette is a thin dark outline
+   against a near-black panel, effectively invisible. `:focus-visible` means
+   mouse clicks stay clean while keyboard focus is unmistakable. The accent
+   is the right colour here: this is not decoration competing with the one
+   action on a screen, it is "you are here".
+
+   **A skip link**, because the sidebar is roughly twenty tab stops and
+   without one every keyboard visit to a screen starts by traversing it. */
+
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 60;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--panel);
+  color: var(--text);
+  font: 12px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  transition: top 120ms ease;
+}
+.skip-link:focus {
+  top: 8px;
 }

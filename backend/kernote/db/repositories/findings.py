@@ -72,8 +72,38 @@ def record(conn: sqlite3.Connection, project_id: str, finding: Finding) -> str:
 def open_findings(
     conn: sqlite3.Connection, project_id: str, kind: str | None = None
 ) -> list[dict]:
-    sql = "SELECT * FROM findings WHERE project_id=? AND status='open'"
+    return findings_by_status(conn, project_id, "open", kind)
+
+
+def resolved_findings(
+    conn: sqlite3.Connection,
+    project_id: str,
+    kind: str | None = None,
+    limit: int = 30,
+) -> list[dict]:
+    """Recently closed findings, newest first.
+
+    What the undo flow reads: a decision invisible in the UI cannot be taken
+    back, however reversible it is underneath.
+    """
+    sql = "SELECT * FROM findings WHERE project_id=? AND status!='open'"
     params: list[object] = [project_id]
+    if kind:
+        sql += " AND kind=?"
+        params.append(kind)
+    sql += " ORDER BY resolved_at DESC LIMIT ?"
+    params.append(limit)
+    return [_decode(row) for row in conn.execute(sql, params).fetchall()]
+
+
+def findings_by_status(
+    conn: sqlite3.Connection,
+    project_id: str,
+    status: str,
+    kind: str | None = None,
+) -> list[dict]:
+    sql = "SELECT * FROM findings WHERE project_id=? AND status=?"
+    params: list[object] = [project_id, status]
     if kind:
         sql += " AND kind=?"
         params.append(kind)
@@ -81,10 +111,10 @@ def open_findings(
         " ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
         " created_at"
     )
-    rows = conn.execute(sql, params).fetchall()
-    out = []
-    for row in rows:
-        record_dict = dict(row)
-        record_dict["evidence"] = json.loads(record_dict.pop("evidence_json"))
-        out.append(record_dict)
-    return out
+    return [_decode(row) for row in conn.execute(sql, params).fetchall()]
+
+
+def _decode(row: sqlite3.Row) -> dict:
+    record = dict(row)
+    record["evidence"] = json.loads(record.pop("evidence_json"))
+    return record

@@ -120,7 +120,18 @@ class DuplicateResult:
 
 
 def _is_nested(conn: sqlite3.Connection, first_id: str, second_id: str) -> bool:
-    """True when one memory's cited lines sit inside the other's, same file."""
+    """True when one memory's cited lines sit *strictly* inside the other's.
+
+    The containment test used to be `<=` on both bounds, which is also true
+    when the two ranges are **identical** -- and two memories citing exactly
+    the same lines of the same file are not parent and child. They are the
+    same region extracted twice, which is the clearest duplicate there is,
+    and the guard meant to protect "a section is not a duplicate of the
+    block inside it" was hiding them instead.
+
+    Measured on a real 932-memory vault: 9 pairs with byte-identical titles
+    and bodies were excluded this way, against 5 that are genuinely nested.
+    """
     rows = conn.execute(
         "SELECT memory_id, rel_path, line_start, line_end FROM memory_source_refs "
         "WHERE memory_id IN (?,?) AND rel_path IS NOT NULL AND line_start IS NOT NULL",
@@ -136,6 +147,9 @@ def _is_nested(conn: sqlite3.Connection, first_id: str, second_id: str) -> bool:
     for path_a, start_a, end_a in left:
         for path_b, start_b, end_b in right:
             if path_a != path_b:
+                continue
+            if (path_a, start_a, end_a) == (path_b, start_b, end_b):
+                # The same region, twice. Not nesting.
                 continue
             if (start_a <= start_b and end_b <= end_a) or (
                 start_b <= start_a and end_a <= end_b
@@ -187,6 +201,7 @@ def detect_duplicates(
             buckets.setdefault((row["type"], "title", signature), []).append(row)
 
     judged: set[tuple[str, str]] = set()
+
     for (mem_type, kind, name), members in buckets.items():
         if len(members) < 2:
             continue
@@ -413,12 +428,31 @@ def _create_proposal(
 
 
 def pending_proposals(conn: sqlite3.Connection, project_id: str) -> list[dict]:
-    rows = conn.execute(
-        "SELECT id,finding_id,input_ids_json,preview_json,created_at "
-        "FROM consolidation_proposals WHERE project_id=? AND status='pending' "
-        "ORDER BY created_at",
-        (project_id,),
-    ).fetchall()
+    return proposals_by_status(conn, project_id, "pending")
+
+
+def proposals_by_status(
+    conn: sqlite3.Connection, project_id: str, status: str, limit: int = 50
+) -> list[dict]:
+    """Proposals in one state.
+
+    `approved` is what the undo flow needs: a consolidation cannot be taken
+    back if nothing shows that it happened. Newest first for anything already
+    decided, since an undo is almost always about the thing just done.
+    """
+    # Two whole statements rather than an interpolated ORDER BY. `order` only
+    # ever held a literal, but building SQL with an f-string is a pattern worth
+    # not having in the file at all.
+    select = (
+        "SELECT id,finding_id,input_ids_json,preview_json,created_at,decided_at "
+        "FROM consolidation_proposals WHERE project_id=? AND status=? "
+    )
+    sql = (
+        select + "ORDER BY created_at LIMIT ?"
+        if status == "pending"
+        else select + "ORDER BY decided_at DESC LIMIT ?"
+    )
+    rows = conn.execute(sql, (project_id, status, limit)).fetchall()
     out = []
     for row in rows:
         out.append(
@@ -428,6 +462,7 @@ def pending_proposals(conn: sqlite3.Connection, project_id: str) -> list[dict]:
                 "input_ids": json.loads(row["input_ids_json"]),
                 "preview": json.loads(row["preview_json"]),
                 "created_at": row["created_at"],
+                "decided_at": row["decided_at"],
             }
         )
     return out

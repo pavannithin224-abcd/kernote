@@ -212,11 +212,17 @@ these to re-screen before any public use: `projectmem`, `Codified Context`,
 
 ## 10. Open questions
 
+*All six are now closed. Q1 closed because its stated default held and
+nothing else was built; Q4 was closed that way too, then reopened and
+answered properly on 2026-11-14 — recorded as closed-by-default rather than decided, so
+the distinction stays visible. Q2, Q3, Q5 and Q6 were each settled by a measured
+result or a verification run, with the evidence linked.*
+
 | # | Question | Needed by | Default if unanswered |
 |---|---|---|---|
-| Q1 | Is a local generative model in MVP scope at all, or is extraction fully deterministic? | Day 6 | Deterministic extractors only; model adapter optional (see ADR-0006) |
-| Q2 | Which real repos are the evaluation set? Guide names Faultiva and CellWise-X | Day 14 | Those two, secrets stripped, plus one small public repo |
-| Q3 | Is Windows a Day 25 release target or best-effort? | Day 3 | Primary dev on Linux/WSL; Windows verified at Day 18 and Day 23 |
-| Q4 | Packaging: dev-script startup, or a real installer? | Day 21 | Documented dev startup scripts only |
+| ~~Q1~~ | Is a local generative model in MVP scope at all, or is extraction fully deterministic? | Day 6 | **Closed by outcome: fully deterministic.** The default held — no generative model ships, and the model adapter was never needed (ADR-0006, refined by ADR-0016). The dashboard states it plainly: *language model: none · extraction is deterministic.* |
+| ~~Q2~~ | Which real repos are the evaluation set? Guide names Faultiva and CellWise-X | Day 14 | **Closed 2026-11-09: neither.** The real-repository corpus is **IVForge** (`eval/questions-ivforge.json`; the corpus itself is not in this repository) alongside the synthetic fixture. See `EVALUATION.md` §*A real repository*. It immediately caught two faults the synthetic corpus could not see, which is the whole reason for having it. |
+| ~~Q3~~ | Is Windows a Day 25 release target or best-effort? | Day 3 | **Closed 2026-11-09: supported, verified, not assumed** (ADR-0009a, which supersedes ADR-0009). Native Windows 3.12.10 AMD64 on an NTFS path: full suite run, three product bugs found and fixed. Two environmental limits stand — **Git is not installed there**, so Change Impact is unverified, and there is no Node, so the frontend build is untested. Both are stated rather than papered over. |
+| ~~Q4~~ | Packaging: dev-script startup, or a real installer? | Day 21 | **Reopened and answered 2026-11-14: single process first, installer undecided.** The API now serves the built UI itself (`just app`), so running Kernote is one command on one port with no Node at runtime and no CORS, because there is only one origin. Two processes remain the *development* arrangement, for hot reload. A packaged installer is a separate decision, deliberately not taken yet — see the desktop note in `DEV_HANDOFF.md`. |
 | ~~Q5~~ | Can a semantically-retrieved record with no lexical overlap be *asserted* as evidence? | Day 24 | **Closed 2026-11-09: no** (ADR-0032). Measured: the relaxations that would allow it change no verdict alone, and together they halve useful abstention and double wrongly-asserted answers. Leads are ordered by meaning instead. |
 | ~~Q6~~ | Can term weighting tell a question's *subject* from an incidental rare word? | after RC | **Closed 2026-11-09: yes, by title agreement** (ADR-0035). Measured against three alternatives; *position in the question*, the signal this question proposed, is actively harmful. A term in a record's own title now counts 2.0 toward the overlap bar and the share. False abstention 28% to 20% on the fixture with the abstention guarantee unchanged. |

@@ -73,6 +73,24 @@ def _create_locked(
     return memory
 
 
+def write_revision(
+    conn,
+    memory: Memory,
+    revision_id: str,
+    parent_id: str | None,
+    change_reason: str,
+    actor: str,
+) -> None:
+    """Public entry point for callers outside this module.
+
+    `maintain/review.py` needs it to record an undo, which restores a prior
+    state by writing a *new* revision rather than deleting the ones it
+    reverses. Exposed deliberately rather than letting that module reach for
+    the private name.
+    """
+    _write_revision(conn, memory, revision_id, parent_id, change_reason, actor)
+
+
 def _write_revision(
     conn,
     memory: Memory,
@@ -121,13 +139,75 @@ def _write_ref(conn, memory_id: str, ref: SourceRef) -> None:
 def exists_same_claim(
     conn: sqlite3.Connection, project_id: str, title: str, content_hash: str | None
 ) -> bool:
-    """A re-scan of unchanged content must not create a second identical memory."""
+    """A re-scan of unchanged content must not create a second identical memory.
+
+    **Keyed on the file's hash, which is why it was not enough.** Editing one
+    paragraph of a document changes that hash, so every memory extracted from
+    the file looked new and was created again. On this repository a second
+    scan after a day's documentation edits produced **345 new memories while
+    only 24 new files appeared**, and 91 duplicate proposals to clean up
+    after it.
+
+    Kept because it is the cheap path for a genuinely untouched file.
+    `find_same_claim` below is what handles a file that changed around an
+    unchanged section.
+    """
     row = conn.execute(
         "SELECT 1 FROM memories m JOIN memory_source_refs r ON r.memory_id=m.id "
         "WHERE m.project_id=? AND m.title=? AND r.content_hash IS ? LIMIT 1",
         (project_id, title, content_hash),
     ).fetchone()
     return row is not None
+
+
+def find_same_claim(
+    conn: sqlite3.Connection, project_id: str, title: str, rel_path: str | None
+) -> sqlite3.Row | None:
+    """The live memory this extraction is a new reading of, if there is one.
+
+    Identity is `(project, title, file)` -- the section heading or ADR name,
+    in the document it came from. That survives edits to the body, which is
+    exactly the case the file-hash check cannot see.
+
+    Returns `None` when **more than one** memory matches, rather than picking
+    one. Two sections in the same file sharing a heading is unusual but
+    possible, and superseding the wrong one would retire a claim nobody
+    retired. Creating a duplicate is a worse-looking outcome and a safer one:
+    the duplicate detector will raise it for review, where a human decides.
+    """
+    if rel_path is None:
+        return None
+    rows = conn.execute(
+        "SELECT m.id, m.content FROM memories m "
+        "JOIN memory_source_refs r ON r.memory_id = m.id "
+        "WHERE m.project_id=? AND m.title=? AND r.rel_path=? "
+        "AND m.status IN ('active','needs_review') "
+        "GROUP BY m.id LIMIT 2",
+        (project_id, title, rel_path),
+    ).fetchall()
+    return rows[0] if len(rows) == 1 else None
+
+
+def repin(conn: sqlite3.Connection, memory_id: str, fresh: Memory) -> None:
+    """Point an unchanged claim at where its text now lives.
+
+    A section whose wording did not change but which moved down a file is
+    the same memory with a stale citation. Re-creating it would be a
+    duplicate; leaving it alone would leave drift detection comparing
+    against the old line range and a `content_hash` for a file that has
+    moved on -- every such memory would read as stale forever.
+
+    So the claim, its revisions and its id are untouched, and only the
+    provenance is refreshed. No revision is written, because the *claim* did
+    not change: what changed is where it is.
+    """
+    with transaction(conn):
+        conn.execute("DELETE FROM memory_source_refs WHERE memory_id=?", (memory_id,))
+        for ref in fresh.source_refs:
+            _write_ref(conn, memory_id, ref)
+        conn.execute(
+            "UPDATE memories SET last_verified_at=? WHERE id=?", (utc_now(), memory_id)
+        )
 
 
 def get(conn: sqlite3.Connection, memory_id: str) -> Memory | None:

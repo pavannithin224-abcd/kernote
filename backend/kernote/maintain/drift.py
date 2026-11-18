@@ -32,7 +32,8 @@ from pathlib import Path
 import structlog
 from unidiff import PatchSet
 
-from ..domain.models import Finding, FindingKind, Severity
+from ..domain.models import Finding, FindingKind, Severity, new_id, utc_now
+from ..ingest import gitmeta
 from .findings import record
 
 log = structlog.get_logger(__name__)
@@ -295,6 +296,16 @@ def detect_drift(conn: sqlite3.Connection, *, project_id: str, root: Path) -> Dr
                 },
             ),
         )
+
+    # Record that a check happened, not just what it found. Without this a
+    # never-analyzed project is indistinguishable from a clean one: both have
+    # zero stale findings, and reporting the first as "100% fresh" would be
+    # reporting an absence of evidence as evidence (migration 0007).
+    conn.execute(
+        "INSERT INTO drift_runs(id, project_id, ran_at, refs_checked, git_commit) "
+        "VALUES(?,?,?,?,?)",
+        (new_id(), project_id, utc_now(), result.checked, gitmeta.head_commit(root)),
+    )
 
     log.info(
         "drift.checked",

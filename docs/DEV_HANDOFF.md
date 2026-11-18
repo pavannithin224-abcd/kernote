@@ -5,6 +5,1779 @@ Newest entry first.
 
 ---
 
+## 2026-11-17 — The duplicate backlog cleared
+
+The damage from the pre-ADR-0049 scanner, cleaned up. A backup was taken
+first (11.8 MB, `backups/kernote-20261117-063924.db`).
+
+### What was applied
+| | |
+|---|---|
+| approved | **85** — byte-identical pairs from the double-scan |
+| rejected | **1** — `npm scripts` spanning `frontend/package.json` and `samples/eval-repo/web/package.json`: two projects sharing a heading, not one claim |
+| left alone | **5** — wording differs; three of those would have made the *stale* version canonical |
+| failures | **0** |
+
+### The vault
+| | before | after |
+|---|---|---|
+| memories (total) | 932 | **932** — nothing deleted |
+| active | 932 | 847 |
+| superseded | 0 | 85 |
+| citations | 932 | **974** |
+| open findings | 564 | 478 |
+
+Citations *rose*, which is the point: `supersede_into` carries the absorbed
+record's provenance onto the keeper, and the absorbed record keeps its own.
+42 of the 85 pairs cited different line ranges of the same file.
+
+### Guarantees checked rather than assumed
+- superseded records with no content: **0**
+- superseded records with no replacement: **0**
+- replacements that are not active: **0**
+- **merges that dropped a citation: 0**
+- revisions recording a merge: 85; feedback rows: 85
+
+### Reversibility proven on the real data
+Undid one merge and re-applied it: active 847 → 848 → 847, superseded
+85 → 84 → 85, citations 974 → 973 → 974. Exact round trip, on production
+rows rather than a fixture.
+
+### What is still pending, and why
+Five proposals remain, deliberately:
+- `Retrieved records are never silently discarded…` — differs by a `---`.
+- `npm scripts` (frontend) — the old reading predates the `typecheck` script.
+- `Dashboard redesign — brief`, `Startup animation — brief`,
+  `Remaining order` — each is the **old and new text of the same passage**,
+  and the merge preview would keep the stale wording. For the dashboard
+  brief that means serving *"Received 2026-11-11. Not started."* over
+  *"Built 2026-11-14, reviewed and accepted."*
+
+These are not duplicates; they are versions. With ADR-0049 in place a
+re-scan now supersedes properly, so the honest fix is to re-scan the
+project and let the newer reading win, then let these proposals lapse.
+
+### Known issues
+- **478 open findings remain**, almost all `stale_risk` from the
+  documentation edits of 14–15 November. Unrelated to this cleanup.
+- Approving 85 proposals took 85 individual requests; there is no batch
+  endpoint for consolidations, only for relationship links.
+
+### Next safe task
+Re-scan the project so the five version-pairs resolve by supersession, then
+commit — 72 files.
+
+---
+
+## 2026-11-15 — The scanner now updates instead of copying (ADR-0049)
+
+The upstream bug from the previous entry, fixed.
+
+### What was wrong
+`exists_same_claim` keyed on the **file's** content hash, so a file was
+either untouched (skip everything) or changed (re-create everything).
+One edited paragraph re-created every memory that document had produced —
+345 memories from 24 new files, 587 → 932, and 91 duplicate proposals.
+
+### Three outcomes, one of them new
+1. File byte-identical → skip. Unchanged cheap path.
+2. File changed but we hold this claim — identity `(project, title, file)`:
+   - same wording, moved lines → **re-pin** the citation, no revision
+     written, because the claim did not change;
+   - new wording → **supersede**: the old reading keeps every byte and
+     gains `superseded_by`.
+3. Genuinely new → create.
+
+Ambiguity is refused: `find_same_claim` returns nothing when two live
+memories match, so a duplicate is created and the detector raises it for
+review rather than superseding the wrong record.
+
+### Measured on `samples/eval-repo`
+| scan | created | superseded | re-pinned |
+|---|---|---|---|
+| fresh | 51 | 0 | 0 |
+| nothing changed | 0 | 0 | 0 |
+| one section appended | **1** | 0 | 7 |
+| one section edited | 0 | **1** | 7 |
+
+Before: scans 3 and 4 each re-created the file's whole set.
+
+### A behaviour change, stated plainly
+Editing a cited file **and re-scanning** no longer leaves a staleness
+finding — the claim was refreshed from the same source the finding would
+have pointed at. Drift still fires for a file edited **without** a re-scan,
+which is the ordinary case and what `test_drift_spike.py` covers. One test
+encoded the old expectation; it was updated, not worked around, and now
+asserts the supersession explicitly.
+
+### What changed
+- **`db/repositories/memories.py`** — `find_same_claim`, `repin`.
+- **`ingest/pipeline.py`** — the three-way branch; counters threaded
+  through `_ingest_one_file`.
+- **`domain/models.py`** — `ScanResult.memories_superseded` / `.memories_repinned`.
+- **`tests/integration/test_rescan_is_incremental.py`** (new, 5 tests).
+- **`tests/integration/test_stage6_review.py`** — one test updated.
+
+### Verification performed
+- `pytest backend/tests` — **540 collected, all pass**.
+- `ruff`, `typecheck`, `eslint`, `build` clean.
+- Measured on a copy of `samples/eval-repo`, not your vault.
+
+### Known issues
+- **Your vault still holds the 91 duplicates** from before the fix, and the
+  345 extra memories. The fix stops it recurring; it does not clean up what
+  already happened. The 85 exact-duplicate proposals are the way to do that.
+- Identity is the heading. Renaming a section is indistinguishable from
+  deleting one and adding another — the old memory stays active and the new
+  one is created. Nothing detects a rename.
+- A claim that moves to a *different file* is likewise a new memory.
+
+### Next safe task
+Decide what to do with the existing 91 proposals now that new ones will not
+appear, and commit — 72 files.
+
+---
+
+## 2026-11-15 — Reviewing the 91 proposals found a bigger bug upstream
+
+**Nothing was merged.** Auditing the queue turned up a defect in the
+scanner that the review queue was quietly cleaning up after.
+
+### The audit
+| | |
+|---|---|
+| proposals | 91 |
+| byte-identical bodies | **85** |
+| bodies differ (judgement) | 6 |
+| previews that would drop a citation | **0** — the merge guarantee holds across all 91 |
+| merges spanning two different files | 1 |
+
+### The root cause: a re-scan does not supersede, it re-creates
+**All 91 duplicate pairs straddle the two scan runs, and the vault contains
+zero superseded memories.** Scanning the project a second time created a
+fresh memory for every extracted region rather than recognising that one
+already existed:
+
+- 587 memories after the first scan, **932 after the second** — +345, while
+  only 24 new files appeared.
+- 46 of the 91 pairs cite the *same* file region; the rest cite the same
+  content at shifted line numbers, because the files grew.
+
+So the duplicate detector is doing cleanup for the ingest pipeline. That is
+the defect to fix, in `ingest/pipeline.py` — a region whose content is
+unchanged should leave its memory alone, and a region whose content changed
+should **supersede** the old memory, not sit beside it.
+
+### Three proposals would make the *stale* version canonical
+The 6 non-identical pairs are not duplicates at all — they are the old and
+new text of the same passage, captured either side of an edit. The merge
+preview blends them, and for `Dashboard redesign — brief` the result keeps:
+
+> `**Received 2026-11-11. Not started.**`
+
+and discards `Built 2026-11-14, reviewed and accepted`. The absorbed record
+keeps its content (nothing is destroyed), but the **served** memory would
+assert the outdated claim — precisely what Kernote exists to prevent. Same
+for `Startup animation — brief` and `Remaining order`.
+
+### One is a false positive
+`npm scripts` from **`frontend/package.json`** and
+**`samples/eval-repo/web/package.json`** — two different projects' scripts
+sharing a title. Merging them would conflate facts about different files.
+It should be rejected, not approved.
+
+### Recommendation
+1. **Fix the scanner first.** Merging 91 proposals treats the symptom, and
+   the next scan recreates them.
+2. The 85 exact duplicates are safe to approve whenever — citations are
+   preserved and ADR-0040 makes it reversible.
+3. Reject the cross-file `npm scripts` pair.
+4. Leave the three stale/fresh pairs alone until the scanner supersedes
+   properly; merging them now enshrines the stale text.
+
+### Verification performed
+- All 91 previews audited programmatically; 535 tests still pass.
+- **No proposal was approved or rejected. Your vault is unchanged** beyond
+  the analysis run recorded in the previous entry.
+
+### Next safe task
+`ingest/pipeline.py`: make a re-scan supersede rather than re-create.
+
+---
+
+## 2026-11-15 — Analysis run on the real vault
+
+Ran with the new background endpoint: **4 seconds**, and `/health` answered
+throughout. A backup was taken first (10.6 MB, in `backups/`).
+
+### What it found
+| | |
+|---|---|
+| open findings | 114 → **564** |
+| stale_risk, low | **401** — file changed, but not within the cited lines |
+| stale_risk, high | **69** — the cited lines themselves moved |
+| duplicate, high | **91**, with 91 pending proposals |
+| conflict | 1 |
+| freshness | **61%** (573 of 932 verified) — the first real figure this vault has had |
+
+### Most of the drift is my doing
+The stale risks point overwhelmingly at files this session rewrote:
+**215 at `docs/DECISIONS.md`** (ten ADRs added), 63 at `lib/api.ts`, 30 at
+`routers/maintenance.py`, 24 at `VISUAL_PASS.md`. The product correctly
+detected that its own documentation moved under its own memories. That is
+the feature working, not a fault — but the queue is large because of the
+last two days of work, not because the vault was neglected.
+
+### The duplicates are real
+**85 of the 91 proposals merge byte-identical memories** — same title, same
+body. These are ADRs extracted twice across two scans. Sampled three; all
+identical. So the nesting fix (ADR-0048) is pulling its weight: before it,
+these were invisible.
+
+### The suggestion exclusion works end to end
+Same-title pairs in the relationship feed fell **50 → 7**, because the
+duplicate detector now owns those pairs and `suggestions.ranked` excludes
+anything the review queue is already asking about (ADR-0047). That exclusion
+had only been unit-tested until now.
+
+### Known issues
+- **564 open findings is a lot of queue.** The 401 low-severity stale risks
+  are "the file changed around the citation", which ADR-0037 counts as
+  not-verified; that is why freshness reads 61%.
+- No bulk action for stale findings — the consolidation proposals can be
+  reviewed in batches, drift findings one at a time.
+- Re-running analysis after each doc edit will keep regenerating these.
+
+### Next safe task
+Commit, then work the duplicate proposals — 85 of 91 are exact duplicates
+and should merge cleanly.
+
+---
+
+## 2026-11-15 — The duplicate "weakness" investigated (ADR-0048)
+
+Yesterday I wrote that the duplicate detector was missing 50 same-title
+pairs and called it a product bug. **That was 90% wrong**, and the real bug
+was somewhere I had not looked.
+
+### What the 50 actually were
+Measured by replaying detection against copies of the real vault:
+
+| | |
+|---|---|
+| **30** | **Stale findings.** The last analysis ran before the scan that added 345 memories. Flagged the moment analysis ran again. |
+| 14 | Excluded by the parent/child nesting guard — **9 of them wrongly**. |
+| 5 | Genuinely nested. Correct. |
+| 1 | Bodies genuinely differ. Correct. |
+
+### The real bug
+`_is_nested` tested containment with `<=` on both bounds, which is **also
+true when the ranges are identical**. Two memories citing exactly the same
+lines of the same file were read as "a section and the block inside it" —
+when they are the same region extracted twice, which is the clearest
+duplicate there is. The guard built to stop a false positive was causing a
+false negative.
+
+One line. Same-title pairs flagged **30 → 38**; candidates 49 → 93.
+
+### A change I made and then deleted
+Before finding the cause I added an "exact duplicate" pass — hash every
+memory by `(type, content_fingerprint)` and flag identical groups directly,
+so exact duplication would not depend on bucket limits. Defensible, and
+**removed**, because with the nesting fix it changed nothing: 93 candidates,
+91 proposals, 38 of 50, *identical* with and without it. 68 lines that
+duplicated existing work. Same standard as ADR-0036's rejected per-file cap.
+
+### What changed
+- **`maintain/duplicates.py`** — three lines in `_is_nested`, and the
+  docstring explaining why identical is not nested.
+- **`tests/integration/test_stage6_review.py`** — two regression tests:
+  identical ranges are not nesting, genuine nesting still is. The first was
+  confirmed to fail when the fix is reverted.
+
+### Verification performed
+- `pytest backend/tests` — **535 collected, all pass**.
+- `ruff` clean.
+- Measured on copies of the real vault throughout. **Your data was not
+  modified** — every detection run went to a scratch copy.
+
+### Known issues
+- `_CLIQUE_LIMIT` still means two non-canonical duplicates are not compared
+  *as a pair*; each is compared against the canonical, so both surface. That
+  is the trade the limit exists to make, and it is now the only known gap.
+- **Your vault's findings are stale.** Running analysis would surface ~93
+  duplicate candidates and 91 proposals that currently are not visible.
+
+### Next safe task
+Run analysis on your project to clear the stale findings, and commit — 69
+files.
+
+---
+
+## 2026-11-15 — Ranked relationship triage (ADR-0047)
+
+967 suggestions were answerable one pair at a time by clicking graph nodes,
+which is not a workflow. `GET /projects/{id}/links/suggestions` returns them
+ranked, and `POST /projects/{id}/links/batch` applies several answers at
+once. A *Suggested relationships* panel sits at the top of the review queue.
+
+### The ranking, which is the actual feature
+The graph scores each shared entity separately and keeps the best per pair,
+so two memories sharing **three** rare files looked identical to two sharing
+one. The score is now the **sum** of `1/(n-1)` across everything a pair
+shares. On the real vault the top suggestion scores **9.34** — two
+dependency lists sharing four packages — against a floor of 0.17.
+
+Three exclusions: already linked, already dismissed, and **already in the
+review queue**. That last one matters — an open duplicate finding has a
+better answer waiting than "related", and without the exclusion those pairs
+ranked *first*, because near-identical memories share the most entities.
+
+### Two deliberate refusals
+- **No "confirm all".** Agreeing to hundreds of relationships in one click
+  records a judgement nobody made. Selection is explicit.
+- **A batch is not a bulk writer.** Every decision goes through
+  `links.confirm` / `links.dismiss`, so no guard is bypassed — a batch
+  cannot assert `supersedes` or link across projects. A failed decision is
+  reported, not fatal: forty answers where three are stale apply
+  thirty-seven and name the three.
+
+### It found a weakness somewhere else
+**Four of the five strongest suggestions are same-title pairs that the
+duplicate detector never flagged** — 50 such pairs in the vault. They are
+listed with `same title — check for duplicate` rather than hidden.
+
+> **Corrected 2026-11-15 (ADR-0048).** The guess in the rest of this
+> paragraph was wrong. Investigated: **30 of the 50 were simply stale
+> findings** — the last analysis predated a scan that added 345 memories —
+> and 6 more were correctly excluded. The real defect was 9 pairs hidden by
+> an off-by-one-ish `<=` in the nesting guard. Fixed.
+
+### What changed
+- **`maintain/suggestions.py`** (new) — ranking and batch application.
+- **`api/routers/maintenance.py`** — the two endpoints.
+- **`lib/api.ts`** — `linkSuggestions`, `batchLinks`, `LinkSuggestion`.
+- **`screens/MaintenanceCenter.tsx`** — the triage panel.
+- **`tests/integration/test_link_suggestions.py`** (new, 11 tests).
+
+### Verification performed
+- `pytest backend/tests` — **533 collected, all pass**.
+- `ruff`, `typecheck`, `eslint`, `build` clean.
+- Live against the real vault: ranked output inspected, exclusions working,
+  `same_title` flagged correctly. **No decisions were applied to your data.**
+
+### Known issues
+- Still a lot of clicking: ordered clicking, but 967 pairs is 967 pairs.
+  No keyboard flow through the list.
+- The feed is per project.
+- `limit` defaults to 25 in the UI and caps at 200.
+- Not seen rendered.
+
+### Next safe task
+Commit — 68 files now. Then possibly the duplicate-detector weakness above,
+which is a product bug this work happened to expose.
+
+---
+
+## 2026-11-14 — Curated relationships and background indexing
+
+Two of the audit's "later" items, both built.
+
+### Relationships can now be answered (ADR-0045, migration 0010)
+`memory_links` was empty in practice, so the graph derived every edge from
+entity co-occurrence at read time. A suggestion now has two durable answers:
+**confirm** writes a row with `origin='user'`, **dismiss** records the pair
+in `link_rejections` so it stops recurring, and **withdraw** returns a
+confirmed link to being a suggestion.
+
+`origin` is the useful part: `suggested` | `user` | `merge` | `finding`, so
+the inspector offers confirm/dismiss on heuristics, withdraw on judgements,
+and nothing on a merge's consequence — that one is undone by undoing the
+merge.
+
+**Two bugs, both found by tests rather than by reading.** The first version
+stored every pair in sorted id order, which is right for `relates_to` and
+`contradicts` and **silently reverses `refines` and `depends_on`**. The same
+assumption meant a sorted lookup never matched merge links, which are
+written `(keeper, absorbed)`, so `remove` said "no such link" instead of
+refusing. Symmetric kinds are sorted, directional ones are not, and lookups
+check both orderings.
+
+### Background indexing (ADR-0046)
+`POST /projects/{id}/scan/background` and `/analyze/background` queue the
+work and return a job; `GET /jobs/{id}` and `GET /jobs` report it. The
+blocking endpoints are unchanged — the demo, the tests and anyone scripting
+the API depend on them.
+
+**One worker, on purpose**: SQLite takes a single writer, so two scans would
+serialise on the lock anyway, with the added chance of one timing out
+against the other. Submitting a second scan of the same project returns the
+one already running.
+
+**State is in memory, and that is the honest choice.** A job describes this
+process; it cannot survive a restart because the work cannot either.
+Persisting it would mean reopening the app to a list of jobs that are not
+running and cannot be resumed. What the work produced *is* durable —
+`scan_runs`, findings, `drift_runs`.
+
+### Verification performed
+- `pytest backend/tests` — **522 collected, all pass** (26 new).
+- `ruff`, `typecheck`, `eslint`, `build` clean.
+- **Live, on the real vault**: a suggested edge confirmed (337 suggested → 336
+  + 1 user), withdrawn, dismissed (the suggestion disappeared), then restored
+  so the vault was left exactly as found — `memory_links` and
+  `link_rejections` both back to 0 rows.
+- **Live background scan**: returned immediately, ran 8s across 177 files,
+  and `/health` answered throughout. A second request while it ran returned
+  the same job id.
+
+### Known issues
+- **The background scan I ran added memories** (345) because the docs
+  changed since the last scan. Expected, but your vault is larger than it
+  was this morning.
+- **No cancellation, no progress percentage.** A job is queued, running,
+  done or failed — a long scan cannot be called off.
+- **No bulk curation.** Confirming relationships is one pair at a time;
+  337 suggestions is a lot of clicking. Ranking suggestions by confidence
+  is the obvious next step.
+- The tray still needs the desktop shell.
+- Not seen rendered, as all session.
+
+### Next safe task
+Commit. 66 files now.
+
+---
+
+## 2026-11-14 — Cache headers and CORS (audit item 6)
+
+Small, and one of them had a trap worth recording.
+
+### Caching
+`assets/*` is `public, max-age=31536000, immutable` — Vite renames the file
+whenever the bytes change, so it never needs revalidating. **Everything else,
+including the shell, is `no-cache`**: a cached `index.html` names hashed
+assets that no longer exist after an upgrade, and the symptom is a blank app
+fixed only by a hard refresh the user has no reason to guess at.
+
+Verified live: the 517 KB bundle returns `immutable`, `/graph` returns
+`no-cache`.
+
+### CORS, and the trap
+The obvious implementation — "drop CORS when a build is present" — **would
+have broken `just dev`**. Development runs the API with a `dist/` sitting on
+disk from an earlier build while Vite serves the UI on :5173; keyed on the
+build, CORS would vanish exactly where it is needed.
+
+So it is keyed on **configuration**: the middleware is registered only when
+`cors_origins` is non-empty, and `just app`, `just serve`, `just desktop`
+and `scripts/app.sh` all set `KERNOTE_CORS_ORIGINS='[]'`. Single-process
+mode has one origin, so the middleware there is attack surface and nothing
+else.
+
+Verified live in both modes: with `[]`, a request carrying
+`Origin: http://evil.example` gets no `access-control-allow-origin` at all;
+with the defaults, `http://localhost:5173` is still allowed and a foreign
+origin still is not.
+
+### What changed
+- **`main.py`** — `_cache_headers()`, and the CORS registration made
+  conditional.
+- **`justfile`**, **`scripts/app.sh`** — the three single-process launchers
+  set `KERNOTE_CORS_ORIGINS='[]'`.
+- **`tests/integration/test_single_process_ui.py`** — 5 more tests.
+
+### Verification performed
+- `pytest backend/tests` — **501 collected, all pass**.
+- `ruff`, `typecheck`, `build` clean.
+- Response headers and CORS behaviour checked against the running server in
+  both modes, not only in tests.
+
+### Known issues
+- `KERNOTE_CORS_ORIGINS='[]'` is JSON-shaped because pydantic-settings parses
+  complex types that way. It works, and it is obscure; a packaged build
+  should set it in its own environment rather than rely on a shell quirk.
+- The desktop launcher inherits the variable from `just desktop`. Running
+  `python -m kernote.desktop` by hand keeps the dev CORS allowance.
+
+### Next safe task
+**Commit.** Every essential item on the audit list is now done except the
+first one, which was this.
+
+---
+
+## 2026-11-14 — Neon pass on the six older screens
+
+The second half of audit item 5, and it turned out to be a **shared-component
+change, not six screen rewrites** — which is what the brief asked for
+("do not rewrite working components just for stylistic reasons").
+
+### Two edits reached all six screens
+- **`Panel`** now renders its title in the terminal register (mono, 11px,
+  upper case, tracked `0.14em`) and uses `rounded` + `px-3.5` to match the
+  redesigned panels. Every older screen renders through it, so they all
+  moved at once.
+- **`ScreenHeader`** (new) replaces six hand-rolled
+  `<h1 className="text-lg font-semibold tracking-tight">` blocks. It takes a
+  `right` slot, which is what `MaintenanceCenter` needed for its Run
+  analysis button.
+
+Screen bodies were left alone. Two names were brought in line with the
+sidebar while I was there: *Memory Explorer* → **Memory Ledger**, *Project
+Intelligence* → **Query Console**, which is what the nav has called them
+since the redesign.
+
+### The guard had to learn the new structure
+`test_every_screen_has_a_heading` looked for a literal `<h1`, which no screen
+has any more — the heading moved into `ScreenHeader`. Rather than weaken it,
+it now accepts either a literal `<h1>` or `<ScreenHeader`, **and a second
+test pins that `ScreenHeader` actually renders an `<h1>`**, so the
+indirection cannot hollow the rule out.
+
+Writing that second test cost one false failure of its own: slicing the
+function body at `"\n}"` matched the `}) {` of the signature and truncated
+before the heading. It looks for a line that is exactly `}` now. Both guards
+were confirmed to fire by breaking the real thing.
+
+### Verification performed
+- `pytest backend/tests` — **496 collected, all pass**.
+- `ruff`, `typecheck`, `eslint`, `build` clean.
+- Served live: all eight routes return 200.
+
+### Known issues
+- **Still not seen rendered.** A shared-component restyle is exactly the
+  change most likely to look wrong somewhere specific — a panel header
+  crowded by its `right` slot, say — and nobody has looked.
+- `Panel`'s padding changed from `p-4` to `p-3.5`. Harmless in principle,
+  unverified in practice.
+- Colour contrast was not re-checked for the smaller uppercase headings,
+  though they use `--text`, which was measured.
+
+### Next safe task
+Commit. 63 files now, and the audit's essential list is finished apart from
+item 6 (cache headers, dev CORS) and item 1 (commit, which is where this
+list started).
+
+---
+
+## 2026-11-14 — Accessibility pass (audit item 5)
+
+Measured first, which changed what the work was. The audit said "six of
+eight screens have no aria"; the actual defects were **eight unlabelled form
+controls**, **two screens with no heading**, and **no focus style anywhere**
+— small, specific, and quick to reintroduce.
+
+**18 → 38 aria/role attributes.** Not a redesign: the brief says not to
+rewrite working screens for style, so this named controls and left the
+markup alone.
+
+### What changed
+- **Eight controls named** across `AgentIntegrations`, `ChangeImpact`,
+  `MemoryExplorer` and `ProjectIntelligence` — git refs, filters, the
+  question box, the token budget.
+- **A visible focus ring.** Nothing defined one, so keyboard users got the
+  browser default: a thin dark outline on a near-black panel, effectively
+  invisible. `:focus-visible` keeps mouse clicks clean.
+- **A skip link.** The sidebar is ~20 tab stops; without one every keyboard
+  visit to a screen began by traversing it.
+- **`<h1>` on Dashboard and Knowledge Graph** (`sr-only`) — the two *newest*
+  screens were the ones missing a heading.
+- **`role="alert"` on `ErrorNote`**, which covers every screen at once,
+  including `MaintenanceCenter`, whose own file has no aria because it has
+  no form controls and its buttons all carry text.
+- The React Flow graph is keyboard-reachable already — checked in the
+  library rather than assumed. Memory Pulse has no click handlers, so there
+  is nothing there to focus.
+
+### The guard, and two mistakes writing it
+`tests/unit/test_accessibility_basics.py` pins the three defects. Getting it
+right took two corrections, both found by **replanting a real defect and
+watching the test not fail**:
+
+1. Scanning to the next `>` to find the end of a tag is wrong — inline arrow
+   handlers (`onChange={(e) => ...}`) contain one.
+2. A fixed 500-character window is worse: it reaches into the *next*
+   control and finds *that* one's `aria-label`, so an unlabelled field
+   passes silently.
+
+It now walks the characters tracking brace depth and quotes. Both the
+control guard and the heading guard were confirmed to fire.
+
+### Verification performed
+- `pytest backend/tests` — **495 collected, all pass** (3 new).
+- `ruff`, `typecheck`, `eslint`, `build` clean.
+- `sr-only`, `:focus-visible` and `.skip-link` confirmed present in the
+  built CSS, not just the source.
+
+### Known issues
+- **No real screen-reader audit.** These are structural fixes verified by
+  grep and by the built stylesheet; nobody has driven the app with VoiceOver
+  or NVDA, and I could not — Chrome was unreachable all session.
+- **The neon pass on those six screens is still outstanding.** This was the
+  accessibility half of audit item 5 only.
+- Colour contrast was computed for the palette earlier but not re-checked
+  for the focus ring against every background.
+
+### Next safe task
+The neon/palette pass on the six older screens, or commit — now 61 files.
+
+---
+
+## 2026-11-14 — Command palette and the data & privacy panel (audit 3 and 4)
+
+### The fake shortcut is gone (ADR-0044)
+The sidebar shipped a `⌘1` badge that **nothing handled**. It survived a
+redesign, a review and a visual sign-off, because a plausible affordance is
+exactly what nobody thinks to test.
+
+Replaced with **⌘K**, a real palette: fuzzy navigation to all eight screens,
+Capture, and typed text becoming a real query on the Query Console. It
+**navigates rather than acts** — Scan and Analyze are long and belong on the
+screen that owns them with their own progress, not behind a fuzzy match.
+
+**Not ⌘1-⌘9**: those switch browser tabs, and most people run Kernote in a
+browser today, so claiming them would fail silently or steal something.
+
+`tests/unit/test_shortcuts_are_real.py` now extracts every key hint drawn in
+JSX and asserts a handler exists. **Verified by replanting the original
+`⌘1`** and watching it fail. Getting it right cost one false failure: a JSX
+comment explaining the removal read as a live hint, so the detector strips
+comments.
+
+### Data & privacy panel
+Settings now answers "where is my data": database path, size on disk
+(including the WAL), `offline · no outbound calls`, and the embedding state
+with the one-time download size when it is off. Below that, the ADR-0043
+endpoints get a surface — take a backup, download a copy, export JSON, and a
+restore flow that **inspects the file first**, shows what it contains, and
+only then offers a two-step confirmation in the stale colour.
+
+Every line reports something already checked. There is **no "encrypted"
+badge and no "0 trackers" counter**, and **no purge button** — deleting a
+vault deserves its own design, and inventing the control would be the exact
+mistake the audit is about.
+
+### What changed
+- **`components/CommandPalette.tsx`**, **`lib/useCommandPalette.ts`** (new).
+- **`app/App.tsx`** — palette wired; the `⌘1` hint and the now-dead `hint`
+  prop removed; the search box carries a ⌘K button that opens the palette.
+- **`screens/Settings.tsx`** — `DataAndPrivacyPanel`.
+- **`lib/api.ts`** — `takeBackup`, `inspectBackup`, `restoreBackup`.
+- **`tests/unit/test_shortcuts_are_real.py`** (new, 2 tests).
+
+### Verification performed
+- `pytest backend/tests` — **492 collected, all pass**.
+- `typecheck`, `eslint`, `build` clean. The hook lives in `lib/` because
+  exporting it beside the component broke Fast Refresh.
+- Served live: `/settings` 200, and the palette and privacy strings confirmed
+  present in the built bundle.
+- Download and export links are relative and work in both modes — Vite
+  already proxies `/api` and `/health`, which I checked rather than assumed.
+
+### Known issues
+- **Not seen rendered.** Chrome unreachable all session; the palette's
+  keyboard behaviour is reasoned, not observed.
+- The shortcut test only understands `⌘X`, `⌃X`, `Ctrl+X`. A hint written
+  another way slips past; the fix is to teach the regex, not drop the rule.
+- The five remaining pre-redesign screens still have no aria (audit item 5).
+
+### Next safe task
+Audit item 5: the accessibility and palette pass over the six older screens.
+Still uncommitted, now 57 files.
+
+---
+
+## 2026-11-14 — Backup, restore and export (ADR-0043)
+
+The biggest hole the audit found: Kernote had **no way to get a copy of your
+own data**. Three endpoints now, no new dependencies.
+
+```
+POST /api/v1/backup              snapshot to <data_dir>/backups/
+GET  /api/v1/backup/download     a fresh snapshot, as a download
+POST /api/v1/restore/inspect     what a file claims to be, touching nothing
+POST /api/v1/restore             replace the vault (confirm=true required)
+GET  /api/v1/projects/{id}/export    portable JSON
+```
+
+### The three things that make it safe
+1. **Backup uses `sqlite3.Connection.backup()`, not a file copy.** Copying
+   the file while running can catch a torn page or miss data still in the
+   WAL. A test proves the point: a memory written *after* the snapshot is
+   absent from it.
+2. **Restore validates before destroying.** The dangerous input is not junk
+   but *a real SQLite database that is not ours* — there is a test for
+   exactly that. A newer schema is refused rather than downgraded.
+3. **Restore always snapshots first**, and returns the path. An undo nobody
+   has to ask for.
+
+The copy goes **into the live connection** (`source.backup(conn)`) rather
+than swapping files, so open handles stay valid and Windows cannot complain
+about replacing an open file.
+
+**Paths, not uploads** — the server is always local, so `python-multipart`
+and a multi-megabyte HTTP round trip buy nothing. A native file dialog can
+fill the path later.
+
+### What changed
+- **`db/backup.py`** (new) — snapshot, inspect, restore, export.
+- **`api/routers/admin.py`** (new) — the five endpoints above.
+- **`db/connection.py`** — `current_version()` made public, so restore can
+  compare against it rather than reach for the private name.
+- **`main.py`** — router registered.
+- **`tests/integration/test_backup_restore.py`** (new, **15 tests**), most
+  of them about what restore *refuses* to do.
+
+### Verification performed
+- `pytest backend/tests` — **490 collected, all pass** (15 new).
+- `ruff` clean; `requirements.txt` untouched.
+- **On the real vault**: 6.3 MB snapshot, `PRAGMA integrity_check` = `ok`,
+  587 memories, inspect reporting them without touching anything, restore
+  without `confirm` refused with 400, and a 1.3 MB JSON export carrying
+  source refs and revision lineage.
+- I did **not** run a restore against your live vault. Backup and inspect
+  are read-only; restore is destructive and you have not asked for one.
+
+### Known issues
+- **Backups accumulate** in `<data_dir>/backups/` with no retention rule.
+  Fine at 6.3 MB each, not fine forever.
+- **No scheduled or automatic backup.** This is the mechanism, not a policy.
+- No UI yet — these are endpoints. The data & privacy panel (audit item 4)
+  is where they belong.
+
+### Next safe task
+Audit items 3 and 4: remove the fake `⌘1`, add the command palette, and
+surface backup/restore plus data location in Settings. Still uncommitted.
+
+---
+
+## 2026-11-14 — Kernote in its own window (ADR-0042)
+
+Step two of the desktop track. `just desktop` builds the UI and opens Kernote
+in an OS window; `backend/kernote/desktop.py` starts the existing app on a
+daemon thread, waits for `/health`, then opens the webview. Closing the
+window ends the process.
+
+**pywebview, and optional.** It runs inside the same Python process — no
+sidecar — and drives the platform webview rather than shipping a browser.
+Electron would be ~150 MB and Tauri needs a Rust toolchain, and both assume a
+JavaScript backend, so Kernote's server would have to be supervised as a
+second process. It lives in **`requirements-desktop.txt`**, not
+`requirements.txt`: the product is fully usable with `just app` and a
+browser, so the window should not weigh on anyone who does not want it.
+
+### It degrades instead of failing — and that is the path actually tested
+This machine has **no WebKit** (`gi` is present, `WebKit2` is not), so the
+window could not be opened here at all. Rather than leave that as a hole, the
+launcher checks first and falls back:
+
+```
+no platform webview found. On Debian/Ubuntu:
+  sudo apt install gir1.2-webkit2-4.1
+
+Serving in the terminal instead: http://127.0.0.1:8787
+Ctrl-C to stop.
+```
+
+Confirmed live: it printed exactly that and served `/health` and `/graph` on
+8787 throughout. **The fallback is verified end to end; the window itself is
+not** — it needs a machine with a webview.
+
+Three smaller decisions, each because the alternative is worse: readiness is
+checked before the window opens (an empty webview explains nothing); a busy
+port is diagnosed rather than fought (reuse a running Kernote, refuse to
+stack on a stranger); and the webview check runs first, so the message
+arrives instead of a traceback from inside the GUI layer.
+
+### What changed
+- **`backend/kernote/desktop.py`** (new) — the launcher.
+- **`backend/requirements-desktop.txt`** (new) — `pywebview==5.3.2` only.
+- **`justfile`** — `desktop`.
+- **`tests/integration/test_desktop_launcher.py`** (new, **11 tests**).
+
+### A bug found while running it
+`main.py` builds an app at module scope *and* `_serve` was calling
+`create_app()` again, so two apps were constructed and `web.serving` logged
+twice. The launcher now uses the module-level `app` — the same object
+`uvicorn kernote.main:app` runs. Confirmed: one line now, not two.
+
+### Verification performed
+- `pytest backend/tests` — **475 collected, all pass** (11 new).
+- `ruff` clean.
+- Real detection path exercised on this machine: `gui_unavailable_reason()`
+  returns the apt instruction, and the launcher serves anyway.
+
+### Known issues
+- **The window has never been opened.** Needs `sudo apt install
+  gir1.2-webkit2-4.1` here, or any Windows/macOS machine.
+- The GUI itself is untestable in the suite; the 11 tests cover everything
+  around it, which is where a user would actually hit a failure.
+- Still no packaging: no installer, no signing, no bundle. `just desktop`
+  runs from a checkout. The 314 MB virtualenv is the obstacle.
+
+### Next safe task
+Open the window on a machine that can, then decide whether packaging is worth
+it. Still unresolved and growing: the uncommitted tree.
+
+---
+
+## 2026-11-14 — One process, one port (Q4 reopened and answered)
+
+Step one of "make this a desktop app": the API now serves the built UI
+itself, so Kernote runs as **one command on one port**.
+
+```bash
+just app        # build the UI, then serve everything from :8787
+just serve      # same, without rebuilding
+./scripts/app.sh
+```
+
+`just dev` is unchanged and is still the right thing while writing code —
+two processes, hot reload. This is the arrangement for *using* Kernote.
+
+### What it buys
+- **No Node at runtime.** Only to build. That matters for the Windows box,
+  which has no Node: the UI can be built elsewhere and shipped as `dist`.
+- **No CORS**, because there is only one origin. The port-5173 allowlist that
+  forced the React Flow demo through a Vite proxy stops applying.
+- The prerequisite for any packaging later — a single process is what you
+  wrap in a window or an installer.
+
+### What changed
+- **`config.py`** — `web_dist`, overridable via `KERNOTE_WEB_DIST` so a
+  packaged build can point anywhere. `None` means "look beside the repo".
+- **`main.py`** — `web_dist()` and `_serve_frontend()`, registered **after**
+  the routers so no API path can be shadowed.
+- **`justfile`** — `app` and `serve`; **`scripts/app.sh`** for the just-free
+  equivalent.
+- **`tests/integration/test_single_process_ui.py`** (new, 8 tests).
+
+### The two rules the catch-all has to respect
+1. **An unknown API path stays a JSON 404.** Falling through to `index.html`
+   would answer 200 with HTML where a client expected a parseable error,
+   turning a client-side typo into a silent mystery. Verified live:
+   `/api/v1/nope` → 404.
+2. **Everything else falls back to the shell**, because `/graph` is a React
+   Router path, not a file, and a hard reload there must not 404. Verified:
+   `/`, `/dashboard`, `/graph`, `/maintenance` all 200 with the app.
+
+Path traversal is contained by resolving the candidate and checking it is
+still inside the build directory. Checked live with `--path-as-is` against
+`/../../etc/passwd`, `/assets/../../../../etc/passwd` and a percent-encoded
+variant: all three return the app shell, none leaks a byte.
+
+With no build present the app serves no UI and the API runs alone — the
+development state, and a test pins it.
+
+### Verification performed
+- `pytest backend/tests` — **464 collected, all pass** (8 new).
+- `ruff`, `typecheck`, `eslint` clean; UI built and served for real.
+- Live on :8787: shell, three client routes, `/health`, `/api/v1/projects`
+  and a 507 KB JS asset all served from the one process.
+
+### Known issues
+- The UI is served **unbuilt-aware but not cache-aware**: no `Cache-Control`
+  on hashed assets, so the browser revalidates every file on every load.
+  Harmless locally, worth fixing before anything ships.
+- CORS middleware still allows the 5173 dev origin. Correct for `just dev`,
+  but it is now configuration a packaged build should drop.
+- Still nothing seen rendered by me; Chrome unreachable all session.
+
+### Next safe task
+Decide the desktop shell. The honest options and costs are in the message
+thread: **pywebview** is the natural fit (same Python process, OS webview,
+a few MB) over Tauri or Electron, which both assume a JS backend and would
+need the Python server as a sidecar. Packaging and code signing is a
+separate, much larger piece of work — the venv is 314 MB, dominated by
+`onnxruntime`, `tree-sitter-language-pack` and `numpy`.
+
+---
+
+## 2026-11-14 — Review of the uncommitted diff: one real bug
+
+A low-effort review pass over the 41 uncommitted files. Two findings, both
+fixed.
+
+### The bug: a fabricated dashboard statistic
+`LedgerSummary` built two arrays — project details and embedding statuses —
+then **filtered each independently and indexed one by the other's position**.
+The moment any project is missing from either list (semantic search off, or a
+failed detail fetch) the pairing slips and a project's embedding status is
+compared against a *different* project's memory count.
+
+Reproduced numerically: projects A (120 memories, semantic OFF) and B (40
+memories, ON, 10 indexed) made the dashboard print **110 pending index**; the
+honest figure is 30.
+
+That is precisely the class of error ADR-0037 exists to prevent — an invented
+number on a panel whose rule is never to invent one, and it would have been
+almost impossible to notice by looking, because 110 is a plausible number.
+
+Fixed by carrying each project's two queries together in one row keyed off
+`ids`, so they cannot drift apart. A project whose detail fails to load is now
+reported as "unreadable · totals incomplete" instead of silently shrinking the
+totals.
+
+### The cosmetic one
+The neon refactor stranded `Dot`'s doc comment above `Neon`, which has its own
+docstring — so the orphan described a status dot while sitting on an inline
+text helper, and its claim about "one small shadow" was obsolete. Removed, and
+`Dot` given an accurate docstring.
+
+### Verification performed
+- The scenario in the finding re-run against both the old and new logic: 110
+  (wrong) → 30 (correct).
+- `typecheck`, `eslint`, `build` — clean.
+
+### Worth knowing about the review itself
+This was the **low-effort** pass: one diff read, no verification stage, tests
+and docs skipped, capped at four findings. Against ~1,400 lines of new backend
+logic — two undo paths with transactional invariants, three migrations, a
+graph read model — that is a thin net. `/code-review high` or the cloud
+`/code-review ultra` would be a fairer examination, particularly of
+`undo_approval`, which deletes source refs and rewrites memory state in one
+transaction and whose tests I wrote myself, so they encode my own assumptions.
+
+### Next safe task
+Commit. Then a deeper review pass if you want one.
+
+---
+
+## 2026-11-14 — Three things: finding undo, ADR-0014 settled, Windows re-verified
+
+### 1. Resolving a finding can be undone (ADR-0041)
+The review flow was asymmetric: consolidation reversible, resolution not.
+
+Reversing a consolidation works because revisions preserve the prior record.
+**Resolution's status flips write no revision**, so there was nothing to read
+back — and the obvious inference ("re-flag every memory this finding names")
+is *wrong*, because a memory already `active` was never touched by the
+resolution, and re-flagging it would invent a review requirement.
+
+So the resolution now records its own effect: **migration 0009** adds
+`findings.effect_json`, one entry per memory actually flipped with its prior
+status and `last_verified_at`. Undo replays exactly that.
+
+Two refusals: a resolution recorded before 0009 has no effect record and
+declines rather than guessing; and a finding closed by approving a
+consolidation must be reopened through that consolidation, or the merge would
+stay applied while its finding reads open.
+
+Files: `migrations/0009_finding_effect.sql`, `maintain/review.py`
+(`undo_resolution`), `db/repositories/findings.py` (`findings_by_status`,
+`resolved_findings`), `POST /findings/{id}/undo`, a `status` filter on the
+findings list, `lib/api.ts`, and a *Recently decided* panel in
+`MaintenanceCenter.tsx`.
+
+### 2. ADR-0014 is settled — declined on measurement
+The spike finally ran. **`model2vec` is worse than `all-MiniLM-L6-v2` on our
+own labelled set**, and worse where it matters most.
+
+| metric | MiniLM-L6-v2 | potion-base-8M | potion-base-32M |
+|---|---|---|---|
+| Recall@1 | **0.7200** | 0.6200 | 0.5600 |
+| nDCG@10 | **0.8609** | 0.7936 | 0.7956 |
+| MRR | **0.8270** | 0.7447 | 0.7215 |
+| encode 69 chunks | 2.52 s | **0.006 s** | **0.006 s** |
+
+Method: the 25 answerable questions against `samples/eval-repo`, chunked by
+the product's own pipeline, scored with the repo's own `eval/metrics.py`.
+`model2vec` went into a **throwaway venv** — the product's dependencies were
+never touched.
+
+The 420× speed claim is real and irrelevant: embedding is a one-time scan
+cost (`EVALUATION.md`: 4.7 s for the whole real corpus). Ten points of
+Recall@1 for four seconds once is a bad trade. The 32M model is *worse* than
+the 8M at rank 1, so size is not the answer either. **No ADR is left in
+`proposed` state.**
+
+### 3. Windows re-verified
+Native Windows **Python 3.12.10 AMD64**, fresh venv on an NTFS path, all
+dependencies from prebuilt wheels, `pip check` clean. Migrations ran to
+**schema v9**.
+
+**455 collected, 3 failed — and the three are the known Git-dependent Change
+Impact tests**, unchanged from the last Windows run. Everything added since
+then passes natively, including the new undo work and the HTTP round trip.
+
+**Git and Node are still not installed there** (checked, both absent), so
+Change Impact and the frontend build remain unverifiable on Windows. That is
+the only outstanding Windows item and it needs you, not me.
+
+The NTFS copy was **deleted afterwards** — a stale duplicate of the source is
+worse than none, the same call made about the React Flow demo. To recreate:
+copy the tree to a Windows path excluding `.venv`/`node_modules`/`.git`,
+`python -m venv .venv-win`, install `backend/requirements.txt` and
+`requirements-dev.txt`, run pytest.
+
+### Verification performed
+- `pytest backend/tests` — **455 collected, all pass** on Linux.
+- `ruff`, `typecheck`, `eslint`, `build` — clean.
+- Windows: 455 collected, only the 3 Git tests failing.
+- Migration 0009 applied to the live database (now schema v9).
+
+### Known issues
+- **Still not seen rendered.** Chrome unreachable; the two undo panels are
+  verified by tests and compilation only.
+- The ADR-0014 benchmark scores semantic retrieval alone, not the product's
+  hybrid RRF where BM25 would mask part of the gap, and could not be repeated
+  on IVForge (not in this repository). Stated in the ADR; the margin is wide
+  enough that neither caveat changes the conclusion.
+
+### Next safe task
+Nothing is blocked. The backlog is now: click through the review screen, and
+commit — the uncommitted set is large and three migrations are live in the
+database.
+
+---
+
+## 2026-11-14 — Approval can be undone (ADR-0040)
+
+The last real product gap is closed. `CLAUDE.md` demands a review flow and no
+silent destructive merges; the flow had the review but no way back.
+
+**Everything needed was already there.** `memory_revisions.snapshot_json`
+stores the complete record at every revision, source refs included, with
+`parent_id` chaining them — so the pre-merge state is just the parent of the
+revision the merge wrote. The lineage was preserved all along; nothing reached
+for it.
+
+### The shape of it (ADR-0040)
+An undo is a **forward operation**. It writes new revisions restoring the
+prior state and deletes nothing that records what happened:
+- the merge revisions stay — the history reads "merged, then unmerged";
+- the original `accepted` feedback stays, with an `undone` row beside it
+  (**migration 0008** extends the verdict CHECK). An approval later taken back
+  is a stronger signal than one never made, and collapsing them would blind
+  any future tuning of the duplicate thresholds;
+- the `supersedes` link **is** removed — derived state asserting something no
+  longer true, and it would otherwise put a false edge in the graph;
+- the proposal returns to `pending`, its finding to `open`.
+
+It **refuses** when the keeper was edited after the merge, when the absorbed
+record has since been superseded by something else, or when either is gone —
+each would destroy something unrelated to the merge.
+
+### What changed
+- **`migrations/0008_feedback_undone.sql`** (new) — schema 7 → 8.
+- **`maintain/review.py`** — `undo_approval`, `UndoResult`.
+- **`db/repositories/memories.py`** — `write_revision` made public, rather
+  than letting `review.py` reach for the private name.
+- **`maintain/duplicates.py`** — `proposals_by_status`; `pending_proposals`
+  now delegates to it.
+- **`api/routers/maintenance.py`** — `POST /proposals/{id}/undo`, and a
+  `status` filter on the proposals list (422 on an unknown value).
+- **`lib/api.ts`** — `undoProposal`, `proposals(id, status)`.
+- **`screens/MaintenanceCenter.tsx`** — an *Applied consolidations* panel with
+  Undo. A merge invisible in the UI cannot be undone however reversible it is
+  underneath, which is why this panel is part of the feature and not a nicety.
+
+### Verification performed
+- **11 new tests**; `pytest backend/tests` — **450 collected, all pass**.
+- Two guards **proved to fire** by removing them: the edited-since-merge
+  refusal, and the `supersedes` link cleanup.
+- An **HTTP round trip** covers the real path: approve → appears as applied →
+  undo → back in the pending queue → second undo returns 409.
+- `approve → undo → approve` asserted stable, with no duplicated citations.
+- `ruff`, `typecheck`, `eslint`, `build` all clean.
+- Migration 0008 applied to the live database on restart (now schema v8);
+  the status filter and its 422 checked against the running API.
+
+### A mistake worth noting
+The anchor `function MaintenanceCenter() {` matched **inside** `export default
+function MaintenanceCenter() {`, splitting the declaration and leaving a
+dangling `export default` before a comment block. Same substring trap as the
+CSS token edits earlier in this project. Caught by `tsc`, which reported it as
+a duplicate default export.
+
+### Known issues
+- **Not seen rendered.** Chrome unreachable all session; the panel is verified
+  by tests and compilation only.
+- Undo is available only while the merge is the most recent thing to have
+  happened to both records. Deliberate — see ADR-0040.
+- There is no undo for `reject`, which needs none: rejecting changes no
+  memory. Resolving a *finding* is also not undoable, which is a smaller
+  version of the same gap and still open.
+
+### Next safe task
+Click through the review screen. Remaining backlog: ADR-0014's unrun spike,
+Windows missing Git and Node, and finding-resolution undo.
+
+---
+
+## 2026-11-14 — The comparison demo deleted
+
+`design/reactflow-demo/` is gone. It existed to answer one question — React
+Flow or hand-rolled SVG — and that question is answered and recorded in
+ADR-0039.
+
+**Why it had to go rather than linger.** It was a duplicate that would drift
+in two specific ways: `src/graphLayout.js` was a de-typed copy of
+`frontend/src/lib/graphLayout.ts`, and its styling hardcoded the dark palette
+while the product's version uses theme tokens. A stale second implementation
+of a screen is worse than no second implementation, because it looks
+authoritative.
+
+**It was untracked, so this was not recoverable through git.** Before
+deleting, its unique reasoning — the itemised list of what React Flow actually
+buys, and why the question was narrow — was moved into **ADR-0039**, which
+previously carried only the cost table. Nothing of substance was lost; the
+code it held is superseded by `screens/KnowledgeGraph.tsx`.
+
+**Also cleaned up:**
+- the two now-dead `.gitignore` entries for the folder;
+- the demo's dev server on port 5174, stopped;
+- every dangling reference. Two of them were "next safe task" items
+  instructing a future reader to act on a folder that no longer exists, and
+  the source comments in `index.css` and `KnowledgeGraph.tsx` now point at
+  ADR-0039 rather than a dead path.
+
+54 MB reclaimed, nearly all of it the demo's own `node_modules`.
+
+### Next safe task
+Click through `/graph` in both themes on the new router. Then: approval undo,
+ADR-0014.
+
+---
+
+## 2026-11-14 — npm advisories cleared: 10 → 0
+
+All ten `npm audit` findings in `frontend/` are resolved. **No declared
+dependency range changed**, so this is a lockfile-level fix.
+
+### The three high-severity ones
+`npm audit fix` resolved them inside the existing `^7.1.3` range:
+
+| | before | after |
+|---|---|---|
+| `react-router` | 7.1.3 | **7.18.5** |
+| `react-router-dom` | 7.1.3 | **7.18.5** |
+| `turbo-stream` | 2.4.0 | **removed** (the router no longer depends on it) |
+
+### The seven moderate ones needed a judgement call
+They were one root cause — a glob-DoS in `minimatch`, reachable only through
+`@typescript-eslint/typescript-estree`, a **lint-only** dependency that is
+never shipped.
+
+`npm audit fix` kept reporting "fix available" and kept not applying it. The
+reason: **`typescript-eslint` 8.72.2 is the latest published version and is
+itself inside the flagged range**, so there was nothing to upgrade to. npm's
+advice was simply wrong.
+
+`minimatch` *is* fixed, at 11.0.8 — the same major as the flagged range's
+upper bound, so API-compatible. Resolved with an `overrides` entry:
+
+```json
+"overrides": { "minimatch": "^11.0.8" }
+```
+
+**Remove this override once `typescript-eslint` ships a release depending on a
+patched `minimatch`.** A note belongs on it, but npm rejects comment keys
+inside `overrides` (`Override without name: _comment`), which is why the
+explanation lives here instead.
+
+### Verification performed
+- `npm audit` — **0 vulnerabilities**, from 10 (3 high, 7 moderate).
+- `eslint` clean, and **confirmed still functional** by planting an unused
+  variable and watching it fail — worth checking specifically, since the
+  linter is the thing consuming the overridden package.
+- `npm run typecheck`, `npm run build` — clean.
+- Dev server restarted; all eight routes serve 200. The router APIs in use
+  (`BrowserRouter`, `Routes`, `Route`, `NavLink`, `Navigate`, `Link`,
+  `useLocation`, `useNavigate`, `useSearchParams`) are stable core APIs
+  unchanged across 7.x minors.
+
+### Known issues
+- **Routing was not exercised in a browser.** Serving 200 proves the SPA
+  loads, not that navigation works — every route returns the same `index.html`
+  by design. A 7.1.3 → 7.18.5 jump is 17 minor versions, so this deserves a
+  click-through even though no declared range moved.
+- `design/reactflow-demo/` had its own `node_modules` and was not audited
+  here. It has since been **deleted** (see the entry above this one).
+
+### Next safe task
+Click through the app on the new router. Then the backlog: the approval undo,
+ADR-0014.
+
+---
+
+## 2026-11-14 — React Flow ported into the product
+
+The user chose it after the side-by-side, so `@xyflow/react@12.12.1` is now a
+product dependency and `screens/KnowledgeGraph.tsx` renders with it.
+
+### What changed
+- **`frontend/package.json`** — `@xyflow/react` added (first new runtime
+  dependency since the project began).
+- **`screens/KnowledgeGraph.tsx`** — rewritten on React Flow: neon dots, a
+  `NodeToolbar` popup on click, the orbit ring on the selection, and the
+  bottom inspector with the live record, its citations and its connections.
+- **`index.css`** — an `.rf-*` block. The demo hardcoded the dark palette;
+  **this is all theme tokens**, including the glow knobs, so it works in
+  daylight. React Flow's own chrome (controls, minimap, attribution) is
+  restyled to the product's palette rather than left white-on-grey.
+- **`lib/graphLayout.ts`** — **unchanged**. React Flow takes positions, it does
+  not compute them.
+- Everything honest survives: the limits line, the three empty states, the
+  loading skeleton, the error notes, and reduced motion.
+
+### I gave you a wrong number, and here is the right one
+I estimated **+18 kB gzipped** by subtracting the app's bundle from the demo's.
+That was a bad inference — the two contain different things (the demo has no
+router or query layer; the app has both plus eight screens), so the difference
+measured nothing. **You approved the port against that figure.**
+
+Measured properly, building the app twice with the screen stubbed:
+
+| | without | with | cost |
+|---|---|---|---|
+| JS | 88.6 kB gz | 153.4 kB gz | **+64.8** |
+| CSS | 6.0 kB gz | 8.4 kB gz | **+2.4** |
+| **total** | **94.6** | **161.8** | **+67.2 kB gz** |
+
+**3.7× the estimate; the shipped bundle grew 71%.** For a local-first app this
+is far less serious than for a public site, but the decision deserved to be
+made against the real figure — so it was put to the user again with the
+corrected number, and **they confirmed keeping React Flow**. Decided twice,
+once wrongly informed and once correctly, with the same outcome.
+
+### Unrelated finding: pre-existing advisories
+`npm audit` in `frontend/` reports **react-router ≤7.17.0 (high)** and
+`turbo-stream` **(high)**, both fixable within the existing semver range by
+`npm audit fix`. These pre-date today and are **not** from React Flow. Not
+fixed here, deliberately — changing the router version during a rendering port
+would confuse the diagnosis if anything broke.
+
+### Verification performed
+- `npm run typecheck`, `eslint`, `npm run build` — all clean.
+- `pytest backend/tests` — 439 pass, 5 skipped. Accent guard still passes.
+- Dev server restarted so Vite re-optimised the new dependency; `/graph`
+  serving 200.
+
+### Known issues
+- **Not seen rendered.** Chrome unreachable all session.
+- `design/reactflow-demo/` was a superseded duplicate that would have drifted.
+  **Deleted** — see the newest entry.
+- The light theme for the graph is written but unverified by eye; React Flow
+  ships its own stylesheet and the overrides sit on top of it.
+
+### Next safe task
+Both loose ends are now closed: the advisories are cleared and the demo folder
+is deleted. Look at `/graph` in both themes.
+
+---
+
+## 2026-11-14 — The React Flow demo, reworked to dots
+
+Still outside the product; `frontend/` dependencies unchanged.
+
+Nodes are now **neon dots** rather than labelled boxes — at 160 nodes the
+labels were most of the ink. Clicking one opens a small block above it
+(`NodeToolbar`, so it tracks the dot through pan and zoom) with type, status,
+connections and importance; the **bottom panel** carries the full record,
+fetched live from `GET /memories/{id}`, with its citations and its connections
+and the reason each exists. A **dashed ring turns around the selected dot**
+with a cyan particle riding it the other way — one `rotate` keyframe each, no
+path maths and no animation loop.
+
+**A bug fixed in passing.** The custom node had no `Handle`s. React Flow
+attaches edges to handles rather than to the node box, so a custom node
+without them logs error #008 and the edge is silently dropped — meaning the
+first version of this demo may well have been drawing no edges at all. Both
+handles now sit invisible at the centre of each dot.
+
+**Verification:** builds clean; dev server serving with no HMR errors; the
+fields the panel reads (`memory.content`, `citations`) confirmed against the
+live API. The `/memories/{id}` shape was checked rather than assumed.
+
+**Reviewed by the user and accepted (2026-11-14).** Chrome stayed unreachable,
+so the sign-off is theirs, not mine — including the edges, which they were
+asked to check specifically because of the `Handle` bug above.
+
+**Note:** the three dev servers (8787, 5173, 5174) were killed mid-session and
+restarted; the scratchpad was cleared at the same time.
+
+---
+
+## 2026-11-14 — A React Flow comparison, kept outside the product
+
+`design/reactflow-demo/` draws the **same real graph** with `@xyflow/react`, so
+the React Flow question from ADR-0039 can be judged by looking rather than
+arguing.
+
+**It is deliberately separate.** Own folder, own `package.json`, own
+`node_modules`, own port (5174). `frontend/package.json` dependencies are
+unchanged — still the same four. Nothing under `frontend/src` imports it.
+Deleting the folder changes nothing else.
+
+The API allows CORS only from 5173, so the demo **proxies `/api` through Vite**
+rather than widening that setting for a throwaway. The product needed no change
+at all to make this work.
+
+**Measured, so the decision is not vibes:**
+
+| | |
+|---|---|
+| Bundle | 90 → **108 kB gz** (the demo has no router or query layer, so this is close to React Flow's own share) |
+| `node_modules` | 4.5 MB |
+| New runtime packages | **36**, including the whole `d3-zoom`/`drag`/`selection`/`transition` chain |
+| Layout | **still ours** — React Flow does not lay out graphs, it takes positions |
+
+So React Flow replaces ~120 lines of SVG rendering, not the layout, which was
+the part that took work. What it adds that the product would feel today is
+**node dragging and a minimap**. Full write-up in the demo's `README.md`.
+
+Its `src/graphLayout.js` is a de-typed **copy** of `frontend/src/lib/graphLayout.ts`.
+If the layout changes and this demo is still around, the copy will drift.
+
+**Verification:** demo builds and serves; proxy confirmed returning the real
+160 nodes / 338 edges including the one conflict. Product re-checked
+afterwards: backend suite, typecheck and build all still pass.
+
+**Note:** the demo's own `vite` is pinned to 6.4.6 rather than 6.0.3 to clear a
+dev-server advisory in esbuild; `npm audit` reports 0 vulnerabilities there.
+The main app resolves `vite` 6.4.5 and is unaffected.
+
+### Next safe task
+Compare the two at <http://localhost:5174> and `/graph`, then decide. Nothing
+depends on the answer.
+
+---
+
+## 2026-11-14 — Memory Pulse and the Knowledge Graph (ADR-0039)
+
+A living map of the project's actual relationships: a compact preview on the
+dashboard, a full interactive graph behind it. Every dot is a memory and every
+line is a row in the database.
+
+### What changed
+- **`db/repositories/graph.py`** (new) — the read model. Explicit links,
+  findings naming two memories, and shared entities below a spread threshold.
+- **`api/routers/projects.py`** — `GET /projects/{id}/graph`.
+- **`lib/graphLayout.ts`** (new) — deterministic, aspect-aware force layout.
+- **`components/MemoryPulse.tsx`** (new) — the dashboard preview.
+- **`screens/KnowledgeGraph.tsx`** (new) — the full view, at `/graph`.
+- **`index.css`** — a network block; all motion under `no-preference`.
+- **`App.tsx`** — route, nav entry, breadcrumb.
+- **`tests/integration/test_memory_graph.py`** (new, 7 tests).
+- **No new dependencies.**
+
+### React Flow is not installed
+The brief said to use the existing `@xyflow/react` installation. There isn't
+one — not in `package.json`, not in `node_modules`, not imported anywhere. I
+did not add it: the brief also says to avoid unnecessary dependencies, and
+what is needed here is positions and hit-testing, which is ~150 lines. **If you
+wanted the dependency, this is the decision to revisit** — only
+`lib/graphLayout.ts` would be replaced.
+
+### The threshold is the feature (ADR-0039)
+`memory_links` is empty (it is written only on supersede/merge), so the only
+dense signal is entity co-occurrence — and it is also the easiest way to invent
+meaning. The entity `docs` is on 123 memories here; drawn naively that alone is
+**7,503 edges** saying documentation mentions documentation. An entity may
+therefore only link memories when it appears in **≤ 8** of them, weighted by
+specificity. Raising the cap to 20 adds 1,670 edges and no information.
+
+Everything omitted is reported in `limits` and printed by both views.
+
+### A bug the real data found
+Ranking nodes by connectivity **evicted the only open conflict**. Two claims
+that disagree usually share nothing else, so both memories had degree 1 and
+fell outside the 160-node cap, taking the most interesting edge in the graph
+with them. Caught by reading the response and noticing the kind histogram said
+`shares: 338` and nothing else. Flagged memories now outrank well-connected
+ones; `test_an_open_conflict_survives_the_node_cap` was confirmed to fail when
+the fix is reverted.
+
+### A layout defect found without a browser
+Measured the output geometry directly instead of looking at it. The first
+version anchored the scaled graph at the padding corner, so a blob whose
+aspect differs from the viewport sat to one side — x spanned 22–508 of 900,
+leaving the right 43% empty. Centring fixed that; then the preview showed the
+deeper issue, a circular equilibrium in a 320×150 panel collapsing to a 64px
+column. The simulation is now run in viewport-normalised space, so the
+equilibrium is an ellipse that matches the box. Stretching at the end would
+have filled it too, by distorting the only thing position means.
+
+Final geometry: graph screen margins 24/24/22/22, closest pair 19.1px, **36ms**
+for 160 nodes — once, in a `useMemo`, never during animation.
+
+### Animation
+No animation loop anywhere. Node breathing is one CSS keyframe; the travelling
+particles are SVG `<animateMotion>` on five edges; the capture ring fires when
+the memory count **actually increases**, not when a button is pressed. Under
+`prefers-reduced-motion: reduce` the network is drawn still and no particles
+render.
+
+### Verification performed
+- `pytest backend/tests` — **439 collected, all pass**, 5 skipped.
+- `ruff check backend`, `npm run build`, `eslint` — all clean.
+- The graph endpoint checked against the live database: 160 nodes, 338 edges,
+  611 considered, 427 memories and 40 too-common entities reported as omitted,
+  and the one real conflict present.
+- Layout verified numerically: finite, in-bounds, deterministic across runs,
+  no node pile-ups.
+
+### Known issues
+- **`npx tsc --noEmit` is a no-op in this repo** — the root `tsconfig.json`
+  has `files: []` with project references, so it checks nothing. The real
+  typecheck is `npm run build` (`tsc -b`). Earlier handoff entries cite
+  `tsc --noEmit` as a passing check; that claim was empty, though the builds
+  quoted alongside it were real. **Fixed:** `npm run typecheck` (`tsc -b`) now
+  exists and was confirmed to catch a planted type error.
+- **Never seen rendered.** Chrome remained unreachable. Geometry, timings and
+  data are verified numerically; nothing is verified by eye.
+- The entity extractor produces some noise (`decision Leave it` is an entity
+  here, from a one-word reply in a design doc). It makes weak edges, not wrong
+  ones, but it is visible in the graph.
+- `/graph` recomputes from SQL on every request; fine at 587 memories.
+
+### Next safe task
+Look at both views. Then decide the React Flow question.
+
+---
+
+## 2026-11-14 — Documentation drift swept; the RC tag is blocked, not forgotten
+
+Housekeeping, plus one finding that is not housekeeping.
+
+### Open questions: all six now closed
+`PRODUCT_SPEC.md` §10 listed Q1–Q4 as open. None of them was.
+
+- **Q1** (generative model in scope?) — closed by outcome: fully deterministic.
+  The stated default held and no model adapter was ever needed.
+- **Q2** (which real repos?) — closed 2026-11-09: **neither** of the two the
+  guide named. The corpus is **IVForge**, as `EVALUATION.md` has said all along.
+- **Q3** (Windows a target?) — closed 2026-11-09 by **ADR-0009a**.
+- **Q4** (packaging?) — closed **by default, not by decision**: dev scripts
+  only. Recorded that way deliberately, so the distinction stays visible.
+
+Q1 and Q4 are marked closed-*by-default* rather than decided. Writing them up
+as decisions would have been tidier and false.
+
+### Two ADR statuses were lying
+- **ADR-0009** still read `proposed · needs your confirmation`. ADR-0009a
+  resolved it five days ago and says so in its own header. Now marked
+  **superseded**, with a note that the Day 18 / Day 23 checkpoint schedule was
+  overtaken by the project finishing early.
+- **ADR-0014** (the `model2vec` spike) still read `proposed · needs a Day 14–17
+  measurement`. That window never arrived — the RC landed on day 4. It is now
+  marked **proposed, not run**, stating plainly that `all-MiniLM-L6-v2` is the
+  default *by inertia rather than by measurement*, and that the MTEB figures
+  quoted in it are someone else's numbers. Either run it or decline it; leaving
+  it as-is implied work in flight that was not.
+
+### Both design briefs still said "not started"
+`DASHBOARD_BRIEF.md` and `STARTUP_ANIMATION_BRIEF.md` were both marked
+`not started` while describing features that shipped and were accepted
+yesterday. Same class of drift, one day old. Corrected.
+
+### The RC tag: blocked, and deliberately not moved
+`v0.1.0-rc.1` points at `22acb32` (2026-11-09), **12 commits and 24 uncommitted
+files behind**. It was not re-tagged, because there is nowhere honest to move
+it to. `HEAD` is `1bccdcf` — *"Store the startup animation brief; still no
+implementation"* — a commit that by its own message contains neither design
+track. Tagging that as `rc.2` would produce a release candidate excluding every
+feature of the last two days and advertising the fact in its subject line.
+
+**The tag is blocked on committing the 24 files, not on anything technical.**
+
+### Verification performed (release battery, so the tag can be cut immediately)
+- `pytest backend/tests` — **432 collected, all pass**, 5 skipped.
+- `ruff check backend` — clean.
+- `tsc --noEmit` — clean. `eslint` — clean. `npm run build` — clean.
+- No dependency changes; no outbound URLs introduced.
+
+### Known issues
+- The 24 uncommitted files span four coherent pieces of work: the dashboard
+  redesign, the tiles + ADR-0037 + migration 0007, the neon pass, and the
+  reveal + ADR-0038.
+- **Migration 0007 is already applied to the live database** at
+  `~/.local/share/kernote/kernote.db` (schema 7). The working tree and that
+  database now move together; a stash would separate them.
+- ADR-0014 is a genuine open decision, now visible as one.
+- Unchanged: no undo on approval; Windows has no Git and no Node.
+
+### Next safe task
+Commit the four groups, then re-tag the RC at that commit. The battery above is
+green, so nothing else gates it.
+
+---
+
+## 2026-11-14 — The startup reveal (ADR-0038)
+
+The second of the two agreed tracks, and the last of them. A knowledge graph
+forming, resolving into the `kernote_` wordmark, over status lines that are
+actually true.
+
+### What changed
+- **`components/Boot.tsx`** (new) — the reveal and the readiness checks.
+- **`index.css`** — a `.boot-*` block; all movement inside
+  `@media (prefers-reduced-motion: no-preference)`.
+- **`main.tsx`** — `<Boot>` mounted **above** `<BrowserRouter>`.
+- **`tests/unit/test_boot_claims_are_backed.py`** (new, 4 tests).
+- No dependencies added. No Canvas.
+
+### Three lines, not five — ADR-0038
+The brief asked for `DATABASE`, `MEMORY ENGINE`, `RETRIEVAL INDEX`,
+`LOCAL SERVICES`, `WORKSPACE READY`, and forbade an `[OK]` before the service
+is ready. Two of those have **no service behind them** in this architecture
+(the memory engine is library code in the API process; "local services" is the
+API that already answered), and `RETRIEVAL INDEX` conflates FTS5 with opt-in
+semantic search. So the screen prints what it can check, and a line is allowed
+to say something other than OK:
+
+```
+[ OK ]  DATABASE          schema v7 · fts5
+[ OFF ] SEMANTIC INDEX    opt-in, not enabled
+[ OK ]  WORKSPACE         1 project
+WORKSPACE READY
+```
+
+On this machine the middle line really does read `OFF`, because embeddings are
+disabled — verified against the live endpoint, which returns
+`enabled: false, usable: false`.
+
+### Startup only, solved by position
+`Boot` sits above the router, so a route change cannot remount it. No module
+flag and no `sessionStorage` — nothing to go stale. A real reload remounts and
+replays, which is what the brief asked for. A test asserts the ordering,
+because moving it inside the router would silently make it replay on every
+internal navigation.
+
+### A failure hands over rather than blocking
+First draft left the curtain up forever when `/health` failed. That hides the
+dashboard's own error states, which are the useful ones — they name the failing
+call and offer a retry. Now a failure is shown for 2.2s and then dismissed.
+
+### Verification performed
+- `pytest backend/tests` — 432 collected, all pass, 5 skipped.
+- `ruff check backend`, `tsc --noEmit`, **`eslint`**, `npm run build` — clean.
+- Each of the four new guards **proved to fire** by planting a violation:
+  an unbacked line, `Boot` moved inside the router, and the semantic line
+  ungated from `usable`.
+- The `.boot-*` rules and both reduced-motion blocks are in the built CSS.
+
+### Known issues
+- ~~Never watched.~~ **Reviewed by the user in the running app and confirmed
+  (2026-11-14); the timing curve is accepted as-is.** Chrome was unreachable
+  throughout, so no screenshot exists and nothing was verified by *my* eye —
+  the visual sign-off on both design tracks is the user's.
+- `MIN_MS = 1250` is the only invented duration in the feature. Locally
+  `/health` answers in milliseconds, so in the normal case the reveal is paced
+  by its own animation and the live-status machinery only earns its keep when
+  something is slow or broken. Said plainly in ADR-0038.
+- Unchanged: `PRODUCT_SPEC.md` §10 drift, ADR-0009 `proposed`, stale RC tag,
+  no undo on approval, Windows has no Git.
+
+### Next safe task
+Both design tracks are built and signed off. Nothing is committed: 22 files
+span four distinct pieces of work (redesign, tiles + ADR-0037, neon pass,
+reveal + ADR-0038) and would make four legible commits. After that the backlog
+is the older debris above.
+
+---
+
+## 2026-11-14 — The neon treatment
+
+The dashboard had the mock's palette but not its *treatment*: correct colours,
+under-lit. Closed against the reference crop. Design notes in
+`design/VISUAL_PASS.md`.
+
+### What changed
+- **`index.css`** — `--glow-alpha` / `--glow-blur` as theme tokens (45%/9px
+  dark, **0%/0px light**), and three consumers: `.neon-outline`, `.neon-bar`,
+  `.neon-text`. An element opts in with `style={{ '--neon': 'var(--rel)' }}`.
+  In light mode `color-mix` at 0% yields transparent, so the rules become
+  no-ops instead of something the light theme has to override.
+- **`components/ui.tsx`** — semantic `Badge` tones are now outlined and lit
+  rather than filled; new `Bar` and `Neon` primitives; `Dot` uses the shared
+  glow.
+- **`screens/Dashboard.tsx`** — queue header counts hued per kind, record ids
+  lit in the relationship violet, freshness bars on the shared `Bar`, and a new
+  `LedgerSummary` row.
+- **`tests/unit/test_accent_is_reserved.py`** — rejects `--neon: var(--accent)`.
+
+### The summary row is gated like the tile
+`LedgerSummary` averages **only projects that have been checked** and prints
+"(n unchecked)" beside the figure rather than folding unchecked projects in at
+100% — the same rule as ADR-0037, which would otherwise have been quietly
+broken one level up. With nothing checked it reads "freshness not checked".
+Pending index only renders where semantic search is actually enabled. It reuses
+the rows' query keys, so it adds no requests.
+
+### A guard hole, opened and closed in the same change
+`.neon-bar` fills with whatever `--neon` names, so binding `--neon` to the
+accent would have filled a surface with the action colour without the word
+`background` appearing anywhere near it — walking straight around the fill
+guard added earlier today. The test now rejects that binding, proved by
+planting one.
+
+### Verification performed
+- `pytest backend/tests` — 428 collected, all pass, 5 skipped.
+- `ruff check backend`, `tsc --noEmit`, `npm run build` — all clean.
+- The neon classes and `color-mix` are present in the built CSS.
+- **Contrast computed, not eyeballed** (transparent badges lost the soft
+  background that was helping). All five hues clear 4.5:1 against both panel
+  and page, in both themes, at the 10px badge size: dark ok 14.83, warn 10.39,
+  accent 11.97, rel 6.73, stale 6.55; light 5.42–7.10.
+
+### Known issues
+- ~~Still never seen rendered.~~ **Reviewed by the user in the running app and
+  confirmed (2026-11-14).** The glow strength (45% / 9px) is accepted as-is.
+  The Chrome extension was unreachable throughout, so no screenshot exists and
+  nothing here was verified by *my* eye -- the visual sign-off is the user's.
+- `color-mix()` is required. Fine on current Chrome/Firefox/Safari and already
+  implied by Tailwind v4, but it is a hard dependency of the glow now.
+- Not taken from the mock: its invented figures, and the `sort: freshness ↓`
+  control, which sorts nothing. Worth adding when it actually sorts.
+- Unchanged: `PRODUCT_SPEC.md` §10 drift, ADR-0009 `proposed`, stale RC tag, no
+  undo on approval, Windows has no Git.
+
+### Next safe task
+Look at it, and tune the glow. Then the logo reveal animation.
+
+---
+
+## 2026-11-14 — The three dashboard tiles, decided (ADR-0037)
+
+The three figures left out of the redesign because they could not be computed
+honestly. All three are now in, and the freshness one needed a schema change to
+be answerable at all.
+
+### Freshness: three states, not a percentage
+Full reasoning in **ADR-0037**. The short version: the naive figure (memories
+without a stale finding, over all memories) prints **100% fresh for a project
+nobody has ever analyzed**, because an unanalyzed project has no findings. It
+reports an absence of evidence as evidence.
+
+- Denominator is **verifiable** memories — those pinning a real file region —
+  mirroring `detect_drift`'s own `WHERE` clause so the two cannot diverge. A
+  hand-written assertion has no file to drift from and is in neither half.
+- `flagged` = open `stale_risk` or `broken_link` on those memories.
+- **`checked_at` gates everything.** Migration **0007** adds `drift_runs`;
+  `detect_drift` now records that it ran. No run → `checked_at: null` → the UI
+  says "never checked".
+- Zero verifiable memories → "nothing cited", not 100%.
+
+### What changed
+- **`migrations/0007_drift_runs.sql`** (new) — schema version 6 → 7.
+- **`maintain/drift.py`** — records a run, with `git_commit`.
+- **`db/repositories/projects.py`** — `freshness()`.
+- **`api/schemas.py`**, **`api/routers/projects.py`** — `ProjectDetail.freshness`.
+- **`main.py`** — `/health` reports `db_bytes`, **summing the `-wal` and `-shm`
+  sidecars**; in WAL mode the log holds uncheckpointed megabytes, so the `.db`
+  size alone understates what Kernote occupies.
+- **`screens/Dashboard.tsx`** — `FreshnessBar` (a fifth ledger column) and the
+  database size in Local System. `bytes()` formatter added.
+- **`lib/api.ts`** — `Freshness` type, `db_bytes`.
+- **`tests/integration/test_freshness_states.py`** (new, 6 tests).
+
+### Verification performed
+- `pytest backend/tests` — 428 collected, all pass, 5 skipped.
+- `ruff check backend`, `tsc --noEmit`, `npm run build` — all clean.
+- Migration 0007 applied to the real database on restart: schema 6 → 7, logged.
+- **The trap reproduced live on this repository.** After scanning and before any
+  analysis: 587 verifiable, 0 flagged, 587 verified — `verified/verifiable` is
+  exactly 1.0, so a naive tile prints "100% fresh" for a repo nothing had
+  checked. `checked_at` was `null`, so the UI read *never checked*. After
+  `analyze`: `checked_at` set, `refs_checked` 587, 0 flagged, 1 conflict and 2
+  duplicate proposals found — and the 100% is now earned.
+- **The flagged state too**: appending to `DECISIONS.md` and `DEV_HANDOFF.md`
+  during this task moved 53 memories out of `verified` (587 → 534), so the tile
+  read 91% with a stale-toned bar. All 53 were severity LOW, the overlap test
+  working correctly on appends. ADR-0037 records why LOW still counts as
+  not-verified, and what to do instead if that proves noisy.
+- 1366px re-checked by arithmetic with the fifth column: 428px of fixed columns
+  leaves 310px for the project name inside the 738px track.
+
+### Known issues
+- **Still not seen rendered.** The Chrome extension was unreachable again, so the
+  freshness bar and the new column have never been looked at. This is now the
+  main outstanding item for the dashboard track.
+- The live dev database at `~/.local/share/kernote/kernote.db` was **empty** at
+  the start of this task — the "546 memories" in the previous entry came from a
+  different data dir. It now holds this repository (587 memories), registered
+  and scanned during verification.
+- `/analyze` recomputes drift for every ref on every call (587 refs here). Fine
+  at this size, not obviously fine at ten times it.
+- Unchanged from the previous entry: `PRODUCT_SPEC.md` §10 drift, ADR-0009 still
+  `proposed`, the stale RC tag, no undo on approval, Windows has no Git.
+
+### Next safe task
+Look at the dashboard. Then the logo reveal animation
+(`design/STARTUP_ANIMATION_BRIEF.md`).
+
+---
+
+## 2026-11-14 — Dashboard redesign, and the accent rule re-expressed
+
+Implemented `design/DASHBOARD_BRIEF.md` against the supplied mock. Two open
+questions were settled by the user first: keep **both** themes (the new palette
+becomes dark, a light equivalent is derived) and **map the nav to real screens**
+rather than inventing destinations.
+
+### What changed
+- **`frontend/src/index.css`** — rewritten. Three theme blocks of 19 identical
+  tokens. New: `--grid`, `--rel`/`--rel-soft` (a relationship between records),
+  `--stale`/`--stale-soft` (a claim the code has moved out from under). Light
+  values are derived by taking each neon to its darkest legible form; contrast
+  was computed numerically before shipping, as with `--accent-contrast`.
+- **`components/ui.tsx`** — `Badge` gained `rel` and `stale` tones; added `Dot`
+  and `PanelTitle`.
+- **`screens/Dashboard.tsx`** — rewritten: Intelligence Queue, Project Memory
+  Ledger, Local System, Recent Activity.
+- **`app/App.tsx`** — rewritten: grouped sidebar with the terminal wordmark,
+  breadcrumb, working search, Capture Memory.
+- **`components/CaptureMemory.tsx`** (new) + `api.createMemory`.
+- **`screens/ProjectIntelligence.tsx`** — honours `?q=` once, then drops it.
+- **`tests/unit/test_accent_is_reserved.py`** — the accent rule re-expressed.
+
+### No invented numbers
+Per the brief's "never invent system statuses or memory statistics", every
+figure is read from the API and each panel has its own loading, empty and error
+state. Where a figure does not exist the panel says so: Local System reports
+"language model: none · extraction is deterministic" and "network: offline by
+default". **The brief's freshness % tile is deliberately absent** — there is no
+agreed denominator for it yet. Same for database file size and the per-project
+freshness bars.
+
+### The accent rule: re-expressed, not deleted
+The brief predicted the collision and it landed. Cyan is now the brand hue as
+well as the action colour, so a blanket ban on naming `--accent` outside
+`ui.tsx` could not survive alongside the identity. The rule now forbids the
+thing that actually did the damage: **filling** a surface with it. Lines and
+type are free; only `Button` may fill. Verified by planting a violation and
+confirming the test caught it. Reasoning is in the test docstring and
+`design/VISUAL_PASS.md`.
+
+### Verification performed
+- `pytest backend/tests` — 422 collected, all pass, 5 skipped.
+- `ruff check backend` — clean. `tsc --noEmit` — clean. `npm run build` — clean.
+- New accent rule proved to fire on a planted `background: 'var(--accent)'`.
+- 1366px checked **by arithmetic only** (see below).
+
+### Known issues
+- **The redesign has not been seen rendered.** The Chrome extension was not
+  reachable this session, so the 1366px check is a width calculation, not a
+  screenshot. Content track 1078px, right rail 328px, 738px left — the ledger
+  needs ~440px. It should hold, but it is unconfirmed by eye.
+- Fixed while doing that sum: the project-name cell used `truncate
+  max-w-[180px]`, which is **inert on an auto-layout table cell**, so a long
+  name could have pushed the panel past its track at that exact width. The
+  table is now `table-fixed` with a `colgroup`.
+- Older, unrelated: `PRODUCT_SPEC.md` §10 still marks Q2/Q3 open though both are
+  resolved, and ADR-0009 still reads `proposed`. RC tag `v0.1.0-rc.1` sits at
+  `22acb32`, now well behind. Approval still has no undo. Git is not installed
+  on the Windows machine and the frontend build is untested there.
+
+### Next safe task
+Open the app and look at the dashboard at 1366px and at full width, in both
+themes, then the logo reveal animation
+(`design/STARTUP_ANIMATION_BRIEF.md`) — the user put UI design first and the
+animation second.
+
+---
+
 ## 2026-11-09 — Recall: the metric was measuring the composer
 
 `missed` was the largest failure bucket after Q6 closed, so retrieval recall
@@ -319,6 +2092,7 @@ Five of the thirteen tests assert what configuration cannot do, including
   generated ones. `**/*.rst` is correctly a no-op, since `.rst` is already
   allowlisted.
 - Migration 0006 applies to schema version 6 on a fresh database.
+- Migration 0007 takes a fresh database to schema version 7.
 
 ### A note on my own first attempt
 The migration initially carried its own `BEGIN`/`COMMIT` and wrote to a

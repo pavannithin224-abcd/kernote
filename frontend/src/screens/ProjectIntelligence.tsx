@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type AnswerBundle } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Button, Citation, Empty, ErrorNote, Panel } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader } from '../components/ui'
 
 const OUTCOME: Record<AnswerBundle['outcome'], { label: string; tone: 'ok' | 'warn' | 'neutral' }> = {
   evidence_found: { label: 'Evidence found', tone: 'ok' },
@@ -13,7 +14,8 @@ const OUTCOME: Record<AnswerBundle['outcome'], { label: string; tone: 'ok' | 'wa
 export default function ProjectIntelligence() {
   const qc = useQueryClient()
   const { projectId } = useProject()
-  const [question, setQuestion] = useState('')
+  const [params, setParams] = useSearchParams()
+  const [question, setQuestion] = useState(() => params.get('q') ?? '')
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [history, setHistory] = useState<AnswerBundle[]>([])
 
@@ -23,6 +25,11 @@ export default function ProjectIntelligence() {
     enabled: !!projectId,
   })
 
+  // The header's search box navigates here with ?q=. Run it once on arrival
+  // and clear the parameter, so a refresh does not silently re-ask and the URL
+  // stops claiming a question that has already been answered.
+  const askedFor = useRef<string | null>(null)
+
   const ask = useMutation({
     mutationFn: (q: string) => api.ask(projectId!, q, sessionId),
     onSuccess: (bundle) => {
@@ -31,6 +38,16 @@ export default function ProjectIntelligence() {
       setQuestion('')
     },
   })
+
+  useEffect(() => {
+    const q = params.get('q')?.trim()
+    if (!q || !projectId || askedFor.current === q) return
+    askedFor.current = q
+    setQuestion(q)
+    ask.mutate(q)
+    params.delete('q')
+    setParams(params, { replace: true })
+  }, [params, projectId, ask, setParams])
 
   const build = useMutation({
     mutationFn: (allowDownload: boolean) => api.buildEmbeddings(projectId!, allowDownload),
@@ -45,13 +62,10 @@ export default function ProjectIntelligence() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight">Project Intelligence</h1>
-        <p className="text-[12px]" style={{ color: 'var(--muted)' }}>
-          Kernote returns the evidence that bears on a question, with citations. It does
-          not write an answer — there is no language model in the loop.
-        </p>
-      </header>
+      <ScreenHeader title="Query Console">
+        Kernote returns the evidence that bears on a question, with citations. It does
+        not write an answer — there is no language model in the loop.
+      </ScreenHeader>
 
       {/* Semantic search is opt-in: the weights are a one-time download. */}
       {emb && !emb.usable && (
@@ -98,6 +112,7 @@ export default function ProjectIntelligence() {
         className="flex gap-2"
       >
         <input
+          aria-label="Ask a question about this project"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="Why did we choose SQLite? How do I run the tests?"

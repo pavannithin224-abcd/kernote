@@ -19,6 +19,25 @@ install:
 dev:
     PATH="{{node_bin}}:$PATH" backend/.venv/bin/honcho start
 
+# Build the UI and serve everything from one process (http://localhost:8787).
+# This is how Kernote is meant to be *used*, as opposed to developed: one
+# command, one port, no Node at runtime, and no CORS because there is only
+# one origin. `dev` below is still the right thing while writing code,
+# because it has hot reload.
+app:
+    PATH="{{node_bin}}:$PATH" npm --prefix frontend run build
+    KERNOTE_CORS_ORIGINS='[]' {{py}} -m uvicorn kernote.main:app --app-dir backend --host 127.0.0.1 --port 8787
+
+# Kernote in its own window (needs backend/requirements-desktop.txt).
+# Falls back to serving in the terminal when the machine has no webview.
+desktop:
+    PATH="{{node_bin}}:$PATH" npm --prefix frontend run build
+    cd backend && KERNOTE_CORS_ORIGINS='[]' .venv/bin/python -m kernote.desktop
+
+# Serve an already-built UI without rebuilding it
+serve:
+    KERNOTE_CORS_ORIGINS='[]' {{py}} -m uvicorn kernote.main:app --app-dir backend --host 127.0.0.1 --port 8787
+
 # Run the API only
 api:
     {{py}} -m uvicorn kernote.main:app --app-dir backend --host 127.0.0.1 --port 8787 --reload

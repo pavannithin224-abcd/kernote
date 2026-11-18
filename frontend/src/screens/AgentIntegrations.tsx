@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader, Stat } from '../components/ui'
 
 export default function AgentIntegrations() {
   const { projectId } = useProject()
@@ -46,13 +46,10 @@ export default function AgentIntegrations() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight">Agent Integrations</h1>
-        <p className="text-[12px]" style={{ color: 'var(--muted)' }}>
-          Hand this project's reviewed memory to a coding agent — as a file, or over
-          MCP. Both surfaces are read-only.
-        </p>
-      </header>
+      <ScreenHeader title="Agent Integrations">
+        Hand this project's reviewed memory to a coding agent — as a file, or over
+        MCP. Both surfaces are read-only.
+      </ScreenHeader>
 
       {mcp.isError && <ErrorNote error={mcp.error} />}
 
@@ -109,6 +106,7 @@ export default function AgentIntegrations() {
           }}
         >
           <input
+            aria-label="Task to rank the context bundle against"
             value={task}
             onChange={(e) => setTask(e.target.value)}
             placeholder="Task (optional) — ranks by relevance"
@@ -116,6 +114,7 @@ export default function AgentIntegrations() {
             style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
           />
           <input
+            aria-label="Token budget for the context bundle"
             type="number"
             value={budget}
             min={200}

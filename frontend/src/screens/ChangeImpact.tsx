@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader, Stat } from '../components/ui'
 
 export default function ChangeImpact() {
   const { projectId } = useProject()
@@ -35,14 +35,11 @@ export default function ChangeImpact() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight">Change Impact</h1>
-        <p className="text-[12px]" style={{ color: 'var(--muted)' }}>
-          Which memories a commit range may have invalidated. A memory is{' '}
-          <strong>directly affected</strong> only when the changed lines overlap the
-          lines it cites — not merely because its file appears in the diff.
-        </p>
-      </header>
+      <ScreenHeader title="Change Impact">
+        Which memories a commit range may have invalidated. A memory is{' '}
+        <strong>directly affected</strong> only when the changed lines overlap the
+        lines it cites — not merely because its file appears in the diff.
+      </ScreenHeader>
 
       <Panel title="Commit range">
         <form
@@ -53,6 +50,7 @@ export default function ChangeImpact() {
           }}
         >
           <input
+            aria-label="Base git ref"
             value={base}
             onChange={(e) => setBase(e.target.value)}
             placeholder="base ref"
@@ -60,6 +58,7 @@ export default function ChangeImpact() {
             style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
           />
           <input
+            aria-label="Head git ref"
             value={head}
             onChange={(e) => setHead(e.target.value)}
             placeholder="head ref"

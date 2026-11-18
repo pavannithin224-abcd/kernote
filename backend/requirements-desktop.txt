@@ -1,0 +1,20 @@
+# Optional: run Kernote in its own window instead of a browser tab.
+#
+# Kept out of requirements.txt on purpose. The product is fully usable with
+# `just app` and a browser; this adds a window and nothing else, so it should
+# not weigh on anyone who does not want it.
+#
+# pywebview drives the *operating system's* webview rather than shipping a
+# browser: a few MB, against ~150 MB for Electron. It also runs inside the
+# same Python process as the API, so there is no sidecar to supervise -- the
+# reason it was chosen over Tauri and Electron, which both assume a
+# JavaScript backend (ADR-0042).
+#
+# It needs a platform webview, which is present by default on Windows
+# (WebView2) and macOS (WKWebView). On Linux it is a system package:
+#
+#   sudo apt install gir1.2-webkit2-4.1    # Debian/Ubuntu
+#
+# Without one, `just desktop` says so and falls back to serving in the
+# terminal rather than failing.
+pywebview==5.3.2

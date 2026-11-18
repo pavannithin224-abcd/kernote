@@ -15,6 +15,9 @@ class RegisterProject(BaseModel):
 class ProjectDetail(BaseModel):
     project: Project
     counts: dict[str, int]
+    # `checked_at` is None until a freshness check has run. Consumers must
+    # render that as "never checked", never as 0% or 100%.
+    freshness: dict
 
 
 class MemoryDetail(BaseModel):

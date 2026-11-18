@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Finding } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader, Stat } from '../components/ui'
 
 const KIND_LABEL: Record<Finding['kind'], string> = {
   stale_risk: 'May be stale',
@@ -169,6 +170,310 @@ function FindingActions({
   )
 }
 
+/**
+ * What has already been applied, and the way back.
+ *
+ * A consolidation that leaves no trace in the UI cannot be undone, however
+ * reversible it is underneath — which is why the approval flow had no undo
+ * for so long despite the lineage being fully preserved.
+ */
+function AppliedConsolidations({ projectId }: { projectId: string }) {
+  const qc = useQueryClient()
+  const approved = useQuery({
+    queryKey: ['proposals', projectId, 'approved'],
+    queryFn: () => api.proposals(projectId, 'approved'),
+  })
+  const [undoing, setUndoing] = useState<string | null>(null)
+
+  const undo = useMutation({
+    mutationFn: (id: string) => api.undoProposal(projectId, id, 'undone from review'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['proposals', projectId] })
+      qc.invalidateQueries({ queryKey: ['proposals', projectId, 'approved'] })
+      qc.invalidateQueries({ queryKey: ['findings', projectId] })
+      qc.invalidateQueries({ queryKey: ['memories'] })
+      qc.invalidateQueries({ queryKey: ['graph', projectId] })
+      setUndoing(null)
+    },
+    onError: () => setUndoing(null),
+  })
+
+  const rows = approved.data ?? []
+  if (approved.isLoading || rows.length === 0) return null
+
+  return (
+    <Panel title={`Applied consolidations (${rows.length})`}>
+      {undo.isError && <ErrorNote error={undo.error} />}
+      <ul className="space-y-2">
+        {rows.map((p) => (
+          <li
+            key={p.id}
+            className="flex items-start gap-3 border-t pt-2 first:border-0 first:pt-0"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px]" style={{ color: 'var(--text)' }}>
+                {p.preview.after.title}
+              </div>
+              <div className="mono mt-0.5 text-[11px]" style={{ color: 'var(--muted)' }}>
+                merged {p.input_ids.length} records · {p.preview.after.citations.length} citations
+                {p.decided_at && ` · ${new Date(p.decided_at).toLocaleString()}`}
+              </div>
+            </div>
+            <button
+              className="mono shrink-0 rounded border px-2 py-1 text-[11px]"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+              disabled={undo.isPending}
+              onClick={() => {
+                setUndoing(p.id)
+                undo.mutate(p.id)
+              }}
+            >
+              {undoing === p.id && undo.isPending ? 'undoing…' : 'Undo'}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="mono mt-2 text-[11px]" style={{ color: 'var(--muted)' }}>
+        Undo restores the absorbed record and the keeper's previous wording. The merge
+        stays in the revision history; nothing is erased.
+      </p>
+    </Panel>
+  )
+}
+
+/** Decisions already taken on findings, and the way back. */
+function ResolvedFindings({ projectId }: { projectId: string }) {
+  const qc = useQueryClient()
+  const resolved = useQuery({
+    queryKey: ['findings', projectId, 'resolved'],
+    queryFn: () => api.resolvedFindings(projectId),
+  })
+  // A finding closed by approving a consolidation cannot be reopened here --
+  // `undo_resolution` refuses it, because undoing the merge is what actually
+  // reverses that decision. Offering the button anyway is a guaranteed 409,
+  // so these rows point at the panel above instead.
+  const applied = useQuery({
+    queryKey: ['proposals', projectId, 'approved'],
+    queryFn: () => api.proposals(projectId, 'approved'),
+  })
+  const closedByMerge = new Set(
+    (applied.data ?? []).flatMap((p) => (p.finding_id ? [p.finding_id] : [])),
+  )
+  // Until that list arrives the set is empty, so every row would briefly
+  // offer Reopen -- including the ones the backend must refuse. Hold the
+  // buttons rather than show one that cannot work.
+  const knowWhichAreMergeClosed = !applied.isLoading
+  const [undoing, setUndoing] = useState<string | null>(null)
+
+  const undo = useMutation({
+    mutationFn: (id: string) => api.undoFinding(projectId, id, 'reopened from review'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['findings', projectId] })
+      qc.invalidateQueries({ queryKey: ['findings', projectId, 'resolved'] })
+      qc.invalidateQueries({ queryKey: ['memories'] })
+      qc.invalidateQueries({ queryKey: ['graph', projectId] })
+      setUndoing(null)
+    },
+    onError: () => setUndoing(null),
+  })
+
+  const rows = resolved.data ?? []
+  if (resolved.isLoading || rows.length === 0) return null
+
+  return (
+    <Panel title={`Recently decided (${rows.length})`}>
+      {undo.isError && <ErrorNote error={undo.error} />}
+      <ul className="space-y-2">
+        {rows.map((f) => (
+          <li
+            key={f.id}
+            className="flex items-start gap-3 border-t pt-2 first:border-0 first:pt-0"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <Badge tone={f.status === 'rejected' ? 'neutral' : 'ok'}>{f.status}</Badge>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px]" style={{ color: 'var(--text)' }}>
+                {KIND_LABEL[f.kind] ?? f.kind}
+              </div>
+              <div className="mono mt-0.5 truncate text-[11px]" style={{ color: 'var(--muted)' }}>
+                {f.explanation}
+              </div>
+            </div>
+            {closedByMerge.has(f.id) ? (
+              <span
+                className="mono shrink-0 text-[11px]"
+                style={{ color: 'var(--muted)' }}
+                title="Undo the consolidation above to reverse this."
+              >
+                closed by a merge
+              </span>
+            ) : (
+              <button
+                className="mono shrink-0 rounded border px-2 py-1 text-[11px]"
+                style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+                disabled={undo.isPending || !knowWhichAreMergeClosed}
+                onClick={() => {
+                  setUndoing(f.id)
+                  undo.mutate(f.id)
+                }}
+              >
+                {undoing === f.id && undo.isPending ? 'reopening…' : 'Reopen'}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="mono mt-2 text-[11px]" style={{ color: 'var(--muted)' }}>
+        Reopening re-flags only the memories the decision changed. Both decisions stay in
+        the record.
+      </p>
+    </Panel>
+  )
+}
+
+/**
+ * Relationship suggestions, ranked, for triage.
+ *
+ * There is deliberately **no "confirm all"**. Agreeing to several hundred
+ * relationships in one click would record a judgement nobody made, which is
+ * the thing this product spends its effort not doing. Selection is explicit;
+ * the batch button only applies what you ticked.
+ */
+function SuggestedRelationships({ projectId }: { projectId: string }) {
+  const qc = useQueryClient()
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+
+  const suggestions = useQuery({
+    queryKey: ['link-suggestions', projectId],
+    queryFn: () => api.linkSuggestions(projectId, 25),
+  })
+
+  const decide = useMutation({
+    mutationFn: (decisions: { src_id: string; dst_id: string; verdict: 'confirm' | 'dismiss' }[]) =>
+      api.batchLinks(projectId, decisions),
+    onSuccess: () => {
+      setPicked(new Set())
+      qc.invalidateQueries({ queryKey: ['link-suggestions', projectId] })
+      qc.invalidateQueries({ queryKey: ['graph', projectId] })
+    },
+  })
+
+  const rows = suggestions.data ?? []
+  const key = (s: { src_id: string; dst_id: string }) => `${s.src_id}:${s.dst_id}`
+  const chosen = rows.filter((s) => picked.has(key(s)))
+
+  const apply = (verdict: 'confirm' | 'dismiss') =>
+    decide.mutate(chosen.map((s) => ({ src_id: s.src_id, dst_id: s.dst_id, verdict })))
+
+  if (suggestions.isError) {
+    return (
+      <Panel title="Suggested relationships">
+        <ErrorNote error={suggestions.error} />
+      </Panel>
+    )
+  }
+  if (suggestions.isLoading) {
+    return (
+      <Panel title="Suggested relationships">
+        <div className="h-16 animate-pulse rounded" style={{ background: 'var(--chip)' }} aria-busy />
+      </Panel>
+    )
+  }
+  if (rows.length === 0) return null
+
+  return (
+    <Panel
+      title={`Suggested relationships (${rows.length})`}
+      right={
+        <span className="mono text-[11px]" style={{ color: 'var(--muted)' }}>
+          strongest first
+        </span>
+      }
+    >
+      <p className="mb-2 text-[12px]" style={{ color: 'var(--muted)' }}>
+        Pairs that keep appearing together. Ranked by how specific the overlap is —
+        three rare files in common says more than one vague one. Nothing is recorded
+        until you say so.
+      </p>
+
+      {decide.isError && <ErrorNote error={decide.error} />}
+      {decide.data && decide.data.failed.length > 0 && (
+        <p className="mono mb-2 text-[11px]" style={{ color: 'var(--warn)' }}>
+          {decide.data.failed.length} could not be applied: {decide.data.failed[0].error}
+        </p>
+      )}
+
+      <ul className="space-y-1">
+        {rows.map((s) => {
+          const id = key(s)
+          const on = picked.has(id)
+          return (
+            <li
+              key={id}
+              className="flex items-start gap-2 border-t py-1.5 first:border-0"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <input
+                type="checkbox"
+                checked={on}
+                aria-label={`Select ${s.src_title} and ${s.dst_title}`}
+                onChange={() =>
+                  setPicked((prev) => {
+                    const next = new Set(prev)
+                    if (next.has(id)) next.delete(id)
+                    else next.add(id)
+                    return next
+                  })
+                }
+                className="mt-1 shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[12px]" style={{ color: 'var(--text)' }}>
+                  {s.src_title}
+                  <span style={{ color: 'var(--rel)' }}> ⇄ </span>
+                  {s.dst_title}
+                </div>
+                <div className="mono mt-0.5 truncate text-[10px]" style={{ color: 'var(--muted)' }}>
+                  {s.shared.join(' · ')}
+                </div>
+              </div>
+              {s.same_title && (
+                <Badge tone="warn">same title — check for duplicate</Badge>
+              )}
+              <span className="mono shrink-0 text-[10px] tabular-nums" style={{ color: 'var(--muted)' }}>
+                {s.score.toFixed(1)}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          className="mono rounded border px-2 py-1 text-[11px]"
+          style={{ borderColor: 'var(--rel)', color: 'var(--rel)' }}
+          disabled={chosen.length === 0 || decide.isPending}
+          onClick={() => apply('confirm')}
+        >
+          Confirm {chosen.length || ''}
+        </button>
+        <button
+          className="mono rounded border px-2 py-1 text-[11px]"
+          style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+          disabled={chosen.length === 0 || decide.isPending}
+          onClick={() => apply('dismiss')}
+        >
+          Dismiss {chosen.length || ''}
+        </button>
+        <span className="mono text-[10px]" style={{ color: 'var(--muted)' }}>
+          {chosen.length === 0 ? 'select pairs to act on them' : `${chosen.length} selected`}
+        </span>
+      </div>
+    </Panel>
+  )
+}
+
 export default function MaintenanceCenter() {
   const qc = useQueryClient()
   const { projectId } = useProject()
@@ -204,23 +509,22 @@ export default function MaintenanceCenter() {
 
   return (
     <div className="space-y-4">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight">Memory Intelligence</h1>
-          <p className="text-[12px]" style={{ color: 'var(--muted)' }}>
-            Every finding is a request for review, never a verdict. Nothing is merged or
-            marked wrong without you.
-          </p>
-        </div>
-        <Button
-          primary
-          onClick={() => analyze.mutate()}
-          disabled={analyze.isPending}
-          className="shrink-0"
-        >
-          {analyze.isPending ? 'Analysing…' : 'Run analysis'}
-        </Button>
-      </header>
+      <ScreenHeader
+        title="Intelligence"
+        right={
+          <Button
+            primary
+            onClick={() => analyze.mutate()}
+            disabled={analyze.isPending}
+            className="shrink-0"
+          >
+            {analyze.isPending ? 'Analysing…' : 'Run analysis'}
+          </Button>
+        }
+      >
+        Every finding is a request for review, never a verdict. Nothing is merged or
+        marked wrong without you.
+      </ScreenHeader>
 
       {analyze.isError && <ErrorNote error={analyze.error} />}
       {findings.isError && <ErrorNote error={findings.error} />}
@@ -260,6 +564,10 @@ export default function MaintenanceCenter() {
           </div>
         </Panel>
       )}
+
+      {projectId && <SuggestedRelationships projectId={projectId} />}
+      {projectId && <AppliedConsolidations projectId={projectId} />}
+      {projectId && <ResolvedFindings projectId={projectId} />}
 
       {Object.keys(byKind).length === 0 ? (
         <Panel title="Review queue">

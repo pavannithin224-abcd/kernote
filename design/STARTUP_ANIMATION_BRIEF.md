@@ -1,6 +1,6 @@
 # Startup animation — brief
 
-**Received 2026-11-12. Not started.** The second of two agreed tracks; see
+**Received 2026-11-12. Built 2026-11-14.** The second of two agreed tracks; see
 `DASHBOARD_BRIEF.md` for the first. Visual reference:
 `design/refs/01-dashboard-target.png`.
 
@@ -112,7 +112,49 @@ progress indicator.
 
 | Track | Brief | State |
 |---|---|---|
-| UI design — dashboard | `DASHBOARD_BRIEF.md` | stored, not started |
-| Logo / startup animation | this file | stored, not started |
+| UI design — dashboard | `DASHBOARD_BRIEF.md` | **built 2026-11-14, accepted** |
+| Logo / startup animation | this file | **built 2026-11-14, accepted** |
 
 Suggested order: dashboard first, animation second, for reason 5 above.
+*That order was followed, and reason 5 held: the reveal fades onto the
+finished dashboard and the transition was only built once.*
+
+---
+
+## Built — 2026-11-14
+
+`frontend/src/components/Boot.tsx`, plus a `.boot-*` block in `index.css` and
+four lines in `main.tsx`. No dependencies added.
+
+**How the five open questions resolved.**
+
+1. **Which wordmark is the brand.** The reveal resolves into the *wordmark*,
+   `kernote_`, as the brief specified. The K mark keeps the favicon, the tab
+   and the sidebar. They coexist; nothing was retired.
+2. **Startup only, not navigation.** Solved by position rather than by a flag:
+   `Boot` is mounted **above** `BrowserRouter`, so a route change cannot
+   remount it. No module flag, no `sessionStorage`, nothing to go stale. A real
+   reload is a real remount and plays it again.
+3. **Reduced motion.** The repo rule, reused: the finished state is the base
+   state. Under `reduce` the wordmark and the status lines render immediately
+   and the graph is simply not drawn — the end frame, never a blank one. The
+   minimum display time is also dropped, so it dismisses as soon as the checks
+   return.
+4. **Node budget.** 22 nodes, 17 links, deterministic coordinates. `opacity`
+   and `transform` only, plus one `stroke-dashoffset` for the link draw, so
+   nothing touches layout. No Canvas.
+5. **Order.** Dashboard first, as suggested — which proved right: the reveal
+   fades onto the finished dashboard, and the transition only had to be built
+   once.
+
+**The status lines are settled in ADR-0038**, which is where the real argument
+is. Three lines, not five, and one of them usually says `OFF`.
+
+**It is an overlay, not a gate.** The app mounts and paints underneath it the
+whole time, so the dismissal is a fade onto a screen that is already there
+rather than the beginning of another wait.
+
+**Reviewed and accepted (2026-11-14).** Watched in the running app by the
+user; the timing curve — 1.25s minimum, converge at 760ms, wordmark at 900ms —
+stands as built. It was never seen by the agent that wrote it, so the sign-off
+is the user's.

@@ -46,6 +46,8 @@ export interface Proposal {
   finding_id: string | null
   input_ids: string[]
   created_at: string
+  /** When it was approved or rejected; null while pending. */
+  decided_at?: string | null
   preview: {
     before: ProposalSide[]
     after: { title: string; content: string; citations: string[] }
@@ -257,9 +259,76 @@ export interface Project {
   created_at: string
 }
 
+export interface GraphNode {
+  id: string
+  title: string
+  type: string
+  status: string
+  importance: number | null
+  degree: number
+  /** Named by a finding or an explicit link, not merely co-mentioned. */
+  flagged: boolean
+}
+
+export interface GraphEdge {
+  src: string
+  dst: string
+  /** `shares` is entity co-occurrence; the rest are recorded relationships. */
+  kind: 'shares' | 'conflict' | 'duplicate' | string
+  reason: string
+  weight: number
+  /** Where the edge came from: `suggested` is a heuristic nobody has agreed
+   *  with, `user` a confirmed judgement, `merge` a consolidation's
+   *  consequence, `finding` an open review item. */
+  origin?: 'suggested' | 'user' | 'merge' | 'finding'
+}
+
+export interface LinkSuggestion {
+  src_id: string
+  dst_id: string
+  src_title: string
+  dst_title: string
+  src_type: string
+  dst_type: string
+  /** Summed specificity of everything the pair shares: higher is stronger. */
+  score: number
+  shared: string[]
+  /** Identical titles the duplicate detector did not flag — "related" is
+   *  probably the wrong answer, and the UI says so rather than hiding it. */
+  same_title: boolean
+}
+
+export interface MemoryGraph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  totals: { memories: number; edges_considered: number; connected_memories: number }
+  /** What the server left out, so the view can say so rather than look complete. */
+  limits: {
+    node_limit: number
+    edge_limit: number
+    entity_spread_max: number
+    omitted_memories: number
+    omitted_edges: number
+    entities_too_common: number
+  }
+}
+
+export interface Freshness {
+  /** null until a freshness check has actually run. Render "never checked" —
+   *  not 0%, and above all not 100%. */
+  checked_at: string | null
+  refs_checked: number
+  /** Memories pinning a real file region. Memories citing nothing are in
+   *  neither half of the fraction. */
+  verifiable: number
+  flagged: number
+  verified: number
+}
+
 export interface ProjectDetail {
   project: Project
   counts: Record<string, number>
+  freshness: Freshness
 }
 
 export interface Revision {
@@ -309,9 +378,72 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  health: () => call<{ status: string; schema_version: string; db_path: string }>('/health'),
+  health: () =>
+    call<{
+      status: string
+      schema_version: string
+      db_path: string
+      db_bytes: number
+    }>('/health'),
   listProjects: () => call<Project[]>('/projects'),
   getProject: (id: string) => call<ProjectDetail>(`/projects/${id}`),
+  graph: (id: string) => call<MemoryGraph>(`/projects/${id}/graph`),
+
+  /** Unanswered suggestions, strongest first. */
+  linkSuggestions: (projectId: string, limit = 25) =>
+    call<LinkSuggestion[]>(
+      `/projects/${projectId}/links/suggestions?limit=${limit}`,
+    ),
+  /** Answer several at once. Each still goes through the same guards. */
+  batchLinks: (
+    projectId: string,
+    decisions: { src_id: string; dst_id: string; verdict: 'confirm' | 'dismiss' }[],
+  ) =>
+    call<{ confirmed: number; dismissed: number; failed: { error: string }[] }>(
+      `/projects/${projectId}/links/batch`,
+      { method: 'POST', body: JSON.stringify({ decisions }) },
+    ),
+
+  // --- curated relationships (ADR-0045) ---------------------------------
+  confirmLink: (projectId: string, memoryId: string, otherId: string, kind = 'relates_to') =>
+    call<{ src_id: string; dst_id: string; kind: string; origin: string }>(
+      `/memories/${memoryId}/links?project_id=${encodeURIComponent(projectId)}`,
+      { method: 'POST', body: JSON.stringify({ other_id: otherId, kind }) },
+    ),
+  dismissLink: (projectId: string, memoryId: string, otherId: string) =>
+    call<{ dismissed: string[] }>(
+      `/memories/${memoryId}/links/dismiss?project_id=${encodeURIComponent(projectId)}`,
+      { method: 'POST', body: JSON.stringify({ other_id: otherId }) },
+    ),
+  removeLink: (projectId: string, memoryId: string, otherId: string) =>
+    call<{ removed: boolean }>(
+      `/memories/${memoryId}/links?project_id=${encodeURIComponent(projectId)}` +
+        `&other_id=${encodeURIComponent(otherId)}`,
+      { method: 'DELETE' },
+    ),
+
+  // --- backup, restore, export (ADR-0043) -------------------------------
+  takeBackup: (path?: string) =>
+    call<{ path: string; bytes: number; schema_version: number; taken_at: string }>(
+      '/backup',
+      { method: 'POST', body: JSON.stringify({ path: path ?? null }) },
+    ),
+  /** What a file claims to be. Touches nothing. */
+  inspectBackup: (path: string) =>
+    call<{ path: string; schema_version: number; projects: number; memories: number }>(
+      '/restore/inspect',
+      { method: 'POST', body: JSON.stringify({ path }) },
+    ),
+  /** Replaces every memory in the vault. The server snapshots first and
+   *  returns where it put the previous one. */
+  restoreBackup: (path: string) =>
+    call<{
+      restored_from: string
+      safety_backup: string
+      schema_version: number
+      projects: number
+      memories: number
+    }>('/restore', { method: 'POST', body: JSON.stringify({ path, confirm: true }) }),
   registerProject: (name: string, root_path: string) =>
     call<Project>('/projects', { method: 'POST', body: JSON.stringify({ name, root_path }) }),
   scan: (id: string) => call<ScanResult>(`/projects/${id}/scan`, { method: 'POST' }),
@@ -320,6 +452,16 @@ export const api = {
   // Superseded and archived records are hidden by default (MEMORY_MODEL.md):
   // serving a replaced claim next to its replacement is misleading. Pass
   // includeInactive to see them.
+  /** Assert a memory by hand. Provenance is recorded as a user note, not a
+   *  file and line range, because there is no source to cite. */
+  createMemory: (
+    projectId: string,
+    body: { type: string; title: string; content: string; summary?: string | null },
+  ) =>
+    call<Memory>(`/projects/${projectId}/memories`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   listMemories: (
     id: string,
     type?: string,
@@ -340,7 +482,18 @@ export const api = {
     call<AnalysisResult>(`/projects/${id}/analyze`, { method: 'POST' }),
   findings: (id: string, kind?: string) =>
     call<Finding[]>(`/projects/${id}/findings${kind ? `?kind=${kind}` : ''}`),
-  proposals: (id: string) => call<Proposal[]>(`/projects/${id}/proposals`),
+  /** Recently closed findings, newest first — what the undo panel reads. */
+  resolvedFindings: (id: string) =>
+    call<Finding[]>(`/projects/${id}/findings?status=resolved`),
+  /** Reopen a resolved finding, re-flagging only the memories the
+   *  resolution actually changed. */
+  undoFinding: (projectId: string, findingId: string, note?: string) =>
+    call<{ finding_id: string; reflagged: string[] }>(
+      `/findings/${findingId}/undo?project_id=${encodeURIComponent(projectId)}`,
+      { method: 'POST', body: JSON.stringify({ note: note ?? null }) },
+    ),
+  proposals: (id: string, status: 'pending' | 'approved' | 'rejected' = 'pending') =>
+    call<Proposal[]>(`/projects/${id}/proposals?status=${status}`),
   ask: (id: string, question: string, sessionId?: string | null) =>
     call<AnswerBundle>(`/projects/${id}/ask`, {
       method: 'POST',
@@ -351,6 +504,20 @@ export const api = {
       `/proposals/${proposalId}/approve?project_id=${encodeURIComponent(projectId)}`,
       { method: 'POST', body: JSON.stringify({ note: note ?? null }) },
     ),
+  /** Reverse an approved consolidation. The merge stays in the revision
+   *  history and the original approval stays in the feedback log — an undo is
+   *  recorded as having happened, not erased. */
+  undoProposal: (projectId: string, proposalId: string, note?: string) =>
+    call<{
+      proposal_id: string
+      kept_id: string
+      restored_id: string
+      citations_removed: number
+      content_restored: boolean
+    }>(`/proposals/${proposalId}/undo?project_id=${encodeURIComponent(projectId)}`, {
+      method: 'POST',
+      body: JSON.stringify({ note: note ?? null }),
+    }),
   rejectProposal: (projectId: string, proposalId: string, note?: string) =>
     call<{ rejected: boolean; note: string }>(
       `/proposals/${proposalId}/reject?project_id=${encodeURIComponent(projectId)}`,

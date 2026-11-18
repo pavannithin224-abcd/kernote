@@ -1,4 +1,4 @@
-"""The accent colour marks one action per screen, and nothing else.
+"""The accent colour fills one control per screen, and nothing else.
 
 Reference reel 6 (`design/VISUAL_PASS.md`): *two base colours do 90% of the
 work, the weird one only goes on the button you want pressed.* Before this was
@@ -29,17 +29,43 @@ def _sources() -> list[Path]:
     return sorted(p for p in SRC.rglob("*.tsx") if p.is_file())
 
 
-def test_only_the_button_component_uses_the_accent_colour():
+# A filled accent surface, in any spacing or quoting.
+FILLED = re.compile(r"background(?:-color)?\s*:\s*['\"]?\s*var\(--accent\)")
+
+# The neon layer (2026-11-14) added an indirection: `.neon-bar` fills with
+# whatever `--neon` names, so binding `--neon` to the accent fills a surface
+# with it without the word "background" appearing anywhere nearby. Closing
+# that hole is the point -- a guard a later refactor can walk around is worse
+# than no guard, because it still reads as enforcement.
+NEON_ACCENT = re.compile(r"--neon'?\s*:\s*['\"]?\s*var\(--accent\)")
+
+
+def test_only_the_button_component_fills_with_the_accent_colour():
+    """Re-expressed on 2026-11-14, when cyan became the brand hue too.
+
+    The original rule was "nothing but Button may name `--accent`", which was
+    right while the accent was a blue used only on buttons. In the approved
+    identity cyan is also the brand colour: the `note_` of the wordmark, the
+    rule beside a section heading, the line marking the active nav item. A
+    blanket ban would have meant dropping either the identity or the test, and
+    `design/DASHBOARD_BRIEF.md` says to do neither.
+
+    What made the old accent useless was *filling* nine different things with
+    it, so nothing read as pressable -- not naming it. That is the part worth
+    keeping, now stated precisely: cyan may draw a line or set type anywhere,
+    but only `Button` may fill a surface with it.
+    """
     offenders = []
     for path in _sources():
         if path == BUTTON:
             continue
         for index, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if "var(--accent)" in line:
+            if FILLED.search(line) or NEON_ACCENT.search(line):
                 offenders.append(f"{path.relative_to(ROOT)}:{index}")
     assert not offenders, (
-        "only the Button component may use var(--accent); a screen that needs a "
-        "primary action should render <Button primary>. Offenders: " + ", ".join(offenders)
+        "only the Button component may fill a surface with var(--accent); a screen "
+        "that needs a primary action should render <Button primary>. Offenders: "
+        + ", ".join(offenders)
     )
 
 

@@ -5,10 +5,12 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from ... import jobs
 from ...config import settings
+from ...db.repositories import graph as graph_repo
 from ...db.repositories import projects as repo
 from ...db.repositories import sources as source_repo
-from ...domain.models import Project, ScanResult
+from ...domain.models import Project, ScanResult, new_id
 from ...ingest import gitmeta, scanconfig
 from ...ingest.pipeline import scan_project
 from ..deps import db
@@ -42,7 +44,90 @@ def get_project(project_id: str) -> ProjectDetail:
     project = repo.get(conn, project_id)
     if project is None:
         raise HTTPException(404, "project not found")
-    return ProjectDetail(project=project, counts=repo.counts(conn, project_id))
+    return ProjectDetail(
+        project=project,
+        counts=repo.counts(conn, project_id),
+        freshness=repo.freshness(conn, project_id),
+    )
+
+
+@router.get("/projects/{project_id}/graph")
+def memory_graph(project_id: str) -> dict:
+    """Nodes and edges that already exist in the database.
+
+    Nothing is inferred and nothing is generated. Every edge is a row --
+    an explicit link, a finding naming two memories, or a shared entity --
+    and carries the reason it exists. `limits` reports what was left out, so
+    a truncated graph can say so instead of looking complete.
+    """
+    conn = db()
+    if repo.get(conn, project_id) is None:
+        raise HTTPException(404, "project not found")
+    g = graph_repo.build(conn, project_id)
+    return {"nodes": g.nodes, "edges": g.edges, "totals": g.totals, "limits": g.limits}
+
+
+@router.post("/projects/{project_id}/scan/background")
+def scan_in_background(project_id: str) -> dict:
+    """Queue a scan instead of blocking on it.
+
+    The synchronous `POST /scan` is unchanged — scripts and tests rely on
+    it, and for a small repository it is the simpler thing. This is for the
+    UI, where a scan that freezes the window for a minute is the difference
+    between an application and a web page.
+    """
+    conn = db()
+    project = repo.get(conn, project_id)
+    if project is None:
+        raise HTTPException(404, "project not found")
+    root = Path(project.root_path)
+    if not root.is_dir():
+        raise HTTPException(409, f"project root no longer exists: {project.root_path}")
+
+    # Queueing a second scan of the same project does not make it finish
+    # sooner; it makes the same work happen twice against a single-writer
+    # database.
+    existing = jobs.runner.active_for(project_id, "scan")
+    if existing is not None:
+        return existing.as_dict()
+
+    def work() -> dict:
+        # Exactly the call the blocking endpoint makes, including loading the
+        # scan configuration itself. Reaching for `scanconfig.effective` here
+        # would be a second, differently-wrong copy of that logic.
+        result = scan_project(
+            conn,
+            project_id=project_id,
+            root=root,
+            max_file_bytes=settings.max_file_bytes,
+            max_files=settings.max_files_per_scan,
+        )
+        return {
+            "files_seen": result.files_seen,
+            "memories_created": result.memories_created,
+            "captures_created": result.captures_created,
+        }
+
+    return jobs.runner.submit(new_id(), "scan", project_id, work).as_dict()
+
+
+@router.get("/jobs/{job_id}")
+def get_job(job_id: str) -> dict:
+    job = jobs.runner.get(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    return job.as_dict()
+
+
+@router.get("/jobs")
+def list_jobs(project_id: str | None = None) -> list[dict]:
+    """Recent background work, newest first.
+
+    In-memory, so this is what *this process* has run. The durable record of
+    what the work produced is in `scan_runs`, the findings table and
+    `drift_runs`.
+    """
+    return [job.as_dict() for job in jobs.runner.list(project_id)]
 
 
 @router.post("/projects/{project_id}/scan", response_model=ScanResult)

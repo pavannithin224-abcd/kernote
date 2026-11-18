@@ -185,7 +185,15 @@ what makes the `Should` rating achievable in two days.
 ---
 
 ## ADR-0009 — Linux/WSL is the primary dev target; Windows is verified, not assumed
-**Status:** proposed · 2026-11-06 · *needs your confirmation (open question Q3)*
+**Status:** superseded by **ADR-0009a** · 2026-11-06, superseded 2026-11-09 ·
+*open question Q3 is closed*
+
+> **Superseded.** The verification this proposed was carried out on
+> 2026-11-09 — native Windows 3.12.10 AMD64 on an NTFS path, full suite — and
+> ADR-0009a records what it found, including the three product bugs and the two
+> environmental limits that remain. The two-checkpoint schedule below (Day 18
+> and Day 23) was overtaken by the project finishing early; the verification
+> happened once, thoroughly, instead. Read ADR-0009a for the standing position.
 
 **Context.** The guide targets Windows + Linux. Development is happening on
 WSL2 on this machine. Windows dependency friction is a named risk.
@@ -313,7 +321,58 @@ of these tools rather than our reimplementation of them.
 ---
 
 ## ADR-0014 — Spike `model2vec` static embeddings as a possible default
-**Status:** proposed · 2026-11-06 · *needs a Day 14–17 measurement*
+**Status:** **declined on measurement** · proposed 2026-11-06 · measured and
+closed 2026-11-14
+
+> **Run, and the answer is no.** The spike finally happened. Both
+> `potion-base-8M` and `potion-base-32M` are **worse than `all-MiniLM-L6-v2`
+> on our own labelled question set**, and worse in the place that matters
+> most: the top of the ranking.
+>
+> Method: the 25 answerable questions of `eval/questions.json` against the
+> `samples/eval-repo` corpus, chunked by the product's own pipeline (69 chunks
+> over 20 files). Each model embeds the same chunks and the same questions; a
+> file scores as its best-matching chunk; scored with this repository's own
+> `eval/metrics.py`. The only variable is the vectors. `model2vec` was
+> installed in a throwaway venv so the product's dependencies were never
+> touched.
+>
+> | metric | all-MiniLM-L6-v2 | potion-base-8M | potion-base-32M |
+> |---|---|---|---|
+> | dim | 384 | 256 | 512 |
+> | Recall@1 | **0.7200** | 0.6200 | 0.5600 |
+> | Recall@3 | **0.9000** | 0.7800 | 0.8200 |
+> | Recall@5 | **0.9400** | 0.9000 | 0.9000 |
+> | Recall@10 | **0.9800** | 0.9400 | 0.9800 |
+> | nDCG@10 | **0.8609** | 0.7936 | 0.7956 |
+> | MRR | **0.8270** | 0.7447 | 0.7215 |
+> | encode 69 chunks | 2.52 s | **0.006 s** | **0.006 s** |
+>
+> **The speed claim is real and does not matter.** 420× faster encoding is
+> not an exaggeration — static embeddings are a lookup. But embedding is a
+> *one-time scan cost*: `EVALUATION.md` records 4.7 s to index the whole real
+> corpus with MiniLM. Trading 10 points of Recall@1 to save four seconds once
+> is a bad trade for a product whose entire argument is answer quality.
+>
+> **The bigger model is not the answer either.** `potion-base-32M` is *worse*
+> than the 8M at Recall@1 (0.56 vs 0.62) and has the worst MRR of the three,
+> while matching MiniLM only at Recall@10. Both static models find the right
+> document eventually and rank it poorly — precisely the failure the support
+> gate and the composer are most sensitive to, since they read the top of the
+> list.
+>
+> **On the published figures.** The MTEB numbers below (91.96% of MiniLM's
+> average) are not contradicted by this: a benchmark average over many tasks
+> is not a claim about one small technical corpus. They were simply never
+> evidence about *this* product, which is why the ADR demanded our own
+> measurement before adoption. That demand was right.
+>
+> **Limits of this measurement**, stated so nobody over-reads it: 25
+> questions over 20 files is small; it scores semantic retrieval alone, not
+> the product's hybrid RRF where BM25 would mask some of the gap; and it could
+> not be repeated on the IVForge corpus, which is not in this repository.
+> Those caveats would matter if the result were close. A 10-point Recall@1
+> deficit is not close.
 
 **Context.** The target machine is CPU-only with no CUDA. Embedding a medium
 repository is the heaviest routine operation in the product, and ADR-0004's
@@ -1927,7 +1986,7 @@ ADR-0020c's blanket rule could not express.
 **Status:** accepted · 2026-11-09 · *resolves ADR-0009 and open question Q3*
 
 **What was actually run.** Native Windows Python **3.12.10 AMD64** against a
-checkout on a native NTFS path (`C:\Users\Dell\AppData\Local\Temp`), driven
+checkout on a native NTFS path (under `%LOCALAPPDATA%\Temp`), driven
 through WSL interop. Full install, full test suite, and `scripts/demo.py` end
 to end. Not WSL, not a container.
 
@@ -2183,3 +2242,807 @@ deeper candidate pool rather than better ranking — which is a precision trade
 retrieving an answering document and asserting it is the support gate doing its
 job: those records do not mention what was asked, and ADR-0032 settled that
 assertion stays lexical.
+
+---
+
+## ADR-0037 — Freshness is three states, and a never-checked project is one of them
+
+**Status:** accepted (2026-11-14)
+
+**Context.** `design/DASHBOARD_BRIEF.md` asked for a freshness percentage, plus
+a per-project freshness bar. The obvious implementation — memories without an
+open `stale_risk` finding, over all memories — is wrong in two ways, and both
+errors flatter the product.
+
+First, **a project nobody has analyzed has no stale findings.** The fraction
+reads 1.0 and the tile prints "100% fresh" for a repository whose freshness has
+never been examined. That reports an absence of evidence as evidence, which
+`CLAUDE.md` forbids directly: *"AI can explain impact but cannot be the sole
+freshness proof"*, *"say evidence was not found when it was not found."* It is
+also the single most likely state for a new user to be in, so the default
+reading of the tile would have been a falsehood.
+
+Second, **a memory with no source citation has no file to drift from.** A
+manually captured assertion ("we squash before merging") is neither fresh nor
+stale; it was never verifiable against the tree. Including it in the
+denominator as "fresh" claims a verification that cannot exist.
+
+**Decision.**
+
+1. The denominator is **verifiable memories**: those pinning a real file region
+   (`rel_path` and `content_hash` both present) and still live. This mirrors
+   `detect_drift`'s own `WHERE` clause deliberately, so the numerator and
+   denominator cannot drift apart from the detector that produces the findings.
+2. `flagged` is those carrying an open `stale_risk` **or `broken_link`** —
+   a citation whose file has vanished is not a fresh claim.
+3. **`checked_at` gates the whole figure.** Migration 0007 adds `drift_runs`,
+   and `detect_drift` records that it ran. Until a run exists the API returns
+   `checked_at: null` and the UI must render "never checked" — not 0%, and
+   above all not 100%.
+4. A project with zero verifiable memories reads "nothing cited", not 100%.
+
+**Why a table, for one timestamp.** Drift detection was a pure function of the
+database and the disk: it wrote findings but left no trace that it had run. The
+absence of that trace is precisely what makes the naive percentage unanswerable,
+so the trace is the fix. `git_commit` is recorded alongside, so two runs at the
+same commit over an unchanged tree can be shown to agree.
+
+**Measured on this repository**, which demonstrates the trap exactly. After a
+scan and before any analysis: 587 verifiable, 0 flagged, 587 verified — a naive
+`verified/verifiable` prints **100%** for a repository nothing had checked.
+`checked_at` was `null`, so the tile read *never checked*. After running
+`analyze`: `checked_at` set, `refs_checked` 587, still 0 flagged — and now the
+100% is earned.
+
+**The third state, also measured.** Appending to `DECISIONS.md` and
+`DEV_HANDOFF.md` during this task moved 53 memories out of `verified`: the tile
+read **91%** with a stale-toned bar. All 53 were severity LOW — *the file
+changed, but not within the cited lines* — which is the overlap test working as
+designed, since the edits were appends and no cited line moved.
+
+**A judgment call inside that.** LOW findings count as not-verified, which is
+why two appended documents cost nine percentage points. The alternative is to
+count only HIGH and MEDIUM, so that "freshness" means "no cited line has moved".
+This ADR takes the stricter reading: `verified` means **the pinned
+`content_hash` still matches the file on disk**, and once it does not, the claim
+is unverified whatever the overlap test says about it. The looser reading would
+let a tile show 100% for a memory whose source file demonstrably changed since
+it was pinned. If this proves too noisy on a busy repository, the fix is to
+*show the severity split* in the tile rather than to drop LOW from the
+denominator — the figure should not become more flattering than the evidence.
+
+**Consequences.** The freshness tile is honest but reads "never checked" on a
+fresh install, which is less impressive than a green 100%. That is the intended
+trade. Anything that makes the tile show a percentage before a check has run is
+a regression, and `test_freshness_states.py` fails if the gate is removed.
+
+**Also settled here.** `/health` now reports `db_bytes`, summing the main
+database with its `-wal` and `-shm` sidecars: in WAL mode the log routinely
+holds megabytes not yet checkpointed, so reporting only the `.db` understates
+what Kernote occupies.
+
+---
+
+## ADR-0038 — The startup screen reports three checks, not five ticks
+
+**Status:** accepted (2026-11-14)
+
+**Context.** `design/STARTUP_ANIMATION_BRIEF.md` specified a boot sequence —
+`DATABASE`, `MEMORY ENGINE`, `RETRIEVAL INDEX`, `LOCAL SERVICES`, then
+`WORKSPACE READY` — with the constraint, in the brief's own words, that `[OK]`
+must never appear before the corresponding service is ready.
+
+Taken seriously, that constraint deletes most of the sequence. Checking what
+each line could actually mean in this architecture:
+
+| Line | Signal |
+|---|---|
+| `DATABASE` | **Real.** `/health` answers only once migrations have run, and reports the schema version. |
+| `MEMORY ENGINE` | **None.** Ingestion, extraction and review are library code in the API process. Nothing starts, so nothing can become ready. |
+| `RETRIEVAL INDEX` | **Conflated.** FTS5 exists the moment the schema does. Semantic search is opt-in and may legitimately be absent. |
+| `LOCAL SERVICES` | **Undefined.** The API answering *is* the service, and the UI cannot render before it. |
+| `WORKSPACE READY` | Fair, once the rest resolve. |
+
+**Decision.** Print the lines that have a signal, and let a line say something
+other than OK.
+
+```
+[ OK ]  DATABASE          schema v7 · fts5
+[ OFF ] SEMANTIC INDEX    opt-in, not enabled
+[ OK ]  WORKSPACE         1 project
+WORKSPACE READY
+```
+
+- `MEMORY ENGINE` and `LOCAL SERVICES` are **dropped**. A tick over nothing is
+  a decoration that happens to be shaped like a fact.
+- FTS5 is **folded into the database line** rather than given its own. It is
+  implied by the schema version, and a separate line would imply a separate
+  check that is not being made.
+- The semantic line reads **`[ OFF ] opt-in, not enabled`** when embeddings are
+  disabled — which is the default. It is a correct state, not a failure and
+  not an OK. On the machine this was built on it is exactly what the screen
+  says, because embeddings are off here.
+
+**Why this matters more than a splash screen.** Kernote's entire argument is
+that a confident green status over an unverified claim is worse than an honest
+blank. A boot sequence that prints `[OK] MEMORY ENGINE` over a service that
+does not exist would be the product doing, in its first second on screen, the
+thing it exists to stop. The five-tick version was available and looks better.
+
+**Consequences.** Three lines where the brief asked for five, and one of them
+usually reads `OFF`. A failure holds its line at `[ .. ]` and then shows
+`STARTUP FAILED`; it does not block forever, because the dashboard's own error
+states name the failing call and offer a retry, and hiding those behind a
+permanent splash would help nobody.
+
+**The honest limitation**, already noted in the brief: locally `/health` answers
+in milliseconds, so in the normal case the reveal is paced by its own
+animation and the status lines are decoration that happens to be true. The
+live-status machinery only earns its keep when something is slow or broken.
+This is a startup flourish with an honesty constraint, not a progress bar, and
+`MIN_MS = 1250` is the only invented duration in it.
+
+---
+
+## ADR-0039 — The memory graph draws recorded relationships, and the threshold is the feature
+
+**Status:** accepted (2026-11-14)
+
+**Context.** Memory Pulse and the Knowledge Graph need edges. The brief was
+explicit: *do not generate fake relationships or memory data.* Honouring that
+turned out to be a question about one number.
+
+**What relationships actually exist.** Four sources, and only one of them is
+dense:
+
+| Source | On this repository |
+|---|---|
+| `memory_links` (supersedes, refines, …) | **0 rows.** Written only on supersede and merge, neither of which has happened. |
+| `findings` naming two memories | **3**, of which 1 is open — a real conflict between two setup instructions. |
+| `memory_source_refs` | One citation per memory; no co-citation. |
+| `memory_entities` | **1,297 rows over 278 entities.** The only dense signal. |
+
+So the graph is entity co-occurrence, with the recorded links and findings
+layered on top as the interesting minority.
+
+**The problem with entity co-occurrence.** It is also the easiest way to invent
+meaning. The entity `docs` is attached to 123 memories here; drawn naively that
+is **7,503 edges** asserting that documentation mentions documentation. A graph
+like that is not wrong edge by edge — it is useless, and worse, it *looks*
+like a knowledge network.
+
+**Decision.** An entity may create edges only when it appears in at most
+`SPREAD_MAX = 8` memories, and the edge weight is its specificity,
+`1 / (memories − 1)`. This is IDF reasoning, which retrieval already relies on:
+a rare shared term identifies a subject, a common one identifies nothing.
+
+Measured on this repository:
+
+| Cap | Entities kept | Candidate edges |
+|---|---|---|
+| 3 | 40 | 72 |
+| **8** | **86** | **695** |
+| 12 | 107 | 1,671 |
+| 20 | 113 | 2,365 |
+
+Going from 8 to 20 adds 1,670 edges and no information.
+
+**Everything omitted is reported.** `limits` carries `omitted_memories`,
+`omitted_edges` and `entities_too_common`, and both views print them. A graph
+that silently shows 160 of 587 records is lying by omission, which is the same
+failure as the freshness tile reading 100% unchecked (ADR-0037).
+
+**A bug this found, worth recording.** Node ranking by connectivity evicted the
+one open conflict: two claims that disagree usually share nothing else, so both
+memories had degree 1 and fell outside the 160-node cap — taking the single
+most interesting edge in the graph with them. Caught by reading the real
+response and noticing every edge was a `shares`. Nodes named by a finding or an
+explicit link now outrank well-connected ones, and
+`test_an_open_conflict_survives_the_node_cap` fails if that is undone.
+
+**On `@xyflow/react`.** The brief said to use the existing React Flow
+installation. **There was no existing installation** — absent from
+`package.json`, `node_modules` and every import. The first implementation was
+therefore SVG plus a deterministic force layout in ~150 lines.
+
+> **Reversed 2026-11-14 (same day), by the user, after a side-by-side
+> comparison** built in `design/reactflow-demo`. React Flow is now a product
+> dependency and `screens/KnowledgeGraph.tsx` renders with it. The layout is
+> unchanged and still ours — React Flow takes positions, it does not compute
+> them — so `lib/graphLayout.ts` survived the switch untouched.
+>
+> **The cost was mis-stated when the decision was made, and the real figure is
+> recorded here.** I estimated **+18 kB gzipped** by comparing the demo's
+> bundle (108 kB gz) against the app's (90 kB gz) and attributing the
+> difference to React Flow. That inference was wrong: the two bundles contain
+> different things — the demo has no router and no query layer, the app has
+> both plus eight screens — so the difference measured nothing in particular.
+>
+> Measured properly, by building the app twice with the screen stubbed out:
+>
+> | | without | with | cost |
+> |---|---|---|---|
+> | JS | 88.6 kB gz | 153.4 kB gz | **+64.8** |
+> | CSS | 6.0 kB gz | 8.4 kB gz | **+2.4** |
+> | total | 94.6 kB gz | 161.8 kB gz | **+67.2 kB gz** |
+>
+> That is **3.7× the estimate**, and a 71% increase in the shipped bundle, for
+> dragging, a minimap and `NodeToolbar`.
+>
+> **What the dependency actually buys**, recorded here because the comparison
+> folder it came from has since been deleted:
+>
+> - **Node dragging**, with edges following.
+> - **Pan and zoom with inertia**, fit-to-view, zoom controls.
+> - A **minimap** — genuinely useful at 160 nodes.
+> - Animated edges as a first-class prop, used for the non-`shares` kinds.
+> - `NodeToolbar`, which keeps a popup glued to its node through pan and zoom.
+>   This is the piece that would have been most tedious to hand-roll.
+> - Handles, connection gestures and nested groups: unused today, since the
+>   graph is read-only.
+>
+> Set against ~120 lines of SVG rendering it replaces — **not** the layout,
+> which was the part that took the work and which React Flow cannot do. The
+> narrow question was whether a minimap and dragging justify 36 packages and
+> the d3 chain in a product whose other screens carry no non-essential
+> dependencies. If the graph ever becomes *editable* — drawing a relationship
+> by dragging between two memories — the answer stops being close, because
+> that is precisely what the library is for.
+>
+> **Re-confirmed the same day, against the corrected figure.** The estimate was
+> withdrawn and the measured +67.2 kB put to the user, who chose to keep React
+> Flow knowing it. So this is a decision made twice: once on a wrong number and
+> once on a right one, and it came out the same way. Acceptable here because
+> Kernote is local-first — the bundle is served from the user's own machine, so
+> the usual argument against a 71% increase (someone on a slow connection
+> paying for it on first load) does not apply with the same force.
+
+**Consequences.** On a project with no analysis run and no shared entities the
+graph is empty, and says so with the reason. That is the correct output and it
+will look like a missing feature. The alternative — loosening the threshold
+until something appears — is how the picture becomes a decoration.
+
+---
+
+## ADR-0040 — An undo is a forward operation, not an erasure
+
+**Status:** accepted (2026-11-14)
+
+**Context.** `CLAUDE.md` requires a review flow for writes to canonical memory
+and forbids silent destructive merges. Approving a consolidation satisfied the
+first half — a human decides, and nothing is deleted — but not the second:
+once approved, there was no way back. The irony is that everything needed to
+reverse it was already preserved. `memory_revisions.snapshot_json` holds the
+complete record at every revision, source refs included, and `parent_id`
+chains them, so the pre-merge state is simply the parent of the revision the
+merge wrote. The lineage was there; the path to it was not.
+
+**Decision.** `undo_approval` restores the previous state by **writing new
+revisions**, and deletes nothing that records what happened.
+
+- The merge revisions **stay**. The history reads "merged, then unmerged",
+  because that is what occurred. Removing them would make the record claim the
+  merge never happened — the silent rewriting this project exists to prevent.
+- The original `accepted` feedback row **stays**, and the undo adds an
+  `undone` row beside it (migration 0008 extends the verdict CHECK). An
+  approval a human later took back is a far stronger signal than one never
+  made; recording the undo as `rejected`, or deleting the approval, would make
+  those two cases indistinguishable to any later tuning of the duplicate
+  thresholds.
+- The `supersedes` row in `memory_links` **is** deleted, because unlike the
+  revisions it is derived state asserting a relationship that is no longer
+  true — and leaving it would put a false edge in the knowledge graph
+  (ADR-0039).
+- The proposal returns to `pending` and its finding to `open`, so the question
+  is open again rather than silently settled.
+
+**It refuses rather than guesses.** Three cases, each of which would destroy
+something that is not part of the merge:
+
+1. **The keeper was edited after the merge.** Restoring the old wording would
+   discard that edit. This mirrors the guard `approve_proposal` already has in
+   the other direction, where a proposal is refused if its inputs changed
+   after the preview was built.
+2. **The absorbed record has since been superseded by something else**, so
+   this merge is no longer the most recent thing that happened to it.
+3. **Either record is gone.**
+
+**Consequences.** Undo is available only while the merge is still the latest
+thing to have happened to both records — deliberately narrow, because a
+"smart" undo that reconciles later edits would be guessing at a human's
+intent. When it refuses it says which record moved and why, leaving a manual
+edit as the way forward.
+
+A merge that leaves no trace in the UI cannot be undone however reversible it
+is underneath, so `GET /projects/{id}/proposals` gained a `status` filter and
+the review screen lists applied consolidations with the way back.
+
+---
+
+## ADR-0041 — A resolution records what it changed, because undo cannot infer it
+
+**Status:** accepted (2026-11-14)
+
+**Context.** ADR-0040 made approving a consolidation reversible. Resolving a
+*finding* — the other half of the review flow — was still one-way, which left
+the two actions asymmetric: one reversible, one not, with nothing in the UI
+explaining why.
+
+Resolving a finding as `rejected` or `resolved` flips any memory it names from
+`needs_review` back to `active` and stamps `last_verified_at`. Reversing a
+consolidation was possible because `memory_revisions.snapshot_json` preserves
+the full prior record. **These status flips write no revision**, so there was
+nothing to read back.
+
+**The tempting inference is wrong.** The obvious undo — "set every memory this
+finding names back to `needs_review`" — invents state. `resolve_finding` only
+touches memories that were in `needs_review` at the time; one that was already
+`active` was never affected by the resolution, and re-flagging it would create
+a review requirement no human ever asked for. The finding alone does not say
+which case applied, and by the time undo runs the evidence is gone.
+
+**Decision.** The resolution writes down its own effect. Migration 0009 adds
+`findings.effect_json`, holding one entry per memory actually flipped with its
+prior status and prior `last_verified_at`. Undo replays exactly that, and
+exactly that.
+
+The rest follows ADR-0040 unchanged: the finding returns to `open`, the
+original verdict stays in the feedback log with an `undone` row beside it, and
+nothing is deleted.
+
+**Two refusals.**
+
+1. **A resolution recorded before migration 0009 has no effect record.** Undo
+   says so and declines, rather than falling back to the guess this ADR exists
+   to reject. The honest remedy is to re-run analysis and raise the finding
+   again.
+2. **A finding closed by approving a consolidation must be reopened by undoing
+   that consolidation.** Reopening it directly would leave the merge applied
+   while its finding reads open — a conflict the queue claims is unresolved,
+   over two memories one of which no longer exists separately.
+
+Undo also skips any memory that has moved on since: if it is no longer
+`active`, something later decided its state, and that decision outranks this
+reversal.
+
+**Consequences.** Both review actions are now reversible and symmetric. The
+cost is a column and the discipline of writing the effect at decision time —
+which is the general lesson: **an operation that changes state without
+recording what it changed cannot be undone, however much lineage exists
+elsewhere.** Consolidation got this for free from revisions; finding
+resolution had to be given it explicitly.
+
+---
+
+## ADR-0042 — The desktop window is pywebview, and it is optional
+
+**Status:** accepted (2026-11-14)
+
+**Context.** With the API serving the built UI from one process, a desktop
+window became a thin piece of work rather than an architecture change. Three
+options were considered.
+
+| | |
+|---|---|
+| **Electron** | Ships a whole Chromium: ~150 MB before any of our code. Assumes a JavaScript backend, so Kernote's Python server would run as a supervised sidecar — a second process to start, stop and crash independently. |
+| **Tauri** | Small binaries and a system webview, but the same sidecar problem, plus a Rust toolchain in a project that has none. |
+| **pywebview** | Python. Runs **inside the same process** as the API, drives the operating system's webview, and adds a few MB. |
+
+**Decision.** pywebview, and **not** in `requirements.txt`. It lives in
+`requirements-desktop.txt`, because the product is fully usable with
+`just app` and a browser: the window adds a frame and nothing else, so it
+should not weigh on anyone who does not want it.
+
+`backend/kernote/desktop.py` starts the existing app on a daemon thread,
+waits for `/health`, then opens the window. Closing the window ends the
+process, because the server thread is a daemon.
+
+**It degrades rather than failing.** A platform webview ships by default on
+Windows (WebView2) and macOS (WKWebView), but on Linux it is a system package
+(`gir1.2-webkit2-4.1`) that may be absent, and a headless machine has no
+display at all. In those cases the launcher prints what is missing, prints
+the URL, and **keeps serving**. Being unable to open a window is not a reason
+to refuse to run.
+
+Three smaller choices, each because the alternative is worse:
+
+- **Readiness is checked before the window opens.** An empty webview with no
+  explanation is worse than a terminal line saying what went wrong.
+- **A busy port is diagnosed, not fought.** If Kernote already answers there,
+  the window points at the running instance; if something else holds the
+  port, it says so instead of starting a second copy on top.
+- **The missing-webview check runs first**, so the fallback message arrives
+  immediately rather than after a traceback from inside the GUI layer.
+
+**Consequences.** `just desktop` is a window on Windows and macOS out of the
+box, and on Linux after one apt package. This was **developed on a machine
+with no WebKit**, so the fallback path is the one that has actually been
+exercised end to end; the window itself is unverified here and needs a look
+on a machine that has a webview.
+
+This is not packaging. There is still no installer, no signing, and no
+bundle — `just desktop` runs from a checkout like everything else. That
+remains open, and the 314 MB virtualenv dominated by `onnxruntime`,
+`tree-sitter-language-pack` and `numpy` is the main obstacle.
+
+---
+
+## ADR-0043 — Backup by snapshot, restore by validation, export by JSON
+
+**Status:** accepted (2026-11-14)
+
+**Context.** The audit found that Kernote had **no backup, restore or export
+at all** — zero endpoints. For a product whose argument is that your
+knowledge stays on your machine, "and there is no way to get a copy of it"
+is a hole in the central promise, not a missing convenience.
+
+**Decision.** Three operations with three different jobs, deliberately not
+collapsed into one.
+
+**Backup is `sqlite3.Connection.backup()`, not a file copy.** Copying the
+file while the process runs can capture a torn page or miss committed data
+still in the write-ahead log. The online backup API takes a consistent
+point-in-time snapshot of a live database without stopping writers. A test
+asserts exactly that: a memory written *after* the snapshot is absent from
+it.
+
+**Restore validates before it destroys, and snapshots before it writes.**
+It is the only operation in Kernote that can lose data, so:
+
+- the file must contain `schema_meta`, `projects`, `memories` and
+  `memory_source_refs` before it is believed to be a vault — the dangerous
+  near-miss is not junk but *a real SQLite database that is not ours*, and
+  there is a test for that case specifically;
+- a **newer schema is refused, never downgraded**, because this build does
+  not know what those rows mean;
+- the current vault is **always snapshotted first**, so a restore somebody
+  regrets is itself reversible, and the path comes back in the response;
+- the API requires `confirm=true`, and the refusal message points at
+  `/restore/inspect`, which reports what a file contains without touching
+  anything.
+
+**The copy goes into the live connection**, via `source.backup(conn)`, not
+by swapping files on disk. Every open handle stays valid, there is no
+reopen, and it avoids the Windows case where an open file cannot be
+replaced — which matters, because Windows is a supported target (ADR-0009a).
+
+**Paths, not uploads.** The server is always on the same machine as the user
+and bound to loopback, so streaming a multi-megabyte database through HTTP
+would mean adding `python-multipart` and copying the file for no benefit. A
+native file dialog can fill the path in later.
+
+**Export is JSON and is not a restore format.** A snapshot is what you
+restore from; the export is what you read, diff, or carry somewhere that is
+not Kernote. It carries memories with their provenance and revision lineage,
+and deliberately omits the derived indexes, which are rebuildable by
+definition — on this repository that is 1.3 MB instead of 6.3 MB.
+
+**Measured on the real vault:** a 6.3 MB snapshot with `PRAGMA
+integrity_check` = `ok`, 587 memories, inspect reporting them without
+touching anything, and a 1.3 MB export carrying refs and revisions.
+
+**Consequences.** Backups accumulate in `<data_dir>/backups/` and nothing
+prunes them; at 6.3 MB each that is fine now and wants a retention rule
+before it is not. There is still no scheduled or automatic backup — this is
+the mechanism, not a policy.
+
+---
+
+## ADR-0044 — A rendered shortcut hint is a promise, and ⌘K is the only one made
+
+**Status:** accepted (2026-11-14)
+
+**Context.** The sidebar shipped a `⌘1` badge next to Overview. **Nothing
+handled it.** A grep of the whole UI found exactly one `keydown` listener —
+Escape, in the capture modal. It survived a redesign, a code review and a
+visual sign-off, because a plausible affordance is precisely the thing
+nobody thinks to test.
+
+That is the "decorative functionality pretending to be real" the product
+forbids, shipped by the product.
+
+**Decision.** The hint is deleted, a real command palette replaces it, and a
+test makes the class of bug non-recurring.
+
+**⌘K, not ⌘1-⌘9.** Numeric accelerators switch tabs in every browser.
+Kernote runs in a browser for most people today, so claiming those keys
+would either silently fail or steal something the user expects — worse than
+having no shortcut. `⌘K` collides with nothing and is the convention users
+already know. `test_no_hint_claims_a_browser_tab_shortcut` keeps the
+numeric ones out.
+
+**The palette navigates; it does not act.** Scan and Analyze are long and
+Capture needs a form, so the palette goes to the screen that owns the
+operation and lets it start there with its own confirmation and progress. A
+palette that kicks off a minutes-long scan from a fuzzy match would be worse
+than no palette. The two exceptions earn it: Capture opens the modal, and
+typed text becomes a real query on the Query Console.
+
+**The invariant.** `test_shortcuts_are_real.py` extracts every key hint
+drawn in JSX — stripping comments, which cost one false failure to get
+right — and asserts a handler exists for each. Same family as
+`test_accent_is_reserved` and `test_boot_claims_are_backed`: checkable in a
+grep, so it is checked.
+
+**Consequences.** Adding a hint now means adding a handler, which is the
+point. The test only understands `⌘X`, `⌃X` and `Ctrl+X`; a hint written
+some other way would slip past, and the fix then is to teach the regex
+rather than to drop the rule.
+
+---
+
+## ADR-0045 — A suggested relationship is a question; confirming it is the answer
+
+**Status:** accepted (2026-11-14)
+
+**Context.** `memory_links` has existed since migration 0001 and was empty
+in practice: only a consolidation ever wrote to it. So the knowledge graph
+derived its edges from entity co-occurrence **at read time** (ADR-0039),
+which makes the graph a view over a heuristic rather than over anything
+anybody agreed with. There was nowhere to record "yes, these two really are
+related", and — worse — nowhere to record "no, they are not", so a wrong
+suggestion returned every time the page was opened.
+
+**Decision.** A suggestion gets two possible answers, and both are durable.
+
+- **Confirm** writes a `memory_links` row with `origin='user'`. It survives
+  re-indexing, reaches agents reading the vault, and is distinguishable
+  from the links a merge leaves behind — one is a judgement, the other a
+  mechanical consequence, and collapsing them would lose which claims a
+  human actually stands behind.
+- **Dismiss** records the pair in `link_rejections` (migration 0010).
+  Without somewhere to put the negative answer, "dismiss" could only mean
+  "hide until reload", which is not a decision.
+- **Withdraw** removes a confirmed link and returns the pair to being a
+  suggestion — nothing was said to be *wrong*, so nothing is recorded as
+  such.
+
+**Only four kinds are assertable here**: `relates_to`, `contradicts`,
+`refines`, `depends_on`. `supersedes` and `duplicate_of` are deliberately
+excluded, because those change what the vault *serves*; they belong to the
+consolidation flow with its preview, approval and undo (ADR-0040), not to a
+button on a graph.
+
+**Direction, and a bug worth recording.** The first implementation stored
+every pair in sorted id order so a relationship would be one row either way
+round. That is correct for `relates_to` and `contradicts` and **silently
+wrong for `refines` and `depends_on`**, which are claims about which way it
+goes: "A depends on B" could be stored as the opposite. Symmetric kinds are
+now sorted and directional ones are not.
+
+A second bug came from the same assumption: `supersede_into` writes
+`(keeper, absorbed)` unsorted, so a sorted lookup **never found merge
+links**, and `remove` answered "no such link" instead of refusing to
+withdraw one. Lookups now check both orderings. Both were found by a test,
+not by reading the code.
+
+**Consequences.** The graph can now be curated, and `origin` tells the UI
+which edges to offer which action on. Confirmations and dismissals are per
+pair, so a large vault still needs a lot of clicking — a bulk flow, or
+suggestions ranked by confidence, is the obvious next step and is not built.
+
+---
+
+## ADR-0046 — Background work is one worker, and its state is not persisted
+
+**Status:** accepted (2026-11-14)
+
+**Context.** Scanning a repository and running every detector are the two
+slow operations. Both were blocking `POST`s: the window froze, the request
+could time out, and nothing could report progress. On the real vault a scan
+takes ~8 seconds and analysis re-checks 587 pinned refs.
+
+**Decision.** A queue drained by **one** worker thread.
+
+**One, deliberately.** SQLite takes a single writer and both operations are
+write-heavy, so two at once would not be faster — they would serialise on
+the database lock anyway, with the added chance of one timing out against
+the other. A queue makes that serialisation explicit instead of accidental.
+Submitting a second scan of a project returns the job already running, for
+the same reason.
+
+**State lives in memory, and that is the honest choice, not the lazy one.**
+A job record describes *this process*: it cannot survive a restart because
+the work it describes does not survive one either. Persisting it would mean
+reopening the app to a list of jobs that are not running and cannot be
+resumed — a stored record of something untrue, which is the one thing this
+codebase consistently refuses to do. What the work *produced* is already
+durable: scans write `scan_runs`, analysis writes findings and `drift_runs`.
+
+**The blocking endpoints stay.** `POST /scan` and `POST /analyze` are
+unchanged, because `scripts/demo.py`, the test suite and anyone scripting
+against the API depend on them, and for a small repository blocking is the
+simpler thing. The background variants are additive.
+
+**A failure is recorded, never swallowed.** The traceback goes to the log
+and the message to the job, because losing either makes a failed job
+unexplainable. A test asserts the worker survives a failing job — a dead
+worker would leave every later job queued forever.
+
+**Measured:** a background scan of the real project returned immediately,
+ran for 8 seconds across 177 files, and `/health` answered throughout.
+
+**Consequences.** No cancellation and no progress percentage — a job is
+queued, running, done or failed. Both are real limitations: a scan of a
+very large repository cannot be called off, and "running" is all the UI can
+say while it waits.
+
+---
+
+## ADR-0047 — Suggestions are ranked by summed specificity, and there is no "confirm all"
+
+**Status:** accepted (2026-11-15)
+
+**Context.** ADR-0045 made a relationship answerable. It did not make 967
+of them answerable: confirming pairs one at a time by clicking nodes in a
+graph is not a workflow, and the audit called this out as the obvious next
+step.
+
+**The ranking is the feature.** The graph scores each shared entity
+separately and keeps the best one per pair (ADR-0039), so two memories
+sharing **three** rare files look identical to two sharing one. That is
+backwards — repeated specific overlap is the strongest evidence available
+here. The score is the **sum** of `1/(n-1)` across everything a pair
+shares, so three rare entities outrank one, and a single very rare entity
+still beats several vague ones.
+
+Measured on the real vault, the top suggestion scores **9.34** (two
+dependency lists sharing four packages) against a floor of 0.17.
+
+**Three exclusions, each because the alternative wastes the user's time.**
+A pair already linked, a pair already dismissed, and **a pair the review
+queue already owns** — an open duplicate or conflict finding has a better
+answer waiting than "related", and listing it here would be a second queue
+competing for the same decision. Without that last one the ranking put
+those pairs at the top, because near-identical memories share the most
+entities.
+
+**Identical titles are flagged, not hidden.** 50 pairs in the real vault
+have the same title and no duplicate finding. "Related" is probably the
+wrong answer for them, so the row says `same title — check for duplicate`
+rather than being quietly filtered out or quietly recommended.
+
+**There is no "confirm all".** Agreeing to several hundred relationships in
+one click would record a judgement nobody made — the precise failure this
+product spends its effort avoiding. Selection is explicit and the batch
+applies only what was ticked.
+
+**A batch is not a bulk writer.** Every decision goes through
+`links.confirm` / `links.dismiss`, so every guard still holds: a batch
+cannot assert `supersedes`, cannot link across projects, cannot dismiss a
+recorded link. A decision that fails is **reported, not fatal** — forty
+answers where three refer to a memory archived meanwhile should apply
+thirty-seven and say which three, rather than failing wholesale and making
+the user find them.
+
+**Consequences.** The feed answers one project at a time and has no
+keyboard flow; triaging 967 suggestions is still a lot of clicking, just
+ordered clicking now. It also surfaced a real weakness elsewhere: four of
+the five strongest suggestions are same-title pairs the duplicate detector
+never flagged, which says more about `maintain/duplicates.py` than about
+this ranking.
+
+---
+
+## ADR-0048 — Identical citations are not nesting; and an "exact duplicate" pass that measured nothing
+
+**Status:** accepted (2026-11-15)
+
+**Context.** Yesterday's ranked-suggestion work (ADR-0047) surfaced 50 pairs
+of memories with identical titles that the duplicate detector had never
+flagged, and the handoff recorded that as "a real weakness in
+`maintain/duplicates.py`". **That claim was mostly wrong, and the
+investigation is worth recording because of how wrong.**
+
+**What the 50 actually were**, measured on the real 932-memory vault by
+replaying detection against copies:
+
+| | |
+|---|---|
+| 30 | **Stale findings.** The last analysis ran before a scan added 345 memories. Flagged the moment analysis ran again — no defect at all. |
+| 14 | Excluded by the parent/child nesting guard. |
+| 5 | Genuinely nested: one memory's citation inside the other's. Correct. |
+| 1 | Bodies genuinely differ, below the body threshold. Correct. |
+
+So the headline number was **90% a stale index**, not a detector failure.
+
+**The real bug, which was inside that 14.** `_is_nested` tested containment
+with `<=` on both bounds, which is also true when the two ranges are
+**identical**. Two memories citing exactly the same lines of the same file
+were therefore classified as "a section and the block inside it" — when
+they are the same region extracted twice, the clearest duplicate there is.
+**9 of the 14 were this.** The guard built to prevent a false positive was
+causing a false negative.
+
+One line: identical ranges are skipped before the containment test. Flagged
+same-title pairs went **30 → 38**, candidates 49 → 93.
+
+**And a change that was reverted on measurement.** Before finding the real
+cause, an "exact duplicate" pass was added: group every memory by
+`(type, content_fingerprint)` and flag identical groups directly, on the
+reasoning that exact duplication should be found by hashing rather than by
+pairwise comparison and should not depend on bucket limits. It is a
+defensible idea and it is **gone**, because with the nesting fix in place it
+changed nothing measurable:
+
+| | candidates | proposals | same-title pairs flagged |
+|---|---|---|---|
+| nesting fix only | 93 | 91 | 38 of 50 |
+| nesting fix + exact pass | 93 | 91 | 38 of 50 |
+
+Sixty-eight lines that duplicated work the existing pass already did. The
+same standard ADR-0036 applied to the per-file retrieval cap: a change that
+does not measure well is reverted, however reasonable it sounded.
+
+**Consequences.** `_CLIQUE_LIMIT` still means a large bucket compares each
+member only against its most important one, so two duplicates that are both
+non-canonical are still not compared *as a pair* — but each is compared
+against the canonical, so both surface for review, which is what the limit
+was designed to trade for. The remaining 12 unflagged pairs are the 5
+genuine nestings, the 1 with differing bodies, and 6 that need a re-run of
+analysis.
+
+---
+
+## ADR-0049 — A re-scan updates the vault; it does not copy it
+
+**Status:** accepted (2026-11-15)
+
+**Context.** Scanning a project twice roughly doubled its memories. The
+idempotency check (`exists_same_claim`) keyed on the **file's** content
+hash, so a file was either untouched — skip everything extracted from it —
+or changed — re-create everything extracted from it. Editing one paragraph
+of a document therefore re-created every memory that document had produced.
+
+Measured on this repository: a second scan after a day of documentation
+edits created **345 memories while only 24 new files appeared**, taking the
+vault from 587 to 932 and leaving **91 duplicate proposals** behind. All 91
+pairs straddled the two scans, and the vault contained **zero superseded
+memories**. The duplicate detector was doing cleanup for the ingest
+pipeline — and ADR-0048's nesting fix was, in hindsight, making that cleanup
+work better rather than addressing why it was needed.
+
+**Decision.** Three outcomes per extracted claim, and only the third is a
+new memory.
+
+1. **The file is byte-identical** to a capture this claim already cites —
+   nothing to do. The existing cheap path, unchanged.
+2. **The file changed, but we already hold this claim.** Identity is
+   `(project, title, file)`: the section heading or ADR name in the document
+   it came from, which survives edits to the body.
+   - *Same wording, moved lines* → **re-pin** the citation and leave the
+     record alone. No revision is written, because the claim did not change;
+     what changed is where it lives. Without this the memory would keep a
+     citation pointing at the old line range and read as permanently stale.
+   - *New wording* → **supersede**. The old reading keeps every byte, gains
+     `superseded_by` and stays fetchable forever (MEMORY_MODEL invariant 5).
+     What changes is which reading is served.
+3. **Genuinely new** → create.
+
+`ScanResult` now reports `memories_superseded` and `memories_repinned`
+alongside `memories_created`, because a healthy re-scan of a maintained
+project should mostly report the first two. A scan that reports hundreds of
+*created* memories is the symptom this ADR exists to make visible.
+
+**Measured after the fix**, on `samples/eval-repo`:
+
+| scan | created | superseded | re-pinned |
+|---|---|---|---|
+| fresh | 51 | 0 | 0 |
+| nothing changed | 0 | 0 | 0 |
+| one section appended | **1** | 0 | 7 |
+| one section edited | 0 | **1** | 7 |
+
+**Ambiguity is refused, not guessed.** `find_same_claim` returns nothing
+when more than one live memory matches the identity, so two sections in one
+file sharing a heading fall back to creating a record. Superseding the wrong
+one would retire a claim nobody retired; a duplicate is the worse-looking
+outcome and the safer one, and the duplicate detector will raise it for
+review.
+
+**A behaviour change this causes.** Editing a cited file *and re-scanning*
+no longer leaves a staleness finding, because the claim has been refreshed
+from the very source the finding would have pointed at. Drift still fires
+for the ordinary case — a file edited **without** a re-scan — which is what
+`test_drift_spike.py` covers. One test in `test_stage6_review.py` encoded
+the old expectation and was updated rather than worked around.

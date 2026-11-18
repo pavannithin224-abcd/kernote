@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     # The Vite dev origin is the only allowed browser origin.
     cors_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
 
+    # The built frontend, served by this same process so Kernote runs as one
+    # command on one port (Q4). `None` means "look beside the repository";
+    # a packaged build sets KERNOTE_WEB_DIST to wherever it put the assets.
+    # When the directory does not exist the app simply serves no UI, which is
+    # the normal state during development -- Vite serves it on :5173 instead.
+    web_dist: Path | None = None
+
     # Scanner limits. Read-only always; these bound what is even read.
     max_file_bytes: int = 1_000_000
     max_files_per_scan: int = 20_000

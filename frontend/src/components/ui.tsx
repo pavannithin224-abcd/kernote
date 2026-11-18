@@ -1,39 +1,98 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react'
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 
 export function Panel({ title, children, right }: {
   title?: string; children: ReactNode; right?: ReactNode
 }) {
+  // The heading is in the same terminal register as `PanelTitle`: mono,
+  // small, upper case, tracked. This component is what the six pre-redesign
+  // screens render through, so changing it here brings them into the
+  // workbench language without restructuring any of them -- which is the
+  // brief's own instruction, not to rewrite working screens for style.
   return (
     <section
-      className="rounded-lg border overflow-hidden"
+      className="rounded border overflow-hidden"
       style={{ borderColor: 'var(--border)', background: 'var(--panel)' }}
     >
       {title && (
         <header
-          className="flex items-center justify-between gap-3 px-4 py-2.5 border-b"
+          className="flex items-center justify-between gap-3 px-3.5 py-2 border-b"
           style={{ borderColor: 'var(--border)' }}
         >
-          <h2 className="text-[13px] font-semibold tracking-tight">{title}</h2>
+          <h2
+            className="mono text-[11px] uppercase tracking-[0.14em]"
+            style={{ color: 'var(--text)' }}
+          >
+            {title}
+          </h2>
           {right}
         </header>
       )}
-      <div className="p-4">{children}</div>
+      <div className="p-3.5">{children}</div>
     </section>
   )
 }
 
-export function Badge({ children, tone = 'neutral' }: {
-  children: ReactNode; tone?: 'neutral' | 'info' | 'warn' | 'ok'
+/**
+ * The top of a screen: its name and one line saying what it is for.
+ *
+ * The six older screens each hand-rolled this as an 18px semibold sans
+ * heading, which reads as a web page; the redesigned screens put their name
+ * in the workbench register instead. One component so they agree, and so
+ * the `<h1>` every screen needs lives in exactly one place.
+ */
+export function ScreenHeader({ title, children, right }: {
+  title: string; children?: ReactNode; right?: ReactNode
 }) {
+  return (
+    <header className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h1
+          className="mono text-[12px] uppercase tracking-[0.16em]"
+          style={{ color: 'var(--text)' }}
+        >
+          {title}
+        </h1>
+        {children && (
+          <p className="mt-1 max-w-3xl text-[12px]" style={{ color: 'var(--muted)' }}>
+            {children}
+          </p>
+        )}
+      </div>
+      {right && <div className="shrink-0">{right}</div>}
+    </header>
+  )
+}
+
+export function Badge({ children, tone = 'neutral' }: {
+  children: ReactNode; tone?: 'neutral' | 'info' | 'warn' | 'ok' | 'rel' | 'stale'
+}) {
+  // One hue, one meaning. `rel` is a relationship between records -- a
+  // conflict or a duplicate -- and `stale` is a claim the code has moved out
+  // from under. Neither is the accent, which marks the one action a screen is
+  // for.
+  // The three semantic tones are *outlined and lit* rather than filled, which
+  // is how the reference mock distinguishes a record needing attention from a
+  // label describing one. Filled chips at this size read as buttons; an
+  // outline reads as a state. `neutral` and `info` stay flat on purpose --
+  // they label things, they do not ask for anything.
+  if (tone === 'warn' || tone === 'ok' || tone === 'rel' || tone === 'stale') {
+    return (
+      <span
+        className="neon-outline mono inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.1em] whitespace-nowrap"
+        style={{ '--neon': `var(--${tone})` } as CSSProperties}
+      >
+        {children}
+      </span>
+    )
+  }
+
   const map = {
     neutral: { bg: 'transparent', fg: 'var(--muted)', bd: 'var(--border)' },
     // `info` labels a category -- a memory's type, say. It used to be called
     // `accent` and used the accent colour, which made a label look like a
     // control. Reference material gets the neutral chip.
     info: { bg: 'var(--chip)', fg: 'var(--chip-text)', bd: 'transparent' },
-    warn: { bg: 'var(--warn-soft)', fg: 'var(--warn)', bd: 'transparent' },
-    ok: { bg: 'var(--ok-soft)', fg: 'var(--ok)', bd: 'transparent' },
   }[tone]
   return (
     <span
@@ -101,6 +160,11 @@ export function ErrorNote({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : String(error)
   return (
     <div
+      // `alert` announces without waiting for a pause, which is right: these
+      // appear in response to something the user just did and they report
+      // that it did not happen. Fixing it here covers every screen at once,
+      // including the ones with no other aria markup.
+      role="alert"
       className="rounded-md border px-3 py-2 text-[13px]"
       style={{ borderColor: 'var(--warn)', background: 'var(--warn-soft)', color: 'var(--warn)' }}
     >
@@ -185,5 +249,65 @@ export function NotYet({ stage, what, gate }: { stage: string; what: string; gat
         {gate}
       </p>
     </Panel>
+  )
+}
+
+
+/** Inline emphasis in a metadata line: the value the finding is about. */
+export function Neon({ tone, children }: {
+  tone: 'ok' | 'warn' | 'rel' | 'stale' | 'accent'; children: ReactNode
+}) {
+  return (
+    <span className="neon-text mono" style={{ '--neon': `var(--${tone})` } as CSSProperties}>
+      {children}
+    </span>
+  )
+}
+
+/** A lit proportion bar. `pct` is 0-100; the track stays unlit. */
+export function Bar({ pct, tone }: { pct: number; tone: 'ok' | 'warn' | 'rel' | 'stale' }) {
+  return (
+    <span
+      aria-hidden
+      className="inline-block h-[5px] w-[72px] shrink-0 overflow-hidden rounded-full align-middle"
+      style={{ background: 'var(--chip)' }}
+    >
+      <span
+        className="neon-bar block h-full rounded-full"
+        style={{ width: `${Math.max(0, Math.min(100, pct))}%`, '--neon': `var(--${tone})` } as CSSProperties}
+      />
+    </span>
+  )
+}
+
+/**
+ * A status dot: the tone's colour, and the shared glow. Like every other
+ * lit element it reads `--glow-blur` / `--glow-alpha` through `.neon-bar`,
+ * so it lights up in the dark and goes flat in daylight.
+ */
+export function Dot({ tone = 'ok' }: { tone?: 'ok' | 'warn' | 'rel' | 'stale' | 'muted' }) {
+  const colour = tone === 'muted' ? 'var(--muted)' : `var(--${tone})`
+  return (
+    <span
+      aria-hidden
+      className="neon-bar inline-block size-[6px] rounded-full align-middle"
+      style={{ '--neon': colour } as CSSProperties}
+    />
+  )
+}
+
+/** A section heading in the terminal register: small, spaced, upper case. */
+export function PanelTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 mb-2.5">
+      <h2 className="mono text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text)' }}>
+        {children}
+      </h2>
+      {right && (
+        <div className="mono text-[11px]" style={{ color: 'var(--muted)' }}>
+          {right}
+        </div>
+      )}
+    </div>
   )
 }

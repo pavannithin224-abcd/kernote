@@ -187,11 +187,143 @@ action a screen is for.
 Measured against this repository: Memories 546, **Needs review 3**, Source files
 149, Captures 137.
 
+## Done: the dashboard redesign (2026-11-14)
+
+Built to `design/DASHBOARD_BRIEF.md` against the supplied mock. Four panels,
+every number read from the API: Intelligence Queue (findings + proposals, with
+Review / Resolve / Merge wired through), Project Memory Ledger, Local System,
+Recent Activity. Nothing is a placeholder — where a figure does not exist the
+panel says so rather than inventing one. The brief's "freshness %" tile is
+still absent for that reason: there is no defined denominator yet.
+
+### The accent rule was re-expressed, not deleted
+
+The brief predicted this collision, and it landed. The approved identity makes
+cyan the *brand* hue — the `note_` of the wordmark, the rule beside a section
+heading, the line marking the active nav item — while `test_accent_is_reserved`
+forbade any file but `ui.tsx` from naming `--accent` at all. Both could not
+stand.
+
+What made the old accent useless was never *naming* it; it was **filling** nine
+different surfaces with it, so nothing read as pressable. So the rule now says
+exactly that: cyan may draw a line or set type anywhere, but only `Button` may
+fill a surface with it. All six remaining uses are a text colour, a border or an
+`inset` box-shadow; the only fill in the app is the Capture Memory button. The
+new rule was checked by planting `background: 'var(--accent)'` in a screen and
+confirming the test caught it. The two companion assertions — one primary action
+per screen, every theme defines every token — are unchanged.
+
+### 1366px
+
+Verified by arithmetic, not by eye: the Chrome extension was not reachable, so
+this was not seen rendered at that width. At a 1366px viewport the sidebar is
+`lg:w-60` (240px), leaving 1126px; `lg:px-6` takes 48px, so the content track is
+1078px. The dashboard's `xl` two-column grid engages (1366 > 1280) with a right
+rail of `clamp(260px, 24vw, 340px)` = 328px and a 12px gap, leaving 738px on the
+left. The ledger's four columns need about 440px, so there is room.
+
+One real defect surfaced while doing that sum. The project-name cell carried
+`truncate max-w-[180px]`, which is **inert on an auto-layout table cell** —
+browsers ignore `overflow: hidden` there — so a long name would have widened the
+column and pushed the panel past its track at exactly this width. The table is
+now `table-fixed` with an explicit `colgroup`, and the name truncates inside a
+block span. It is the only table in the app.
+
+## Done: the three held-back tiles (2026-11-14)
+
+The brief asked for a freshness %, a database size and per-project freshness
+bars. All three were left out of the redesign because none could be computed
+without inventing a number; all three are now in. The reasoning is ADR-0037 —
+freshness is **three states**, and "never checked" is one of them, because the
+naive percentage reads 100% for a project nobody has analyzed.
+
+Visually this cost one ledger column (a 40px bar plus the figure, 116px) and one
+Local System row. The bar is `--ok` when nothing is flagged and `--stale` when
+something is, which is the first use of the stale red outside a finding badge —
+appropriate, since that is exactly what it is reporting. A never-checked project
+gets a muted dot and words, no bar: there is no proportion to draw.
+
+## Done: the neon treatment (2026-11-14)
+
+The first build was correct and under-lit: it used the mock's palette but not
+its *treatment*. Closing that gap, driven by a side-by-side with the reference
+crop.
+
+**The mechanism is one pair of tokens, not a pile of shadows.** `--glow-alpha`
+and `--glow-blur` are theme values: 45% / 9px in the dark, **0% / 0px in
+daylight**. Three classes consume them — `.neon-outline`, `.neon-bar`,
+`.neon-text` — and an element opts in by naming its hue, `style={{ '--neon':
+'var(--rel)' }}`. In the light theme `color-mix` at 0% yields transparent, so
+every glow rule becomes a no-op rather than something that needs overriding.
+Glow on white reads as a printing fault; this way the light theme never has to
+fight it.
+
+**What changed visually**
+
+- **Badges are outlined and lit, not filled.** A filled chip at 10px reads as a
+  button; an outline reads as a state. `neutral` and `info` stay flat, because
+  they label things rather than ask for anything.
+- **The queue header counts carry their own hues**, so the header is a legend
+  for the rows under it.
+- **Record ids glow in the relationship violet.** On a conflict or duplicate
+  row the two ids *are* the content.
+- **Freshness bars are thicker (5px), lit, and share one `Bar` primitive** with
+  everything else that draws a proportion.
+- **A ledger summary line**: total memories, aggregate freshness, pending index.
+
+**The summary line obeys ADR-0037.** It averages only projects that have been
+checked, and prints "(n unchecked)" beside the figure rather than quietly
+folding unchecked projects in at 100%. With no checked project it reads
+"freshness not checked". Pending index only appears where semantic search is
+actually on.
+
+**Contrast was computed, not eyeballed** — necessary because transparent badges
+lose the soft background that was previously doing some of the work. All five
+hues clear 4.5:1 against both the panel and the page in both themes, at the
+10px badge size: dark ok 14.83, warn 10.39, accent 11.97, rel 6.73, stale 6.55;
+light 5.42 to 7.10.
+
+**A guard hole opened and was closed in the same change.** `.neon-bar` fills
+with whatever `--neon` names, so binding `--neon` to the accent would fill a
+surface with the action colour without the word `background` appearing
+anywhere. `test_accent_is_reserved` now rejects that binding too. A guard a
+refactor can walk around is worse than no guard, because it still reads as
+enforcement.
+
+**Not taken from the mock:** its numbers (2,481 memories, 94% fresh, `PR #482`)
+are invented, and the `sort: freshness ↓` control is not wired to anything.
+Real data stays; a sort control can be added when it actually sorts.
+
+## Done: the startup reveal (2026-11-14)
+
+Built to `design/STARTUP_ANIMATION_BRIEF.md`; the five questions that brief
+left open are answered at the end of it, and the status lines — the one real
+argument in the whole feature — are ADR-0038.
+
+The thing worth repeating here: **the sequence prints three lines, not five**,
+and on this machine the middle one reads `[ OFF ] SEMANTIC INDEX  opt-in, not
+enabled`, because embeddings are switched off. The brief asked for five green
+ticks. Two of the five had no service behind them at all. A boot screen that
+printed `[OK] MEMORY ENGINE` over library code would be Kernote doing, in its
+first second on screen, exactly the thing it exists to stop.
+
+Visually it reuses what is already here: the grid background, the terminal
+wordmark with its blinking cursor, the three palette hues for nodes (cyan
+connections, green active, violet relationships), and the glow tokens, so the
+nodes are lit in the dark and flat in daylight like everything else.
+
 ## Remaining order
 
 1. ~~Accent discipline~~ — done, above.
 2. ~~Dashboard pilot~~ — done, above.
-3. **Everything else waits** on seeing the pilot, and on the library list.
+3. ~~Dashboard redesign~~ — done, above. Never checked at 1366px in a browser;
+   the arithmetic stands in for it.
+4. ~~The three held-back tiles~~ — done, above. Also unseen.
+5. ~~The neon treatment~~ — done, and **confirmed by the user in the running
+   app**. The dashboard track is closed.
+6. ~~The logo reveal animation~~ — done, and **confirmed by the user in the
+   running app**. Both tracks are closed.
+7. **Everything else waits** on seeing the pilot, and on the library list.
 
 What I will not do is a blind pass across all seven screens. They hold real
 density — a review queue with forty findings, a memory with eleven source refs

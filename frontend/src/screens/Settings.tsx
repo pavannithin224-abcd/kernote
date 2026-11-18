@@ -2,7 +2,217 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Button, Citation, Empty, ErrorNote, Panel, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader, Stat } from '../components/ui'
+
+function bytes(n: number | undefined): string {
+  if (n === undefined) return '—'
+  if (n < 1024) return `${n} B`
+  const units = ['KB', 'MB', 'GB']
+  let v = n / 1024
+  let i = 0
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024
+    i += 1
+  }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`
+}
+
+/**
+ * Where the data is, and what leaves the machine.
+ *
+ * Every line here reports something the system already knows — the database
+ * path and size come from `/health`, the embedding state from the project's
+ * own status. Nothing is asserted that is not checked, which is why there
+ * is no "encrypted" badge and no "0 trackers" counter.
+ */
+function DataAndPrivacyPanel() {
+  const { projectId } = useProject()
+  const qc = useQueryClient()
+  const health = useQuery({ queryKey: ['health'], queryFn: api.health })
+  const emb = useQuery({
+    queryKey: ['embeddings', projectId],
+    queryFn: () => api.embeddingStatus(projectId!),
+    enabled: !!projectId,
+  })
+
+  const [restorePath, setRestorePath] = useState('')
+  const [confirming, setConfirming] = useState(false)
+
+  const backup = useMutation({ mutationFn: () => api.takeBackup() })
+  const inspect = useMutation({ mutationFn: (p: string) => api.inspectBackup(p) })
+  const restore = useMutation({
+    mutationFn: (p: string) => api.restoreBackup(p),
+    onSuccess: () => {
+      setConfirming(false)
+      qc.invalidateQueries()
+    },
+  })
+
+  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div className="flex items-baseline justify-between gap-3 py-1.5">
+      <span className="mono text-[11px]" style={{ color: 'var(--muted)' }}>{label}</span>
+      <span className="mono min-w-0 truncate text-right text-[11px]">{children}</span>
+    </div>
+  )
+
+  return (
+    <Panel title="Data & privacy">
+      {health.isError ? (
+        <ErrorNote error={health.error} />
+      ) : (
+        <>
+          <Row label="database">
+            {health.isLoading ? '…' : health.data?.db_path}
+          </Row>
+          <Row label="size on disk">
+            {health.isLoading ? '…' : `${bytes(health.data?.db_bytes)} · includes the write-ahead log`}
+          </Row>
+          <Row label="network">
+            <span style={{ color: 'var(--ok)' }}>offline · no outbound calls</span>
+          </Row>
+          <Row label="semantic index">
+            {!projectId ? (
+              <span style={{ color: 'var(--muted)' }}>no project selected</span>
+            ) : emb.isLoading ? (
+              '…'
+            ) : emb.data?.usable ? (
+              `${emb.data.model_id.split('/').pop()} · ${emb.data.dim}d · local`
+            ) : (
+              <span style={{ color: 'var(--muted)' }}>
+                off · enabling downloads ~{emb.data?.download_mb ?? 90} MB once
+              </span>
+            )}
+          </Row>
+        </>
+      )}
+
+      <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+        <div
+          className="mono mb-2 text-[10px] uppercase tracking-[0.14em]"
+          style={{ color: 'var(--muted)' }}
+        >
+          Backup
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => backup.mutate()} disabled={backup.isPending}>
+            {backup.isPending ? 'copying…' : 'Take a backup'}
+          </Button>
+          <a
+            href="/api/v1/backup/download"
+            className="mono rounded border px-2 py-1 text-[11px]"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+          >
+            Download a copy
+          </a>
+          {projectId && (
+            <a
+              href={`/api/v1/projects/${projectId}/export`}
+              className="mono rounded border px-2 py-1 text-[11px]"
+              style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            >
+              Export as JSON
+            </a>
+          )}
+        </div>
+
+        {backup.isError && <div className="mt-2"><ErrorNote error={backup.error} /></div>}
+        {backup.data && (
+          <p className="mono mt-2 text-[11px]" style={{ color: 'var(--ok)' }}>
+            {bytes(backup.data.bytes)} written to {backup.data.path}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-3 border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+        <div
+          className="mono mb-2 text-[10px] uppercase tracking-[0.14em]"
+          style={{ color: 'var(--muted)' }}
+        >
+          Restore
+        </div>
+        <p className="mb-2 text-[12px]" style={{ color: 'var(--muted)' }}>
+          Replaces every memory in this vault. The current one is snapshotted first,
+          and you will be told where it went.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={restorePath}
+            onChange={(e) => {
+              setRestorePath(e.target.value)
+              setConfirming(false)
+            }}
+            placeholder="/path/to/kernote-backup.db"
+            aria-label="Path to a backup file"
+            className="mono min-w-0 flex-1 rounded border px-2 py-1 text-[11px]"
+            style={{ borderColor: 'var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+          />
+          <button
+            className="mono rounded border px-2 py-1 text-[11px]"
+            style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
+            disabled={!restorePath.trim() || inspect.isPending}
+            onClick={() => {
+              setConfirming(false)
+              inspect.mutate(restorePath.trim())
+            }}
+          >
+            {inspect.isPending ? 'checking…' : 'Check this file'}
+          </button>
+        </div>
+
+        {inspect.isError && <div className="mt-2"><ErrorNote error={inspect.error} /></div>}
+
+        {inspect.data && (
+          <div className="mt-2">
+            <p className="mono text-[11px]" style={{ color: 'var(--text)' }}>
+              {inspect.data.memories} memories · {inspect.data.projects} project
+              {inspect.data.projects === 1 ? '' : 's'} · schema v{inspect.data.schema_version}
+            </p>
+            {!confirming ? (
+              <button
+                className="mono mt-2 rounded border px-2 py-1 text-[11px]"
+                style={{ borderColor: 'var(--stale)', color: 'var(--stale)' }}
+                onClick={() => setConfirming(true)}
+              >
+                Restore from this file…
+              </button>
+            ) : (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="mono text-[11px]" style={{ color: 'var(--stale)' }}>
+                  This replaces the current vault. Sure?
+                </span>
+                <button
+                  className="mono rounded border px-2 py-1 text-[11px]"
+                  style={{ borderColor: 'var(--stale)', color: 'var(--stale)' }}
+                  disabled={restore.isPending}
+                  onClick={() => restore.mutate(inspect.data!.path)}
+                >
+                  {restore.isPending ? 'restoring…' : 'Yes, replace it'}
+                </button>
+                <button
+                  className="mono rounded border px-2 py-1 text-[11px]"
+                  style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {restore.isError && <div className="mt-2"><ErrorNote error={restore.error} /></div>}
+        {restore.data && (
+          <p className="mono mt-2 text-[11px]" style={{ color: 'var(--ok)' }}>
+            Restored {restore.data.memories} memories. The previous vault is at{' '}
+            {restore.data.safety_backup}
+          </p>
+        )}
+      </div>
+    </Panel>
+  )
+}
 
 function ScanConfigPanel() {
   const { projectId } = useProject()
@@ -170,12 +380,12 @@ export default function Settings() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight">Settings &amp; Evaluation</h1>
-        <p className="text-[12px]" style={{ color: 'var(--muted)' }}>
-          Measured retrieval quality against a labelled question set.
-        </p>
-      </header>
+      <ScreenHeader title="Settings & Evaluation">
+        Where your data lives, what it is indexed with, and measured retrieval
+        quality against a labelled question set.
+      </ScreenHeader>
+
+      <DataAndPrivacyPanel />
 
       <ScanConfigPanel />
 

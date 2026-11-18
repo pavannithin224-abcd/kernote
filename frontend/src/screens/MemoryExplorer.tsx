@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { TYPE_LABEL, api, citationOf, shortDate, type MemoryType } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Citation, Empty, ErrorNote, Panel } from '../components/ui'
+import { Badge, Citation, Empty, ErrorNote, Panel, ScreenHeader } from '../components/ui'
 
 const TYPES: MemoryType[] = [
   'project_fact', 'architecture', 'decision', 'procedure',
@@ -51,20 +51,19 @@ export default function MemoryExplorer() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="text-lg font-semibold tracking-tight">Memory Explorer</h1>
-        <p className="text-[12px]" style={{ color: 'var(--muted)' }}>
-          Every record shows where it came from and why it ranks where it does.
-        </p>
-      </header>
+      <ScreenHeader title="Memory Ledger">
+        Every record shows where it came from and why it ranks where it does.
+      </ScreenHeader>
 
       <div className="flex flex-col sm:flex-row gap-2">
         <input
+          aria-label="Filter memories by text"
           value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by text…"
           className="flex-1 rounded-md border px-2 py-1.5 text-[13px]"
           style={{ borderColor: 'var(--border)', background: 'var(--panel)', color: 'var(--text)' }}
         />
         <select
+          aria-label="Filter by memory type"
           value={type} onChange={(e) => setType(e.target.value)}
           className="rounded-md border px-2 py-1.5 text-[13px]"
           style={{ borderColor: 'var(--border)', background: 'var(--panel)', color: 'var(--text)' }}
@@ -73,6 +72,7 @@ export default function MemoryExplorer() {
           {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
         </select>
         <select
+          aria-label="Filter by memory status"
           value={status} onChange={(e) => setStatus(e.target.value)}
           className="rounded-md border px-2 py-1.5 text-[13px]"
           style={{ borderColor: 'var(--border)', background: 'var(--panel)', color: 'var(--text)' }}

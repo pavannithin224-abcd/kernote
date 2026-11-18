@@ -257,5 +257,11 @@ class ScanResult(BaseModel):
     files_skipped: int = 0
     captures_created: int = 0
     memories_created: int = 0
+    # A re-scan should mostly report these two, not `memories_created`:
+    # a claim whose wording changed is superseded, and one that merely moved
+    # has its citation re-pinned. Reporting them separately is what makes it
+    # visible when a scan is quietly duplicating the vault instead.
+    memories_superseded: int = 0
+    memories_repinned: int = 0
     skipped: list[SkippedFile] = Field(default_factory=list)
     secret_warnings: list[SecretWarning] = Field(default_factory=list)
