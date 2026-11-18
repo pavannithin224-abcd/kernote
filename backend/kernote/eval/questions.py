@@ -15,6 +15,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from .. import resources
+
 # A document that answers the question, as opposed to merely relating to it.
 RELEVANT_GRADE = 2
 
@@ -77,7 +79,7 @@ class QuestionSet(BaseModel):
 
 def default_path() -> Path:
     """`eval/questions.json` at the repository root."""
-    return Path(__file__).resolve().parents[3] / "eval" / "questions.json"
+    return resources.project_file("eval/questions.json")
 
 
 def allowed_root(question_set: QuestionSet) -> Path:

@@ -18,13 +18,14 @@ import re
 
 import structlog
 
+from ... import resources
 from ...domain.models import ClaimKind, Memory, MemoryType, SourceRef
 from ...domain.scoring import score_confidence, score_importance
 
 log = structlog.get_logger(__name__)
 
 METHOD = "rule:code_symbols"
-QUERIES_DIR = pathlib.Path(__file__).parent / "queries"
+QUERIES_DIR = resources.package_dir("ingest/extract/queries")
 
 # Extension -> language name used by both tree_sitter_language_pack and the
 # queries directory. Only languages with a query file are listed.

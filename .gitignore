@@ -41,3 +41,6 @@ credentials*
 .DS_Store
 Thumbs.db
 
+# PyInstaller output
+/build/
+/dist/

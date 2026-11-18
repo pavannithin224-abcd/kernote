@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import FileResponse, JSONResponse
 
+from . import resources
 from .api import deps
 from .api.routers import (
     admin,
@@ -124,7 +125,7 @@ def web_dist() -> Path | None:
     if settings.web_dist is not None:
         configured = Path(settings.web_dist)
         return configured if (configured / "index.html").is_file() else None
-    default = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    default = resources.project_file("frontend/dist")
     return default if (default / "index.html").is_file() else None
 
 

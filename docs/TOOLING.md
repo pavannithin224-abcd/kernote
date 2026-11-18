@@ -130,3 +130,32 @@ Reuse is the default, not a reflex. A package is rejected when any of these hold
 
 Every new dependency on a core path gets one line in this file saying what it
 replaced. If it replaced nothing, it does not belong here.
+
+## Packaging (2026-11-18)
+
+```bash
+just package      # -> dist/kernote/ , run dist/kernote/kernote
+```
+
+A PyInstaller bundle of the API, the built UI and the extractors: **211 MB**,
+dominated by `onnxruntime` (69 MB) and `numpy` (41 MB).
+
+**What is in it.** The migrations, the tree-sitter query files, the built
+frontend and the evaluation question set — all five source-relative paths now
+resolve through `kernote/resources.py`, which knows about `sys._MEIPASS`.
+Without that pairing the bundle starts, fails to find its migrations and dies
+with a traceback a user cannot act on; that was the first build's behaviour.
+
+**What is deliberately not in it.** The embedding model. It is a ~90 MB
+download, opt-in by design (ADR-0023), and bundling it would both treble the
+installer and switch on a feature the product keeps off. It is fetched at
+first use into the user's cache, exactly as when running from source.
+
+**Verified on the built binary**, not just the build log: schema migrated to
+v10 in a fresh data directory, the UI served from inside the bundle, a scan
+of `samples/eval-repo` producing 51 memories, analysis running every
+detector, and a question answered through FTS5.
+
+**Not done.** No code signing, so macOS and Windows will warn on first run;
+no installer wrapper (it is a directory you run from); and the build is
+per-platform — this one is Linux x86-64.

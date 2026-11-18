@@ -16,9 +16,11 @@ from pathlib import Path
 
 import structlog
 
+from .. import resources
+
 log = structlog.get_logger(__name__)
 
-MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+MIGRATIONS_DIR = resources.package_dir("db/migrations")
 
 
 def connect(db_path: Path) -> sqlite3.Connection:

@@ -28,6 +28,15 @@ app:
     PATH="{{node_bin}}:$PATH" npm --prefix frontend run build
     KERNOTE_CORS_ORIGINS='[]' {{py}} -m uvicorn kernote.main:app --app-dir backend --host 127.0.0.1 --port 8787
 
+# Build a self-contained binary into dist/kernote (~211 MB).
+# Needs the UI built first, which this does. The embedding model is NOT
+# bundled: it is a ~90 MB opt-in download (ADR-0023), and including it would
+# both treble the installer and turn on a feature the product keeps off.
+package:
+    PATH="{{node_bin}}:$PATH" npm --prefix frontend run build
+    backend/.venv/bin/pip install -q pyinstaller
+    backend/.venv/bin/pyinstaller kernote.spec --noconfirm
+
 # Kernote in its own window (needs backend/requirements-desktop.txt).
 # Falls back to serving in the terminal when the machine has no webview.
 desktop:
