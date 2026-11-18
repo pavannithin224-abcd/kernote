@@ -53,12 +53,23 @@ now points at `72d3c7f`.
 ### Known issues
 - A stale local `master` branch still points at `214b771`, an ancestor of
   `main`. Never pushed, harmless, not deleted without asking.
-- No GitHub Release object exists -- the notes are a file, not published.
+- `gh` 2.105.0 installed to `~/.local/bin` (checksum verified against the
+  official list; no root, nothing system-wide). Authenticated by the user
+  through the browser device flow; token scopes `repo`, `read:org`, `gist`,
+  `admin:public_key`.
 - The rendered page has still never been looked at in a browser.
 
+### Released
+`v0.1.0-rc.1` published at 2026-11-18T17:46:20Z from
+`docs/RELEASE_NOTES_v0.1.0-rc.1.md`, **marked pre-release** and not latest --
+confirmed by `/releases/latest` returning 404, so no badge or API consumer will
+read it as stable. The tag points at `72d3c7f`; this handoff entry is the
+commit after it. No binaries attached: the only build available here would be
+unsigned and Linux-only.
+
 ### Next safe task
-Create the GitHub Release from `docs/RELEASE_NOTES_v0.1.0-rc.1.md`, or open the
-repo page to confirm the animation plays.
+Open the repo page and confirm the WebP animation actually plays -- it is the
+one claim still resting on bytes-and-headers evidence rather than eyes.
 
 ## 2026-11-17 — The duplicate backlog cleared
 
