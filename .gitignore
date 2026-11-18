@@ -44,3 +44,8 @@ Thumbs.db
 # PyInstaller output
 /build/
 /dist/
+
+# Planning material that is not ours to publish
+Kernote_Project_Kickoff_Guide.pdf
+*.pdf
+*:Zone.Identifier

@@ -222,3 +222,7 @@ true rather than aspirational.
 - The agent-memory space is crowded and partly free. Kernote's claim is narrow
   and specific: knowledge **update** and **conflict resolution**, the two
   competencies published benchmarks show no system masters.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
