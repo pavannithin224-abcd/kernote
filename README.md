@@ -22,6 +22,20 @@ registry clearance — see `docs/PRODUCT_SPEC.md` §9. The mark in
 
 ---
 
+## Demo
+
+[![Kernote — 19 seconds](docs/brag_poster.jpg)](docs/brag.mp4)
+
+*19 seconds. Click to download and play — GitHub strips `<video>` tags from
+README files, so a repository-relative `.mp4` cannot play inline. To embed a
+real inline player, upload the file through a GitHub issue or PR comment and
+swap in the `user-attachments` URL it returns.*
+
+Music: *Wisps of Whorls* by [Kevin MacLeod](https://incompetech.com),
+licensed under [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/).
+
+---
+
 ## Status
 
 **Release candidate — all 9 stages complete** (Day 4 of a 25-day build
