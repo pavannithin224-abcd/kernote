@@ -5,6 +5,61 @@ Newest entry first.
 
 ---
 
+## 2026-11-18 — Published, and the README made true again
+
+Pushed to `github.com/pavannithin224-abcd/kernote` over SSH (the key on this
+machine was already registered; no token or password was handled). Local branch
+renamed `stage-2-app-foundation` -> `main`, so `main` is the default branch.
+
+### README drift corrected
+Six claims understated the product on what is now a public page: approval undo,
+the visual and accessibility passes, the packaged binary, the test count
+(411 -> 533), "planned MVP"/"Planned stack", and "Day 4" (day 13). Each was
+replaced with the limitation that is *actually* still true -- no screen-reader
+audit, unsigned binary with no installer, no batch approval for consolidations,
+Windows not re-run against this commit.
+
+### The demo plays inline
+GitHub's sanitizer strips `<video>` in every form -- tested against the
+`/markdown` API with repo `/raw/`, `raw.githubusercontent.com`, external and
+`user-attachments` URLs; all four returned `<p></p>`. An `<img>` survives, so
+the demo is a 293-frame animated WebP, **863 KB** at 1100px versus **8.9 MB**
+for the equivalent GIF. Verified rather than assumed: `raw.githubusercontent`
+serves it as `image/webp`, byte-identical to the local file, with all 293
+`ANMF` frames intact, and GitHub's rendered-README API returns the `<img>`
+with its `src` unchanged. `docs/brag.mp4` stays for audio, and the CC BY credit
+now names which file the music is in.
+
+### Attribution removed
+All 41 commits carried a `Co-Authored-By: Claude` trailer, which is what put
+Claude in the contributors list. Stripped with `git filter-branch --msg-filter`
+across every ref, backup refs deleted, reflog expired, repo gc'd, then
+force-pushed. Verified: 0 trailers in live history; the contributors API now
+lists one login with 42 contributions. Pre-rewrite bundle:
+`~/kernote-pre-attribution-20261118-173149.bundle` (3.3 MB, verified complete).
+
+### Verified at 72d3c7f (Linux/WSL2)
+| check | result |
+|---|---|
+| pytest | **533 passed, 7 skipped** |
+| ruff check / format | clean, 107 files formatted |
+| `npm run typecheck` | clean |
+| eslint | clean |
+| frontend build | succeeds; warns the 522 kB chunk exceeds Vite's 500 kB advisory (163 kB gzipped) |
+
+Release notes drafted at `docs/RELEASE_NOTES_v0.1.0-rc.1.md`. `v0.1.0-rc.1`
+now points at `72d3c7f`.
+
+### Known issues
+- A stale local `master` branch still points at `214b771`, an ancestor of
+  `main`. Never pushed, harmless, not deleted without asking.
+- No GitHub Release object exists -- the notes are a file, not published.
+- The rendered page has still never been looked at in a browser.
+
+### Next safe task
+Create the GitHub Release from `docs/RELEASE_NOTES_v0.1.0-rc.1.md`, or open the
+repo page to confirm the animation plays.
+
 ## 2026-11-17 — The duplicate backlog cleared
 
 The damage from the pre-ADR-0049 scanner, cleaned up. A backup was taken
