@@ -24,23 +24,22 @@ registry clearance — see `docs/PRODUCT_SPEC.md` §9. The mark in
 
 ## Demo
 
-[![Kernote — 19 seconds](docs/brag_poster.jpg)](docs/brag.mp4)
+<img src="docs/brag.webp" alt="Kernote: a cited answer, drift down to the hunk, and a conflict held open — 19 seconds" width="100%">
 
-*19 seconds. **Illustrative — the question and citations shown are made up
-for the video, not output from a real vault.** Click to download and play:
-GitHub strips `<video>` tags from README files, so a repository-relative
-`.mp4` cannot play inline. To embed a real inline player, upload the file
-through a GitHub issue or PR comment and swap in the `user-attachments` URL
-it returns.*
+*19 seconds, playing above. **Illustrative — the question and citations shown
+are made up for the video, not output from a real vault.** GitHub strips
+`<video>` tags from READMEs, so the inline version is an animation and has no
+sound; [`docs/brag.mp4`](docs/brag.mp4) is the same 19 seconds with audio.*
 
-Music: *Wisps of Whorls* by [Kevin MacLeod](https://incompetech.com),
-licensed under [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/).
+Music (in the `.mp4` only): *Wisps of Whorls* by
+[Kevin MacLeod](https://incompetech.com), licensed under
+[CC BY 4.0](http://creativecommons.org/licenses/by/4.0/).
 
 ---
 
 ## Status
 
-**Release candidate — all 9 stages complete** (Day 4 of a 25-day build
+**Release candidate — all 9 stages complete** (day 13 of a 25-day build
 targeting 2026-11-30), each stage followed by a defect sweep against real data.
 
 `scripts/demo.py` runs the whole product end to end and is the release gate:
@@ -52,16 +51,16 @@ evaluation, and a real process restart. It is verified from a clean clone.
 The app runs end to end: register a local project, scan it read-only, browse
 typed memories with line-exact provenance and revision history, ask questions
 and get cited evidence or an explicit "evidence not found", review drift and
-conflict findings, approve a consolidation with lineage preserved, and serve
-the result to a coding agent over a read-only MCP surface. All of it survives
-a restart.
+conflict findings, approve a consolidation with lineage preserved — and undo
+that approval — explore the relationship graph, and serve the result to a
+coding agent over a read-only MCP surface. All of it survives a restart.
 
 Retrieval quality is measured against a labelled question set rather than
 asserted — see [docs/EVALUATION.md](docs/EVALUATION.md). Read
 `docs/DEV_HANDOFF.md` for exactly where things stand, what is verified and
 what is not.
 
-## What it does (planned MVP)
+## What it does
 
 - **Scans** a repository read-only, under an allowlist that refuses secrets,
   binaries and build output, and explains every file it skipped.
@@ -93,7 +92,7 @@ what is not.
 No telemetry. No outbound network calls by default. Any remote provider is
 opt-in and must state what leaves the machine.
 
-## Planned stack
+## Stack
 
 React + TypeScript + Vite · Tailwind + shadcn/ui · FastAPI · SQLite with FTS5 ·
 local MiniLM embeddings via onnxruntime · Git CLI for deterministic drift
@@ -196,8 +195,10 @@ true rather than aspirational.
 
 ## Known limitations (kept honest from day one)
 
-- "Desktop-quality" describes UI craft, not a packaged desktop binary — the MVP
-  runs as a localhost app (ADR-0001).
+- The packaged binary (`kernote.spec`, PyInstaller) and its pywebview shell are
+  **not code-signed**, so both macOS and Windows will warn on first launch, and
+  there is no installer wrapper yet. Running from source stays the documented
+  path (ADR-0001).
 - Extraction is deterministic and rule-based by default, so recall is lower than
   an LLM pipeline would give; a model adapter is optional and additive (ADR-0006).
 - **Tested languages**: code symbols are extracted for Python, TypeScript, TSX
@@ -209,11 +210,15 @@ true rather than aspirational.
 - **Verified on Linux and native Windows** (ADR-0009a/0009b). Dependencies
   install from prebuilt wheels on both, the end-to-end demo passes on both, and
   a Windows scan produces the same 51 memories with the same retrieval metrics
-  as Linux. Linux: 411 pass. Windows: 402 pass, 3 fail — all three being
+  as Linux. Windows: 402 pass, 3 fail — all three being
   **Change Impact, which needs Git on `PATH`**. Drift, conflict, retrieval and
   the agent surface all work without Git, because drift diffs the stored
-  capture rather than calling `git diff`. The frontend build is untested on
-  Windows — no Node on that install.
+  capture rather than calling `git diff`. Windows was verified at an earlier
+  commit and has **not** been re-run against the current tag; the frontend
+  build is untested there, because that install has no Node. On Linux the
+  current tag runs **533 passed, 7 skipped** (5 skips need
+  `requirements-eval.txt`, which CI deliberately does not install; 2 are
+  corpus-dependent suggestion tests).
 - Retrieval answers are **extractive**, not generated prose. Kernote does not
   compete with frontier-LLM codebase chat on fluency; it competes on whether the
   citations are correct and the abstentions are honest. Measured on our own
@@ -230,11 +235,15 @@ true rather than aspirational.
   and the right document is first in 67% of those cases.
   `docs/EVALUATION.md` has the numbers; ADR-0032 explains why assertion stays
   lexical and ADR-0030 why the remaining gap is a centrality problem.
-- **Approval has no undo.** A consolidation merge preserves full lineage and
-  nothing is ever silently dropped, so the information survives — but there is
-  no one-click reverse of an approval.
-- **The UI is functional, not finished.** It shows real data and real error
-  states throughout, and a visual pass is deliberately still outstanding.
+- Consolidation approvals and finding resolutions **can be undone**, and the
+  round trip is verified on real vault rows rather than a fixture. What is
+  still missing is **batch** approval for consolidations — only relationship
+  links have it, so clearing a large duplicate backlog is one request per
+  proposal.
+- The UI has had its visual and accessibility passes and shows real data and
+  real error states throughout. It has **never been checked with a real screen
+  reader**, and the rendered result has not been reviewed in a browser by its
+  author — the automated checks are what stands behind it.
 - The agent-memory space is crowded and partly free. Kernote's claim is narrow
   and specific: knowledge **update** and **conflict resolution**, the two
   competencies published benchmarks show no system masters.
