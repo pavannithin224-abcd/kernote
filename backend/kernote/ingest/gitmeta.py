@@ -1,6 +1,6 @@
 """Git metadata via the Git CLI.
 
-CLAUDE.md requires the Git CLI and stable hashes. subprocess is invoked with an
+The project contract requires the Git CLI and stable hashes. subprocess is invoked with an
 argument list, never a shell string, and never with arguments derived from
 scanned content or model output.
 """
@@ -18,7 +18,7 @@ _TIMEOUT = 20
 
 def _git(root: Path, *args: str) -> str | None:
     try:
-        # S603/S607: using the Git CLI is a CLAUDE.md requirement. Arguments
+        # S603/S607: using the Git CLI is a the project contract requirement. Arguments
         # are a fixed list, never a shell string, and `args` is only ever
         # literals from this module plus a path -- never scanned content or
         # model output. PATH lookup of "git" is intentional and portable.

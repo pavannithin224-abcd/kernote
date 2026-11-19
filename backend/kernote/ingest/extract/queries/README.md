@@ -14,5 +14,5 @@ https://github.com/Aider-AI/aider) — the idea of per-language tag queries is
 theirs; these queries are written for Kernote's narrower needs.
 
 **A language is only supported once it has a query file and a passing test.**
-That is how `CLAUDE.md`'s "do not claim support for languages that have not
+That is how the project contract's "do not claim support for languages that have not
 been tested" becomes structural rather than a promise.

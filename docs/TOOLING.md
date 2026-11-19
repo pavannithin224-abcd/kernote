@@ -37,7 +37,7 @@ merely gets us to that line is borrowed.
 
 | Need | Package | Why this one | Replaces |
 |---|---|---|---|
-| API | `fastapi`, `uvicorn[standard]` | Per `CLAUDE.md` | — |
+| API | `fastapi`, `uvicorn[standard]` | Per the project contract | — |
 | Models / settings | `pydantic` v2, `pydantic-settings` | Schema validation of all structured output is a contract requirement | — |
 | Embeddings | **`fastembed`** | Qdrant's ONNX runtime wrapper: MiniLM at 384-d, **no torch**, batched, model hash-pinned. This *is* ADR-0004 already implemented and maintained | ~150 lines of hand-written `onnxruntime` + `tokenizers` glue |
 | Code symbols | **`tree-sitter`** + **`tree-sitter-language-pack`** | One package, 300+ grammars, returns symbols/imports/structure **with byte and line ranges** — exactly what provenance needs | per-language regex parsers (weeks of work, permanently wrong) |
@@ -53,7 +53,7 @@ merely gets us to that line is borrowed.
 | MCP | **`mcp`** (official SDK, FastMCP) | Never hand-roll JSON-RPC framing and the handshake | — |
 
 Git stays on the **Git CLI via `subprocess` with argument lists**, as
-`CLAUDE.md` requires. We borrow the *parsing* (`unidiff`), not the invocation.
+The project contract requires. We borrow the *parsing* (`unidiff`), not the invocation.
 `pygit2`/`GitPython` were rejected: a native dependency is exactly the Windows
 friction ADR-0003 and ADR-0004 exist to avoid.
 
@@ -79,7 +79,7 @@ file**, which is how we guarantee the product works with no ML stack.
 
 | Need | Package | Why |
 |---|---|---|
-| Core | `react`, `react-router`, `@tanstack/react-query` | Per `CLAUDE.md` |
+| Core | `react`, `react-router`, `@tanstack/react-query` | Per the project contract |
 | UI | `tailwindcss`, **shadcn/ui** (copy-in), `lucide-react` | shadcn is itself the borrow-the-code model |
 | Tables | **`@tanstack/react-table`** | Memory Explorer needs sorting/filtering/virtualization |
 | **Diff rendering** | **`react-diff-viewer-continued`** | Drift evidence and consolidation before/after previews. Hand-rolling side-by-side diff UI is days of work and a core screen |

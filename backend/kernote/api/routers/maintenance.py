@@ -1,7 +1,7 @@
 """Maintenance endpoints: run the detectors, read the review queue.
 
 Detection is explicit, not automatic on scan. Running analysis is cheap but it
-writes findings, and `CLAUDE.md` wants writes to be deliberate; it also keeps a
+writes findings, and the project contract wants writes to be deliberate; it also keeps a
 scan fast and a scan's meaning narrow ("what is in the repository") separate
 from analysis ("what looks wrong").
 """

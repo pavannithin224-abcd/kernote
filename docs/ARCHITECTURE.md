@@ -50,7 +50,6 @@ packaging change, not a rewrite: no browser-only assumptions in the data layer.
 
 ```
 kernote/
-├── CLAUDE.md                      project contract
 ├── README.md
 ├── docs/
 │   ├── PRODUCT_SPEC.md  ARCHITECTURE.md  ROADMAP.md

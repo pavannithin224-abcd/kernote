@@ -323,7 +323,6 @@ not a marketing figure.
 | [COMPETITIVE_LANDSCAPE](docs/COMPETITIVE_LANDSCAPE.md) | Who else ships this, and where the real gap is |
 | [SECURITY](SECURITY.md) | Threat model, what is and is not defended |
 | [DEV_HANDOFF](docs/DEV_HANDOFF.md) | Current state, what is verified and what is not |
-| [CLAUDE.md](CLAUDE.md) | The project contract for Claude Code |
 
 `Kernote` is a **provisional working name** pending trademark, domain and registry clearance ([spec §9](docs/PRODUCT_SPEC.md)).
 The mark in [`design/logo/`](design/logo/) needs the same clearance before public use.

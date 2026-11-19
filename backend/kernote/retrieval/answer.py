@@ -12,7 +12,7 @@ Three outcomes, and the third matters as much as the first:
                        asked about. Reported as weak rather than presented as
                        an answer.
 * `not_found`        — nothing retrieved. "Evidence was not found" is a correct
-                       outcome, not a failure (`CLAUDE.md`, memory quality rules).
+                       outcome, not a failure (the project contract, memory quality rules).
 
 Every item is labelled `evidence` (quoted from a source) or `inference` (a
 model-generated or derived interpretation), because the contract requires
@@ -37,7 +37,7 @@ log = structlog.get_logger(__name__)
 
 # How many content terms an item must mention to count as support. One is too
 # few: "what is the airspeed velocity of an unladen swallow" was reported as
-# `evidence_found` because CLAUDE.md contains "Do not **swallow** errors" -- a
+# `evidence_found` because the project contract contains "Do not **swallow** errors" -- a
 # single coincidental word out of four. Capped at the number of terms actually
 # asked, so a one-word question still works.
 _MIN_OVERLAP = 2

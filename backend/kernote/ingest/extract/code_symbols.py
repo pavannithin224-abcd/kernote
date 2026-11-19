@@ -6,7 +6,7 @@ from the parser, which is the point: regex-based symbol extraction is
 permanently approximate, and provenance that is approximate is not provenance.
 
 A language exists here only when `queries/<lang>/tags.scm` exists and has a
-passing test. That is how `CLAUDE.md`'s rule against claiming untested
+passing test. That is how the project contract's rule against claiming untested
 language support is enforced structurally rather than remembered.
 """
 

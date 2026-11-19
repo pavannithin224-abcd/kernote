@@ -5,7 +5,7 @@
 -- This is the local adjustment layer that sits next to a repository's own
 -- `.kernote.toml`, the way `.git/info/exclude` sits beside a shared
 -- `.gitignore`. It lives here rather than being written into the user's
--- repository, because `CLAUDE.md` forbids rewriting their files and scanning
+-- repository, because the project contract forbids rewriting their files and scanning
 -- stays read-only.
 --
 -- No BEGIN/COMMIT: the migration runner wraps every script in one, because

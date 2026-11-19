@@ -88,7 +88,7 @@ def allowed_root(question_set: QuestionSet) -> Path:
     One level above the set's own file, which is what a `project/eval/` layout
     needs to reach `project/samples/`. The guard exists because `corpus` is a
     relative path from a data file: `../../../../etc` resolved happily, and the
-    harness would then have pointed a scan at it. `CLAUDE.md` forbids reading
+    harness would then have pointed a scan at it. The project contract forbids reading
     credentials during scanning, and the cheapest way to honour that is to
     refuse the path rather than to trust the walker's deny-list to catch
     whatever is in there.

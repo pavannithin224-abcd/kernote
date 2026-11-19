@@ -1,6 +1,6 @@
 # Kernote — Developer Handoff
 
-Updated at the end of every task, per `CLAUDE.md` §"Git and task workflow" step 7.
+Updated at the end of every task, per the project contract §"Git and task workflow" step 7.
 Newest entry first.
 
 ---
@@ -1137,7 +1137,7 @@ database.
 
 ## 2026-11-14 — Approval can be undone (ADR-0040)
 
-The last real product gap is closed. `CLAUDE.md` demands a review flow and no
+The last real product gap is closed. The project contract demands a review flow and no
 silent destructive merges; the flow had the review but no way back.
 
 **Everything needed was already there.** `memory_revisions.snapshot_json`
@@ -2157,7 +2157,7 @@ whether code symbols can be recovered there.
 
 ## 2026-11-09 — A configurable include/exclude list
 
-The last outstanding `CLAUDE.md` requirement. Only half of it existed:
+The last outstanding the project contract requirement. Only half of it existed:
 `.gitignore` and an undocumented `.kernoteignore` were honoured, but there was
 no way to *include* anything and nothing was visible in the application.
 
@@ -2181,7 +2181,7 @@ A configuration file inside a repository is untrusted input, so include is
 deliberately weaker than exclude. Include widens only the allowlist — "is this
 a kind of file Kernote reads?" — and **cannot** override a secret refusal,
 `.gitignore`, the size limit or the binary check. `.gitignore` has no off
-switch, because `CLAUDE.md` requires it be respected and a configurable
+switch, because the project contract requires it be respected and a configurable
 exemption would be a way around that rule rather than an implementation of it.
 
 Five of the thirteen tests assert what configuration cannot do, including
@@ -2295,7 +2295,7 @@ rather than quietly deleted.
    real cost. Q6 (centrality in term weighting) is still the lever on it.
 2. **The include/exclude list is still not configurable**, and finding 3 makes
    that gap sharper: a project with meaningful JSON under a non-standard name
-   now loses it, visibly but without recourse. `CLAUDE.md` asks for the
+   now loses it, visibly but without recourse. The project contract asks for the
    configurable list; this is the strongest case yet for building it.
 3. The RC tag `v0.1.0-rc.1` points at `ca0f72c` and does **not** include this
    work. Its message quotes citation correctness 52% and abstention 67%; the
@@ -2304,7 +2304,7 @@ rather than quietly deleted.
    visual pass.
 
 ### Next safe task
-**The configurable include/exclude list**, which is a `CLAUDE.md` requirement,
+**The configurable include/exclude list**, which is a the project contract requirement,
 is now the blocking issue for scanning real repositories well, and is the
 natural home for the JSON question. Then **Windows verification**, then **Q6**.
 
@@ -2454,7 +2454,7 @@ memories, the project and the findings all come back.
    reported on; a held-out split needs more questions.
 4. Approval still has no undo.
 5. The include/exclude list is not configurable (`walker.py` has a hardcoded
-   `EXCLUDED_DIRS`); `CLAUDE.md` asks for a configurable one.
+   `EXCLUDED_DIRS`); the project contract asks for a configurable one.
 6. The UI has had no visual pass. It shows real data and real error states, and
    that is a different thing from being designed.
 7. Proposal items P3, P6-P10, P12-P13 unapplied. Q1/Q2/Q4 open, Q5 new.
@@ -2524,7 +2524,7 @@ mismeasured in practice, but a metric cannot depend on its caller being careful.
 score. `precision_at_k` already returned `nan`; the two disagreed.
 
 **6. A question set could aim a scan at any directory.** `"corpus":
-"../../../../etc"` loaded and resolved to `/etc`; so did `"/etc"`. `CLAUDE.md`
+"../../../../etc"` loaded and resolved to `/etc`; so did `"/etc"`. The project contract
 forbids reading credentials during scanning, and relying on the walker's
 deny-list to save us is not a security property. A corpus must now resolve
 inside the set's own directory or one level above (ADR-0029b).
@@ -2548,7 +2548,7 @@ everywhere that still looked like a measurement.
 2. The support threshold is still fitted on the same 31 questions the metrics
    are reported on. A held-out split needs more questions.
 3. **The include/exclude list is not configurable.** `walker.py` has a
-   hardcoded `EXCLUDED_DIRS`, and `CLAUDE.md` asks for a configurable list.
+   hardcoded `EXCLUDED_DIRS`, and the project contract asks for a configurable list.
    Pre-existing, not Stage 8, and now more visible because `samples/eval-repo`
    means a self-scan of Kernote ingests the fixture service's documents --
    including its deliberate contradiction, which our own conflict detection
@@ -3039,7 +3039,7 @@ screen over a commit range. Both detection halves are already proven.
    swallow" matched "an/is/of/the" and reported `evidence_found`.
 3. **Exact substring matching abstained wrongly.** "secrets" missed ADR-0020a's
    "Secret refusal"; fixed with a prefix stem against the item's full text.
-4. **One coincidental word passed as support** — `CLAUDE.md` contains "Do not
+4. **One coincidental word passed as support** — the project contract contains "Do not
    **swallow** errors", so the nonsense question passed again. Support now
    needs `min(2, content_terms)` matches.
 5. **The model cache sat under `data_dir`**, so relocating the database meant
@@ -3457,7 +3457,7 @@ overlapping but only formatting moved, **low** if the change missed the cited
 lines. Evidence gains `cosmetic_only` and `substantive_hunks`.
 
 A cosmetic change still raises a finding rather than silently re-pinning the
-hash, because re-pinning is a write to canonical memory and `CLAUDE.md`
+hash, because re-pinning is a write to canonical memory and the project contract
 requires approval for that. The medium explanation says what accepting it does.
 
 ### Verification performed
@@ -3825,7 +3825,7 @@ and `0001_init.sql` cannot drift from `ARCHITECTURE.md` without a test failing.
    tests use a generated hostile fixture instead of a committed fake secret.
 3. The frontend client is hand-written. It is replaced by
    `openapi-typescript` in Stage 4, once the endpoint surface stops moving.
-4. shadcn/ui is **not** installed yet despite `CLAUDE.md` naming it. Stage 2
+4. shadcn/ui is **not** installed yet despite the project contract naming it. Stage 2
    needed a shell and a table, not a component library; it lands in Stage 4
    when the Memory Explorer gets rich. Flagging rather than quietly skipping.
 5. No Windows verification yet (ADR-0009 still `proposed`).
@@ -3847,14 +3847,14 @@ refusal explained, and a repeat scan still creates nothing.
 ## 2026-11-07 — Day 2 (cont.): contract aligned with ADR-0015
 
 ### What changed
-- `CLAUDE.md` scope item 3: "Ask Your Project" → "Cited evidence retrieval".
-- `CLAUDE.md` scope item 6: now marked the differentiating feature, ref ADR-0015.
-- Nothing else in `CLAUDE.md` touched. 2 insertions, 2 deletions.
+- The project contract scope item 3: "Ask Your Project" → "Cited evidence retrieval".
+- The project contract scope item 6: now marked the differentiating feature, ref ADR-0015.
+- Nothing else in the project contract touched. 2 insertions, 2 deletions.
 
 ### Verification performed
 - Both edits applied by assertion-guarded script (exactly one match required
   each); `git diff` confirms 2 lines changed and no collateral edits.
-- Full cross-check of the remaining `CLAUDE.md` clauses against all 17 ADRs.
+- Full cross-check of the remaining the project contract clauses against all 17 ADRs.
   Compliant: the MiniLM baseline (ADR-0011 runs the same model via ONNX;
   ADR-0014 keeps MiniLM as the baseline unless our own numbers justify a swap),
   the vector-index clause (ADR-0003a validated and deferred on evidence — the
@@ -3910,8 +3910,8 @@ build checks were run, and none are claimed.
 
 ### Known issues / blockers
 1. **Node.js still not installed** — the Stage 2 blocker.
-2. `CLAUDE.md` scope items 3 and 6 still use pre-ADR-0015 wording. Left for you
-   to approve, since `CLAUDE.md` is the contract that overrides these docs.
+2. The project contract scope items 3 and 6 still use pre-ADR-0015 wording. Left for you
+   to approve, since the project contract is the contract that overrides these docs.
 3. ADR-0009 (Windows target) and open questions Q1, Q2, Q4 unanswered.
 4. Committed on `master`, the default branch, because this is a fresh repo with
    no prior commits and no remote. Stage 2 onward should use feature branches.
@@ -3959,14 +3959,14 @@ persisted.
 - No code exists, so no tests were run and none are claimed.
 
 ### Known issues / blockers
-1. **`CLAUDE.md` line 17 still says "Ask Your Project using hybrid retrieval and
-   source citations."** `CLAUDE.md` is the authoritative contract that overrides
+1. **the project contract line 17 still says "Ask Your Project using hybrid retrieval and
+   source citations."** The project contract is the authoritative contract that overrides
    every document I write, so I did **not** edit it. The kickoff guide says to
    update it when scope intentionally changes, which just happened. Recommended
    minimal edit, for you to make or approve:
    - scope item 3 → `Cited evidence retrieval using hybrid retrieval and source citations.`
    - scope item 6 → `Knowledge conflict review (differentiating feature; see ADR-0015).`
-   Nothing else in `CLAUDE.md` conflicts with ADR-0015 — conflict review was
+   Nothing else in the project contract conflicts with ADR-0015 — conflict review was
    already scope item 6.
 2. **Node.js still not installed** — blocks Days 3–5.
 3. ADR-0009 (Windows target) and open questions Q1, Q2, Q4 still unanswered.
@@ -3977,7 +3977,7 @@ persisted.
 6. Still nothing committed; the working tree is untracked.
 
 ### Next safe task
-1. Approve the two `CLAUDE.md` line edits above (or make them yourself).
+1. Approve the two the project contract line edits above (or make them yourself).
 2. Install Node 20 LTS; re-run the toolchain probe.
 3. Commit the whole planning set as one reviewed increment.
 4. Read `projectmem`'s event schema and MCP tool surface before finalizing ours
@@ -4058,8 +4058,8 @@ That priority ordering is backwards.
   that FTS5 is compiled into the system SQLite. Re-run with:
   `python3 -c "import re,sqlite3,pathlib; sqlite3.connect(':memory:').executescript('\n'.join(re.findall(r'\`\`\`sql\n(.*?)\`\`\`', pathlib.Path('docs/ARCHITECTURE.md').read_text(), re.S)))"`
 - `git check-ignore` confirms the two `:Zone.Identifier` files are ignored.
-- Documents reviewed against `CLAUDE.md` for contradictions; none found. Where
-  this planning set adds a position `CLAUDE.md` did not take (extraction
+- Documents reviewed against the project contract for contradictions; none found. Where
+  this planning set adds a position the project contract did not take (extraction
   strategy, embedding runtime, vector search), it is recorded as an ADR rather
   than assumed silently.
 
@@ -4074,12 +4074,12 @@ suite, lint or type-check has been claimed as passing because none exists.
    whether Days 3–5 absorb a Windows environment spike.
 3. **Open questions Q1, Q2, Q4** in `PRODUCT_SPEC.md` §10 have working defaults
    recorded but are unconfirmed.
-4. `CLAUDE.md:Zone.Identifier` and `Kernote_Project_Kickoff_Guide.pdf:Zone.Identifier`
+4. a `:Zone.Identifier` stream file and `Kernote_Project_Kickoff_Guide.pdf:Zone.Identifier`
    are WSL artifacts from the Windows copy. Harmless; now gitignored rather than
    deleted. Remove them whenever you like.
 5. The MiniLM ONNX artifact (ADR-0004) is not yet vendored or hash-pinned. Needed
    before the Day 14–17 retrieval milestone.
-6. Nothing is committed yet — the working tree is untracked. `CLAUDE.md` step 9
+6. Nothing is committed yet — the working tree is untracked. The project contract step 9
    says not to commit unless asked.
 
 ### Next safe task

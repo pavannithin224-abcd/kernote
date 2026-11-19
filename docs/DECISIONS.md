@@ -32,7 +32,7 @@ not a distribution claim, and the README must say so plainly.
 ## ADR-0002 — SQLite as the single source of truth, indexes disposable
 **Status:** accepted · 2026-11-06
 
-**Context.** `CLAUDE.md` requires separated raw captures, normalized chunks,
+**Context.** The project contract requires separated raw captures, normalized chunks,
 canonical memories and derived indexes, with rebuildable indexes.
 
 **Decision.** One SQLite database per project workspace holds L1–L3. L4 (FTS5
@@ -89,7 +89,7 @@ cheapest, but loses the semantic half of hybrid retrieval, which is a `Must`.
 **Consequences.** Install is minutes, not tens of minutes, and CPU inference is
 faster. Cost: the embedding path is slightly more code than one import, and the
 ONNX artifact must be vendored or fetched once with its hash recorded. This does
-not contradict `CLAUDE.md`'s "PyTorch for narrow experiments" — it enforces it.
+not contradict the project contract's "PyTorch for narrow experiments" — it enforces it.
 
 ---
 
@@ -167,7 +167,7 @@ becomes the highest-value unit test in the codebase.
 ## ADR-0008 — MCP surface is read-only
 **Status:** accepted · 2026-11-06
 
-**Context.** Agents need project context. `CLAUDE.md` forbids silent destructive
+**Context.** Agents need project context. The project contract forbids silent destructive
 memory operations and requires approval for canonical writes.
 
 **Decision.** The MCP server exposes exactly four read-only tools:
@@ -285,7 +285,7 @@ coarser output. *Regex per language* — rejected above. *LLM extraction* —
 forbidden as a core path by ADR-0006.
 
 **Consequences.** Exact line ranges for `architecture` memories, and only tested
-languages get a query file — which is how `CLAUDE.md`'s "do not claim support for
+languages get a query file — which is how the project contract's "do not claim support for
 untested languages" becomes structurally true rather than a promise. Costs: a
 native wheel (prebuilt for Windows and Linux, so acceptable under ADR-0010 §2)
 and a per-language query-writing effort that is explicitly scoped and cuttable.
@@ -305,7 +305,7 @@ semantics, `identify` for text/binary and file-type tagging, `detect-secrets`
 for secret refusal, `unidiff` for diff hunk parsing. Scanner exclude defaults are
 seeded from `github-linguist/linguist`'s `vendor.yml` and `documentation.yml`
 rather than invented. Git is still invoked via the Git CLI with argument lists
-per `CLAUDE.md`; only the parsing is borrowed.
+per the project contract; only the parsing is borrowed.
 
 **Alternatives.** *Hand-rolled* — my original plan. Gitignore negation and
 precedence, and real-world secret formats, are both areas where a from-scratch
@@ -715,7 +715,7 @@ single-line version. The evidence records `cosmetic_only` and
 `substantive_hunks` so a reviewer can see which judgement was made and why.
 
 A cosmetic change still produces a finding rather than silently re-pinning the
-hash, because re-pinning is a write to canonical memory and `CLAUDE.md` forbids
+hash, because re-pinning is a write to canonical memory and the project contract forbids
 doing that without approval. The medium explanation says what accepting it will
 do.
 
@@ -812,7 +812,7 @@ by scanning Kernote's own source.
    Kernote is written in them, so every query is exercised by dogfooding
    rather than by a synthetic fixture. A language exists only when
    `queries/<lang>/tags.scm` exists *and* has a passing test; the walker's
-   source allowlist is derived from the same table. That is how `CLAUDE.md`'s
+   source allowlist is derived from the same table. That is how the project contract's
    rule against claiming untested language support becomes structural.
 
 **Alternatives.** *One memory per file listing its symbols* — cheaper, but
@@ -959,7 +959,7 @@ Three measurements on this repository shaped the thresholds:
 *Embedding cosine now* — the third signal, but it needs Stage 5's embeddings;
 the scoring structure already takes a score from any source, so adding it is a
 new signal rather than a rewrite. *Auto-merge above a threshold* — forbidden by
-`CLAUDE.md` and by ADR-0007.
+The project contract and by ADR-0007.
 
 **Consequences.** On this repository: 1851 pairs compared, **2 candidates**,
 both genuine (the README setup commands and the demo repository's). On a
@@ -1060,7 +1060,7 @@ which is the more useful statement as well as the cheaper one.
 ## ADR-0023 — Semantic search is opt-in; keyword-only is a supported mode
 **Status:** accepted · 2026-11-09
 
-**Context.** `CLAUDE.md` forbids outbound network calls by default, and
+**Context.** The project contract forbids outbound network calls by default, and
 `fastembed` fetches ~90 MB of model weights on first use. Those two facts
 collide: embeddings cannot be a silent prerequisite.
 
@@ -1121,7 +1121,7 @@ decided separately from ranking. Four measurements shaped that rule:
    abstained. A crude prefix stem fixed it, checked against the item's *full*
    text rather than the 500-character excerpt shown to the reader.
 4. **One coincidental word is not support.** After (2) and (3), the swallow
-   question passed again because `CLAUDE.md` contains "Do not **swallow**
+   question passed again because the project contract contains "Do not **swallow**
    errors" — one word of four. Support now needs
    `min(2, number_of_content_terms)` matches, so a one-word question still
    works while a four-word question needs two.
@@ -1685,7 +1685,7 @@ distinct-key change.
 relative to the set's own file, so a set can be dropped anywhere and still find
 what it describes. The sweep tried `"corpus": "../../../../etc"`. It loaded,
 resolved to `/etc`, and the harness would then have pointed a repository scan
-at it. `"/etc"` worked too. `CLAUDE.md` forbids reading credentials and private
+at it. `"/etc"` worked too. The project contract forbids reading credentials and private
 keys during scanning, and the walker's deny-list is the wrong place to rely on
 for this: the path should never have been accepted.
 
@@ -1858,7 +1858,7 @@ suffix made the name list redundant and swept in 2909 generated manifests,
 which is both useless knowledge and an unusable review queue. Skips are
 reported with a reason, so under-reading stays visible — and a project needing
 a differently named JSON file is the case for the configurable include list
-`CLAUDE.md` asks for and we have not yet built.
+The project contract asks for and we have not yet built.
 
 ---
 
@@ -1919,9 +1919,9 @@ the fixture for regression, a real repository for truth.
 ---
 
 ## ADR-0034 — A configurable include/exclude list, and what configuration may not do
-**Status:** accepted · 2026-11-09 · *satisfies a `CLAUDE.md` requirement*
+**Status:** accepted · 2026-11-09 · *satisfies a the project contract requirement*
 
-**Context.** `CLAUDE.md` has always required Kernote to "respect .gitignore and
+**Context.** The project contract has always required Kernote to "respect .gitignore and
 provide a configurable include/exclude list". Only half of that existed:
 `.gitignore` and an undocumented `.kernoteignore` were honoured, but there was
 no way to *include* anything, and nothing was visible in the application.
@@ -1944,7 +1944,7 @@ can be explained rather than merely obeyed:
    — the equivalent of `.git/info/exclude` beside a shared `.gitignore`, so
    trying an exclusion does not require a commit.
 
-Nothing writes to the user's repository: `CLAUDE.md` forbids rewriting their
+Nothing writes to the user's repository: The project contract forbids rewriting their
 files, and an approval flow for config writes would be a larger feature than
 the one being asked for.
 
@@ -1956,7 +1956,7 @@ untrusted input, so:
   refusal (by filename or content), `.gitignore`, the size limit or the binary
   check.
 
-`.gitignore` therefore has no off switch, because `CLAUDE.md` requires it be
+`.gitignore` therefore has no off switch, because the project contract requires it be
 respected and a configurable exemption would be a way around that rule rather
 than an implementation of it.
 
@@ -2257,7 +2257,7 @@ errors flatter the product.
 First, **a project nobody has analyzed has no stale findings.** The fraction
 reads 1.0 and the tile prints "100% fresh" for a repository whose freshness has
 never been examined. That reports an absence of evidence as evidence, which
-`CLAUDE.md` forbids directly: *"AI can explain impact but cannot be the sole
+The project contract forbids directly: *"AI can explain impact but cannot be the sole
 freshness proof"*, *"say evidence was not found when it was not found."* It is
 also the single most likely state for a new user to be in, so the default
 reading of the tile would have been a falsehood.
@@ -2508,7 +2508,7 @@ until something appears — is how the picture becomes a decoration.
 
 **Status:** accepted (2026-11-14)
 
-**Context.** `CLAUDE.md` requires a review flow for writes to canonical memory
+**Context.** The project contract requires a review flow for writes to canonical memory
 and forbids silent destructive merges. Approving a consolidation satisfied the
 first half — a human decides, and nothing is deleted — but not the second:
 once approved, there was no way back. The irony is that everything needed to

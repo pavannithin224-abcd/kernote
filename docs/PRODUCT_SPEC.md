@@ -2,8 +2,8 @@
 
 Status: draft for Day 1–2 approval · Last updated 2026-11-06 · Owner: Pavan
 
-Derived from `Kernote_Project_Kickoff_Guide.pdf` and `CLAUDE.md`. Where this
-document and `CLAUDE.md` disagree, `CLAUDE.md` wins and this file is a bug.
+Derived from `Kernote_Project_Kickoff_Guide.pdf` and the project contract. Where this
+document and the project contract disagree, the project contract wins and this file is a bug.
 
 ---
 

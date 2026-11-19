@@ -1,7 +1,7 @@
 """The review flow: approving proposals and resolving findings (Stage 6).
 
 This is where ADR-0007's "a finding is a request for review, never a verdict"
-and `CLAUDE.md`'s "no silent destructive memory merges" become code rather than
+and the project contract's "no silent destructive memory merges" become code rather than
 intent. Nothing in `maintain/` writes to canonical memory except through here,
 and everything here is initiated by a human decision that is recorded.
 """
@@ -174,7 +174,7 @@ def undo_approval(
     revisions restoring the previous state; it does not delete the merge
     revisions, and it does not delete the `accepted` feedback row. The history
     reads "merged, then unmerged", because that is what happened. Deleting the
-    merge from the record would be the silent rewriting `CLAUDE.md` forbids,
+    merge from the record would be the silent rewriting the project contract forbids,
     and it would also destroy the most informative signal the duplicate
     detector can get -- an approval a human later took back.
 

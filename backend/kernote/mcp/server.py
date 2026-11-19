@@ -1,7 +1,7 @@
 """Kernote's MCP surface: four read-only tools (ADR-0008).
 
 Read-only is the whole design. There is no write tool in any form, so an agent
-can consume the vault but cannot corrupt it — `CLAUDE.md` requires human
+can consume the vault but cannot corrupt it — the project contract requires human
 approval for canonical writes, and an agent writing unreviewed records is
 exactly the "silent" path it forbids. If agent-proposed memories are wanted
 later they arrive as `findings` for review, which is a new ADR, not a loosening

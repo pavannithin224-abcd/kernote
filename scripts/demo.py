@@ -10,7 +10,7 @@ demo conveniences:
 
 * It runs against a **copy** of the sample repository in a temporary
   directory. Showing drift detection means editing a scanned file, and
-  `CLAUDE.md` forbids rewriting the user's files. The demo does not get an
+  The project contract forbids rewriting the user's files. The demo does not get an
   exception to that.
 * It uses a **temporary data directory**, so the demo's 50 fixture memories
   never land in your own vault.

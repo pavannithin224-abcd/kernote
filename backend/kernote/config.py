@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     max_files_per_scan: int = 20_000
 
     # Semantic retrieval is opt-in because the model weights are a ~90 MB
-    # download and `CLAUDE.md` forbids outbound calls by default. With this
+    # download and the project contract forbids outbound calls by default. With this
     # off, retrieval is keyword-only -- which is also ADR-0014's baseline, not
     # a degraded state (ADR-0023).
     embeddings_enabled: bool = False

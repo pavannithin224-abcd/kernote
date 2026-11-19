@@ -1,7 +1,7 @@
 """tree-sitter symbol extraction (Stage 3, ADR-0012).
 
 A language is supported only when `queries/<lang>/tags.scm` exists and has a
-passing test here. That is how `CLAUDE.md`'s rule against claiming untested
+passing test here. That is how the project contract's rule against claiming untested
 language support becomes structural.
 """
 

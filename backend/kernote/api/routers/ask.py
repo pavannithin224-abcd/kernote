@@ -40,7 +40,7 @@ class EmbeddingStatus(BaseModel):
 
 
 class IndexRequest(BaseModel):
-    # The explicit opt-in. `CLAUDE.md` forbids outbound calls by default, and
+    # The explicit opt-in. The project contract forbids outbound calls by default, and
     # the weights are a ~90 MB fetch, so nothing downloads without this.
     allow_download: bool = False
 

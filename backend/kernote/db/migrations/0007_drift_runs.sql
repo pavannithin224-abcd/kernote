@@ -6,7 +6,7 @@
 -- gives the wrong answer in the most common case: a project that has never
 -- been analyzed has no stale_risk findings, so "memories without a stale
 -- finding" reads 100% fresh. That is an invented statistic -- it reports an
--- absence of evidence as evidence of freshness, which CLAUDE.md forbids
+-- absence of evidence as evidence of freshness, which the project contract forbids
 -- ("Freshness checks should use deterministic file hashes/diffs as triggers",
 -- "say evidence was not found when it was not found").
 --

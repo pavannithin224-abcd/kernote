@@ -104,7 +104,7 @@ SECRET_PATTERNS: tuple[str, ...] = (
 # actually implemented and tested (ADR-0012). Widening this list beyond
 # `code_symbols.LANGUAGE_BY_SUFFIX` would import files Kernote cannot say
 # anything about, and would quietly start claiming support for a language that
-# has no query file -- which `CLAUDE.md` forbids.
+# has no query file -- which the project contract forbids.
 SOURCE_SUFFIXES: frozenset[str] = frozenset(
     {".py", ".pyi", ".ts", ".mts", ".cts", ".tsx", ".js", ".mjs", ".cjs", ".jsx"}
 )
@@ -159,7 +159,7 @@ ALLOWED_NAMES: frozenset[str] = frozenset(
 # memory tool should read a project's documentation and configuration, not its
 # data. Skips are reported with a reason, so under-reading is visible; a
 # project that needs a differently named JSON file is the case for the
-# configurable include list `CLAUDE.md` asks for (ADR-0020c).
+# configurable include list the project contract asks for (ADR-0020c).
 ALLOWED_SUFFIXES: frozenset[str] = frozenset(
     {
         ".md",

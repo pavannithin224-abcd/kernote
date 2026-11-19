@@ -86,7 +86,7 @@ which validates the design and warns that a funded team is already there.
   `/doctor prompt-audit`, which looks for "references to files or commands that
   don't exist, and files that contradict each other" (Claude Code docs). That
   last one overlaps Kernote's conflict detection for instruction files.
-- Its docs also concede CLAUDE.md is "context, not enforced configuration" and
+- Its docs also concede the project contract is "context, not enforced configuration" and
   that "if two instructions contradict each other, Claude may pick one
   arbitrarily" — which is an argument *for* an external, reviewed memory.
 - **Cursor removed its Memories feature in v2.1 (Nov 2025)**, advising users to

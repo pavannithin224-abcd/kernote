@@ -1,4 +1,4 @@
-"""What a project wants scanned, and what it does not (`CLAUDE.md`).
+"""What a project wants scanned, and what it does not (the project contract).
 
 Three layers, merged in this order, each recorded so the effective result can
 be explained rather than merely obeyed:
@@ -21,7 +21,7 @@ allowlist decision — the question "is this a kind of file Kernote reads?" It
 cannot override:
 
 * a **secret** refusal, by filename or by content;
-* **`.gitignore`**, which `CLAUDE.md` requires be respected, so there is
+* **`.gitignore`**, which the project contract requires be respected, so there is
   deliberately no option to disable it;
 * the **size** limit or the **binary** check.
 

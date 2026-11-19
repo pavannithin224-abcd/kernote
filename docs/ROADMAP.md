@@ -11,7 +11,7 @@ target, **not** a claim of enterprise readiness.
 
 | Days | Dates | Milestone | Deliverable | Done when |
 |---|---|---|---|---|
-| 1–2 | Nov 6–7 | Product & architecture foundation | Scope, flows, schema draft, API boundaries, wireframes, repo setup, CLAUDE.md | Six docs approved; Git repo initialized; toolchain verified |
+| 1–2 | Nov 6–7 | Product & architecture foundation | Scope, flows, schema draft, API boundaries, wireframes, repo setup, the project contract | Six docs approved; Git repo initialized; toolchain verified |
 | 3–5 | Nov 8–10 | Application foundation | React shell, FastAPI service, SQLite init+migrations, project selection, navigation, dashboard skeleton | `scripts/dev.sh` brings up both processes; a project can be registered and survives restart |
 | 6–9 | Nov 11–14 | Repository ingestion | Safe scanner, parsing, Git metadata, source refs, deterministic extraction, **+ drift feasibility spike (P4)** | Fixture repo scans twice with zero duplicate captures; skipped files explained; **an edit inside cited lines yields a high finding and an edit elsewhere in the same file yields a low one** |
 | 10–13 | Nov 15–18 | Core memory engine | Schema, CRUD, revisions, classification, dedupe candidates, evidence storage, **+ conflict feasibility spike (P5)** | Memory CRUD persists across restart with full lineage; evidence visible in UI; **two disagreeing sources yield one finding holding both claims, and agreeing sources yield none** |
@@ -92,7 +92,7 @@ crowded. If Days 18–20 overrun, cut F9 and F3 breadth to protect it.
 
 ## Daily rhythm
 
-1. Read `CLAUDE.md`, this roadmap and `DEV_HANDOFF.md`.
+1. Read the project contract, this roadmap and `DEV_HANDOFF.md`.
 2. Pick **one** vertical slice with a visible user outcome.
 3. Have Claude Code inspect the relevant code and propose a short plan before editing.
 4. Implement, run targeted tests, inspect the diff, update docs.

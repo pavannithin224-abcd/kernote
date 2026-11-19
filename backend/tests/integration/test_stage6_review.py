@@ -1,6 +1,6 @@
 """Stage 6: the review flow — approval, resolution, change impact.
 
-This is where `CLAUDE.md`'s "no silent destructive memory merges" and
+This is where the project contract's "no silent destructive memory merges" and
 ADR-0007's "a finding is a request for review, never a verdict" stop being
 intent and become enforced behaviour.
 """

@@ -6,7 +6,7 @@ Two constraints shape this module.
 the install confirms numpy, onnxruntime and tokenizers and no torch, so
 ADR-0004's rule survives.
 
-**No network by default.** `CLAUDE.md` forbids outbound calls unless the user
+**No network by default.** The project contract forbids outbound calls unless the user
 opts in, and the model weights are a ~90 MB download on first use. So:
 
 * `status()` reports whether the model is already on disk, using the filesystem

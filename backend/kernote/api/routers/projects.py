@@ -194,7 +194,7 @@ def scan_skipped(run_id: str) -> dict:
     return {"total": len(items), "by_reason": by_reason}
 
 
-# ─── scan configuration (CLAUDE.md: a configurable include/exclude list) ───
+# ─── scan configuration (the project contract: a configurable include/exclude list) ───
 
 
 class ScanConfigUpdate(BaseModel):
@@ -240,7 +240,7 @@ def put_scan_config(project_id: str, body: ScanConfigUpdate) -> dict:
     """Set this machine's local adjustment.
 
     Kernote never writes `.kernote.toml` into the user's repository: that file
-    is the project's own declared intent, and `CLAUDE.md` forbids rewriting a
+    is the project's own declared intent, and the project contract forbids rewriting a
     user's files. This override is the local layer, like `.git/info/exclude`.
     """
     project = repo.get(db(), project_id)

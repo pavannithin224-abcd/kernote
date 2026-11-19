@@ -2,7 +2,7 @@
 
 The gate measures citation correctness and honest abstention, not answer
 fluency (ADR-0015). Semantic tests skip when the model is not cached, because
-`CLAUDE.md` forbids a test suite that reaches the network.
+The project contract forbids a test suite that reaches the network.
 """
 
 import pytest
@@ -195,7 +195,7 @@ def test_evidence_found_carries_citations(conn, tmp_path):
 
 
 def test_unanswerable_question_abstains(conn, tmp_path):
-    """Abstention is a correct outcome, not a failure (CLAUDE.md)."""
+    """Abstention is a correct outcome, not a failure (the project contract)."""
     project = _project(conn, tmp_path)
     bundle = answer.ask(
         conn,
@@ -313,7 +313,7 @@ def test_followup_reuses_the_session(conn, tmp_path):
 
 
 def test_status_never_touches_the_network():
-    """`CLAUDE.md`: no outbound calls by default."""
+    """The project contract: no outbound calls by default."""
     status = embed.status()
     assert status.model_id
     assert status.dim == 384
@@ -431,7 +431,7 @@ def test_ask_unknown_project_is_404(client):
 
 def test_one_coincidental_word_is_not_support(conn, tmp_path):
     """Found by the live run: "what is the airspeed velocity of an unladen
-    swallow" was reported as `evidence_found` because CLAUDE.md contains "Do
+    swallow" was reported as `evidence_found` because the project contract contains "Do
     not **swallow** errors" -- one coincidental word out of four terms."""
     docs = {
         "GUIDE.md": "# Guide\n\n## Error handling\n\n"

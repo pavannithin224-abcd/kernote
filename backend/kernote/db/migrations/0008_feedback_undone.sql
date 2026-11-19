@@ -11,7 +11,7 @@
 --
 -- The original 'accepted' row is kept. Deleting it would make the history read
 -- as though the approval never happened, which is exactly the silent rewriting
--- CLAUDE.md forbids.
+-- The project contract forbids.
 --
 -- SQLite cannot alter a CHECK constraint, so the table is rebuilt -- the same
 -- approach as 0005, and for the same reason. It is small (one row per human

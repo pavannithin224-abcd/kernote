@@ -1,4 +1,4 @@
-"""The configurable include/exclude list (`CLAUDE.md`).
+"""The configurable include/exclude list (the project contract).
 
 The asymmetry between the two rules is the point, so most of these tests are
 about what configuration *cannot* do.
@@ -78,7 +78,7 @@ def test_include_cannot_reach_a_secret(repo):
 
 
 def test_include_cannot_override_gitignore(repo):
-    """`CLAUDE.md` requires .gitignore be respected, so there is deliberately
+    """The project contract requires .gitignore be respected, so there is deliberately
     no way to switch it off."""
     (repo / ".gitignore").write_text("secretplans.md\n", encoding="utf-8")
     (repo / "secretplans.md").write_text("# Plans\n\n## Thing\n\nHidden.\n", encoding="utf-8")

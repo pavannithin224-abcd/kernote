@@ -1,6 +1,6 @@
 """Undoing an approved consolidation.
 
-`CLAUDE.md` requires a review flow for writes to canonical memory and forbids
+The project contract requires a review flow for writes to canonical memory and forbids
 silent destructive merges. The flow delivered the first half: a human had to
 approve, and nothing was deleted. It did not deliver the second, because an
 approval could not be taken back — the lineage to reverse it was all preserved,
