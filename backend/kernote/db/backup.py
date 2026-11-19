@@ -25,6 +25,7 @@ stopping writers.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -47,6 +48,28 @@ def backup_dir(data_dir: Path) -> Path:
     path = data_dir / "backups"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+# Routine snapshots only: `kernote-<stamp>.db`. The safety snapshots taken
+# before a restore or a project removal carry a different prefix on purpose,
+# so retention can never delete the one file that undoes a destructive action.
+_ROUTINE = re.compile(r"^kernote-\d{8}-\d{6}\.db$")
+DEFAULT_KEEP = 20
+
+
+def prune(directory: Path, keep: int = DEFAULT_KEEP) -> list[Path]:
+    """Delete the oldest routine snapshots beyond `keep`; return what went.
+
+    Without a rule the folder grows forever (each is the size of the vault).
+    Names embed a UTC timestamp, so name order is age order.
+    """
+    routine = sorted(p for p in directory.iterdir() if p.is_file() and _ROUTINE.match(p.name))
+    doomed = routine[: max(0, len(routine) - keep)]
+    for path in doomed:
+        path.unlink(missing_ok=True)
+    if doomed:
+        log.info("backup.pruned", removed=len(doomed), kept=keep)
+    return doomed
 
 
 @dataclass

@@ -55,6 +55,8 @@ def take_backup(body: BackupRequest | None = None) -> dict:
         snap = backup_db.snapshot(conn, dest)
     except OSError as exc:
         raise HTTPException(409, f"could not write the backup: {exc}") from None
+    if not requested:  # only ever prune our own folder, never a path the user chose
+        backup_db.prune(dest.parent)
     return {
         "path": str(snap.path),
         "bytes": snap.bytes,
@@ -69,6 +71,7 @@ def download_backup() -> FileResponse:
     conn = db()
     dest = backup_db.backup_dir(settings.data_dir) / f"kernote-{backup_db.stamp()}.db"
     snap = backup_db.snapshot(conn, dest)
+    backup_db.prune(dest.parent)
     return FileResponse(
         snap.path, media_type="application/vnd.sqlite3", filename=snap.path.name
     )
