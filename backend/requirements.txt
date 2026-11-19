@@ -3,10 +3,10 @@
 # so an install is never heavier than the code that exists. See docs/TOOLING.md.
 
 # --- Stage 2: application foundation ---
-fastapi==0.115.6
+fastapi==0.165.0
 uvicorn[standard]==0.34.0
-pydantic==2.10.4
-pydantic-settings==2.7.1
+pydantic==2.14.4
+pydantic-settings==2.16.3
 structlog==24.4.0
 typer==0.15.1
 platformdirs==4.3.6
@@ -17,7 +17,7 @@ identify==2.6.3
 markdown-it-py==3.0.0
 
 # --- Stage 5: retrieval (ADR-0011, ADR-0023) ---
-fastembed==0.5.1        # ONNX embeddings, no torch; model fetch is opt-in
+fastembed==0.9.1        # ONNX embeddings, no torch; model fetch is opt-in
 numpy==2.5.4
 
 # --- Stage 3: code symbols (ADR-0012) ---
@@ -37,10 +37,11 @@ unidiff==0.7.5          # diff hunk parsing for drift detection
 detect-secrets==1.5.0   # content-level secret refusal
 
 # --- Stage 7: agent delivery ---
-mcp==1.2.0
-# Installing mcp pulled starlette 1.10.0, which fastapi 0.115.6 forbids
-# (starlette<0.42). That broke the whole application -- 328 tests could not
-# even be collected. Both pins below exist to keep `pip install -r` resolving
-# cleanly from a clean clone; `pip check` is part of the Day-23 gate.
-starlette==0.41.3
-sse-starlette==2.1.3    # transitive via mcp; only the stdio transport is used
+mcp==1.30.0
+# Security: starlette/mcp/pillow were previously pinned to versions with 93
+# known advisories (pip-audit). mcp stays on 1.x on purpose: 2.x renamed
+# FastMCP and needs a migration. Re-run `pip-audit -r backend/requirements.txt`
+# before every release; `pip check` must stay clean.
+pillow==13.0.0           # transitive via fastembed; pinned for the advisories
+starlette==1.10.0
+sse-starlette==3.7.0    # transitive via mcp; only the stdio transport is used
