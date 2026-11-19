@@ -540,23 +540,23 @@ def test_mcp_info_tool_list_comes_from_the_live_registry(conn, tmp_path):
     assert all(t["description"] for t in tool_manifest(conn, project.id))
 
 
-def test_installed_app_points_agents_at_the_console_helper(client, demo_repo, monkeypatch):
+def test_installed_app_points_agents_at_the_console_helper(
+    client, demo_repo, monkeypatch, tmp_path
+):
     # In the installed app there is no interpreter and no source tree, so the
     # source-tree command (python -m kernote.mcp.server, PYTHONPATH=backend) is
     # a command that cannot run. It must name the helper exe beside the app.
+    # The install dir has a space in it, as a real user-profile path often does.
     import sys
 
     project = client.post("/api/v1/projects", json={"name": "p", "root_path": demo_repo}).json()
+    install_dir = tmp_path / "Jane Doe" / "Kernote"
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(
-        sys, "executable", r"C:\Users\Jane Doe\AppData\Local\Programs\Kernote\kernote.exe"
-    )
+    monkeypatch.setattr(sys, "executable", str(install_dir / "kernote.exe"))
 
     body = client.get(f"/api/v1/projects/{project['id']}/mcp").json()
 
-    assert body["command"].endswith("kernote-mcp.exe'") or body["command"].endswith(
-        "kernote-mcp.exe"
-    )
+    assert body["command"].strip("'\"").endswith("kernote-mcp.exe")
     assert "Jane Doe" in body["command"] and "-m kernote" not in body["command"]
     assert "PYTHONPATH" not in body["env"]
     assert body["env"]["KERNOTE_PROJECT"] == project["id"]
