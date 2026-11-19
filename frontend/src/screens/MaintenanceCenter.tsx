@@ -565,10 +565,6 @@ export default function MaintenanceCenter() {
         </Panel>
       )}
 
-      {projectId && <SuggestedRelationships projectId={projectId} />}
-      {projectId && <AppliedConsolidations projectId={projectId} />}
-      {projectId && <ResolvedFindings projectId={projectId} />}
-
       {Object.keys(byKind).length === 0 ? (
         <Panel title="Review queue">
           <Empty
@@ -623,6 +619,12 @@ export default function MaintenanceCenter() {
           </Panel>
         ))
       )}
+
+      {/* Below the queue on purpose: the nav badge counts findings, so arriving
+          here has to show them, not 25 optional suggestions above them. */}
+      {projectId && <SuggestedRelationships projectId={projectId} />}
+      {projectId && <AppliedConsolidations projectId={projectId} />}
+      {projectId && <ResolvedFindings projectId={projectId} />}
     </div>
   )
 }
