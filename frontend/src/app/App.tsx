@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -8,7 +8,9 @@ import MemoryExplorer from '../screens/MemoryExplorer'
 import ProjectIntelligence from '../screens/ProjectIntelligence'
 import MaintenanceCenter from '../screens/MaintenanceCenter'
 import ChangeImpact from '../screens/ChangeImpact'
-import KnowledgeGraph from '../screens/KnowledgeGraph'
+// The graph pulls in React Flow, ~65 kB gzipped that no other screen needs, so it
+// loads when someone opens it rather than on every start.
+const KnowledgeGraph = lazy(() => import('../screens/KnowledgeGraph'))
 import AgentIntegrations from '../screens/AgentIntegrations'
 import SettingsScreen from '../screens/Settings'
 import { CaptureMemory } from '../components/CaptureMemory'
@@ -248,7 +250,14 @@ export default function App() {
               <Route path="/intelligence" element={<ProjectIntelligence />} />
               <Route path="/maintenance" element={<MaintenanceCenter />} />
               <Route path="/impact" element={<ChangeImpact />} />
-              <Route path="/graph" element={<KnowledgeGraph />} />
+              <Route
+                path="/graph"
+                element={
+                  <Suspense fallback={<div className="mono text-[12px]" style={{ color: 'var(--muted)' }}>loading graph…</div>}>
+                    <KnowledgeGraph />
+                  </Suspense>
+                }
+              />
               <Route path="/agents" element={<AgentIntegrations />} />
               <Route path="/settings" element={<SettingsScreen />} />
             </Routes>
