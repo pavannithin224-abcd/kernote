@@ -5,6 +5,45 @@ Newest entry first.
 
 ---
 
+## 2026-11-19 — From localhost site to installable Windows app
+
+Audit, fixes, packaging and a README rewrite, on native Windows (Python 3.12, Node 26).
+12 local commits, **not pushed**.
+
+### Found by actually running it
+| | |
+|---|---|
+| **Port probe lied on Windows** | `SO_REUSEADDR` lets a bind succeed on a *listening* port, so the launcher could not tell "already running" from "free". `SO_EXCLUSIVEADDRUSE` on win32. |
+| **Windowed build died silently** | `sys.stderr is None` with no console; the first log line raised. Logs now fall back to `<data_dir>/logs/kernote.log`; startup failures reach a native dialog. |
+| **93 known advisories in the pins** | starlette, mcp, pillow. Upgraded; `pip-audit` and `npm audit` both report 0. `mcp` stays on 1.x (2.x renames FastMCP). |
+| **DNS rebinding / cross-site writes** | A login-less API on loopback was reachable from any page. Non-loopback `Host` and cross-origin writes now get 403 (`security.py`). |
+| **No way to add a project in the UI** | `api.registerProject` was never called. Add-project dialog with folder picker and live progress. |
+| **No way to remove one** | Confirmed, snapshot first, clears the FK-less `embeddings` table, never touches the user's folder. |
+| **A lead was labelled "quoted from source"** | On a weak answer, irrelevant records read as evidence. They now read "lead, not an answer". |
+| **Backups grew forever** | Routine snapshots pruned to 20; pre-restore / pre-remove snapshots are never pruned. |
+| **MCP could not work when installed** | A windowed process has no stdio. Ships `kernote-mcp.exe` (console, same libraries via `MERGE`); the screen emits its path. |
+
+### Verified
+- `pytest`: **559 passed, 13 skipped** (572 collected), exit 0, on Windows. The 3 Git-dependent failures documented earlier no longer occur here because Git is installed.
+- `ruff`, `tsc -b`, `eslint`, `npm audit`, `pip-audit`, `pip check`: clean.
+- The **real installed** `kernote.exe`: window opens, fits a 1920x1080 work area, serves, logs.
+- The **real installed** `kernote-mcp.exe` driven by a real MCP client over stdio: 4 tools, a cited search, a project summary.
+- Install and uninstall both run: per-user, no admin; uninstall removes the program, shortcut and registry entry and **keeps the vault**.
+- UI walked in a browser: all 8 routes, add project, ask, refuse, remove (on a throwaway), graph.
+- Sizes: main bundle 522 kB -> 329 kB (lazy graph); bundle 177 -> 160 MB; installer 65 MB.
+
+### Not verified, stated plainly
+- **CI has never run.** The workflows are valid YAML and every command in them was run locally; the first push is the first real execution. The Linux half in particular is untested by me.
+- **Semantic search end to end** on the upgraded fastembed (0.5.1 -> 0.9.1). Needs the 90 MB model; the API is checked compatible, the retrieval numbers were not re-measured.
+- **The installer is unsigned.** Needs a purchased certificate in Pavan's name.
+- The native **Browse...** dialog was never clicked; only that the bridge exists in a real window.
+- The packaged MCP helper prints a harmless traceback to stderr at shutdown (exit 0, protocol clean). Not diagnosed.
+- Never opened on Windows 10 or on a machine without WebView2.
+- Accessibility: no screen reader, as before.
+
+### Next safe task
+Push the 12 commits and watch the first CI run; fix whatever Linux or the clean-clone path turns up. Then cut a release and attach `Kernote-Setup-0.1.0.exe` with its SHA-256.
+
 ## 2026-11-18 — Published, and the README made true again
 
 Pushed to `github.com/pavannithin224-abcd/kernote` over SSH (the key on this
