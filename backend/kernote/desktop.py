@@ -15,6 +15,7 @@ a window is not a reason to refuse to run.
 from __future__ import annotations
 
 import socket
+import sys
 import threading
 import time
 import urllib.error
@@ -36,7 +37,14 @@ READY_TIMEOUT = 20.0
 def port_is_free(host: str, port: int) -> bool:
     """Whether we can bind, used to tell "already running" from "broken"."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if sys.platform == "win32":
+            # On Windows SO_REUSEADDR lets a second socket bind a port that is
+            # already *listening* (it is not the POSIX TIME_WAIT-only option),
+            # so the probe would report a busy port as free. Exclusive use
+            # makes bind() fail whenever anything else holds the port.
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((host, port))
         except OSError:
@@ -105,12 +113,28 @@ def _serve(host: str, port: int) -> threading.Thread:
     return thread
 
 
+def _say(message: str) -> None:
+    """Tell the user something, whether or not there is a console.
+
+    A windowed build has no stdout, so a bare print() is invisible and a
+    failure looks like "I double-clicked and nothing happened". On Windows
+    the message goes to a native dialog as well, and always to the log.
+    """
+    print(message)
+    log.warning("desktop.notice", message=message)
+    if sys.platform == "win32" and sys.stdout is None:
+        import ctypes
+
+        # MB_OK | MB_ICONINFORMATION | MB_TOPMOST
+        ctypes.windll.user32.MessageBoxW(None, message, WINDOW_TITLE, 0x40 | 0x40000)
+
+
 def main() -> int:
     host, port = settings.host, settings.port
     url = f"http://{host}:{port}"
 
     if web_dist() is None:
-        print("The UI has not been built. Run:\n  npm --prefix frontend run build")
+        _say("The UI has not been built. Run:\n  npm --prefix frontend run build")
         return 1
 
     reason = gui_unavailable_reason()
@@ -123,19 +147,19 @@ def main() -> int:
             if reason is None:
                 _open_window(url)
                 return 0
-            print(reason)
+            _say(reason)
             return 0
-        print(f"Port {port} is in use by something that is not Kernote.")
+        _say(f"Port {port} is in use by something that is not Kernote.")
         return 1
 
     _serve(host, port)
     if not wait_until_ready(f"{url}/health"):
-        print(f"The API did not become ready within {READY_TIMEOUT:.0f}s.")
+        _say(f"The API did not become ready within {READY_TIMEOUT:.0f}s.")
         return 1
 
     if reason is not None:
         # Serving anyway: a missing window is not a reason to refuse to run.
-        print(f"{reason}\n\nServing in the terminal instead: {url}\nCtrl-C to stop.")
+        _say(f"{reason}\n\nServing in the terminal instead: {url}\nCtrl-C to stop.")
         try:
             while True:
                 time.sleep(3600)

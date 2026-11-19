@@ -25,6 +25,23 @@ import structlog
 _configured = False
 
 
+_log_file: TextIO | None = None
+
+
+def _fallback_log_file() -> TextIO:
+    """Open `<data_dir>/logs/kernote.log` once, for processes with no stderr."""
+    global _log_file
+    if _log_file is None or _log_file.closed:
+        from .config import settings
+
+        log_dir = settings.data_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        _log_file = open(  # noqa: SIM115 - process-lifetime handle by design
+            log_dir / "kernote.log", "a", encoding="utf-8", buffering=1
+        )
+    return _log_file
+
+
 class _LateBoundStream:
     """Writes to whatever `sys.stderr` is *now*.
 
@@ -37,13 +54,20 @@ class _LateBoundStream:
 
     @property
     def _target(self) -> TextIO:
-        return self._override if self._override is not None else sys.stderr
+        if self._override is not None:
+            return self._override
+        if sys.stderr is not None:
+            return sys.stderr
+        # A windowed (no-console) build has no stderr at all: `sys.stderr` is
+        # None, and writing to it used to kill the process on the first log
+        # line with nothing to read. Fall back to a log file in the data dir.
+        return _fallback_log_file()
 
     def write(self, text: str) -> int:
         target = self._target
         try:
             written = target.write(text)
-        except ValueError:
+        except (ValueError, AttributeError):
             # The stream went away mid-flight. Diagnostics must never be the
             # reason a request fails.
             return 0
