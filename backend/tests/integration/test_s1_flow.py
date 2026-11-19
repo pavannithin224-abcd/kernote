@@ -133,13 +133,15 @@ def test_s1_gate_data_survives_restart(tmp_data_dir, demo_repo):
     """The Stage 2 gate: a restart must not lose anything."""
     from fastapi.testclient import TestClient
 
-    with TestClient(create_app()) as c:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as c:
         pid, _ = _register_and_scan(c, demo_repo)
         expected = len(c.get(f"/api/v1/projects/{pid}/memories").json())
         mid = c.get(f"/api/v1/projects/{pid}/memories").json()[0]["id"]
         assert expected > 0
 
-    with TestClient(create_app()) as c:  # fresh app, same database file
+    with TestClient(
+        create_app(), base_url="http://127.0.0.1"
+    ) as c:  # fresh app, same database file
         projects = c.get("/api/v1/projects").json()
         assert len(projects) == 1
         memories = c.get(f"/api/v1/projects/{projects[0]['id']}/memories").json()

@@ -29,6 +29,7 @@ from .api.routers import (
 from .config import settings
 from .db.connection import open_db
 from .logging import configure_logging
+from .security import install_host_guard
 
 # stderr, not stdout: see kernote/logging.py. Shared with the MCP server so
 # the two entry points cannot disagree about where diagnostics go.
@@ -76,6 +77,8 @@ def create_app() -> FastAPI:
             allow_methods=["GET", "POST", "PATCH", "DELETE"],
             allow_headers=["*"],
         )
+    # Registered last among middleware, so it runs first -- before CORS.
+    install_host_guard(app, settings.allowed_hosts)
     app.include_router(projects.router)
     app.include_router(memories.router)
     app.include_router(maintenance.router)

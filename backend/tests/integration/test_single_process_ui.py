@@ -24,7 +24,7 @@ def built(tmp_data_dir, tmp_path, monkeypatch):
     (dist / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
     (dist / "favicon.svg").write_text("<svg/>", encoding="utf-8")
     monkeypatch.setattr(settings, "web_dist", dist)
-    with TestClient(create_app()) as c:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as c:
         yield c, dist
 
 
@@ -90,7 +90,7 @@ def test_without_a_build_the_api_runs_alone(tmp_data_dir, tmp_path, monkeypatch)
     """The development arrangement: Vite serves the UI on its own port."""
     monkeypatch.setattr(settings, "web_dist", tmp_path / "nothing-here")
     assert web_dist() is None
-    with TestClient(create_app()) as c:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as c:
         assert c.get("/health").status_code == 200
         assert c.get("/").status_code == 404
 
@@ -106,7 +106,7 @@ def test_hashed_assets_are_cached_forever(tmp_data_dir, tmp_path, monkeypatch):
     (dist / "assets" / "index-abc123.js").write_text("x", encoding="utf-8")
     monkeypatch.setattr(settings, "web_dist", dist)
 
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
         cache = client.get("/assets/index-abc123.js").headers["cache-control"]
         assert "immutable" in cache and "max-age=31536000" in cache
 
@@ -126,7 +126,7 @@ def test_cors_is_absent_when_no_origin_is_configured(tmp_data_dir, monkeypatch):
     """Served as one process there is only one origin, so the middleware is
     attack surface and nothing else."""
     monkeypatch.setattr(settings, "cors_origins", ())
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
         r = client.get("/health", headers={"Origin": "http://evil.example"})
         assert "access-control-allow-origin" not in {k.lower() for k in r.headers}
 
@@ -134,13 +134,13 @@ def test_cors_is_absent_when_no_origin_is_configured(tmp_data_dir, monkeypatch):
 def test_cors_still_works_for_the_dev_origin(tmp_data_dir, monkeypatch):
     """`just dev` must keep working: Vite on :5173, the API here."""
     monkeypatch.setattr(settings, "cors_origins", ("http://localhost:5173",))
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
         r = client.get("/health", headers={"Origin": "http://localhost:5173"})
         assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
 
 
 def test_cors_does_not_allow_an_unlisted_origin(tmp_data_dir, monkeypatch):
     monkeypatch.setattr(settings, "cors_origins", ("http://localhost:5173",))
-    with TestClient(create_app()) as client:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as client:
         r = client.get("/health", headers={"Origin": "http://evil.example"})
         assert r.headers.get("access-control-allow-origin") != "http://evil.example"

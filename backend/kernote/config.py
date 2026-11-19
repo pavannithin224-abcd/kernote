@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path(user_data_dir("kernote", "kernote"))
     host: str = "127.0.0.1"
     port: int = 8787
+    # Host headers the API answers to. Anything else is refused: see security.py.
+    allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
     # The Vite dev origin is the only allowed browser origin.
     cors_origins: tuple[str, ...] = ("http://localhost:5173", "http://127.0.0.1:5173")
 

@@ -32,7 +32,7 @@ def client(tmp_data_dir):
 
     from kernote.main import create_app
 
-    with TestClient(create_app()) as c:
+    with TestClient(create_app(), base_url="http://127.0.0.1") as c:
         yield c
 
 
