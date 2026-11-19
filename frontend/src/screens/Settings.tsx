@@ -372,6 +372,92 @@ const VERDICT_TONE: Record<string, 'ok' | 'warn' | 'neutral'> = {
   wrongly_asserted: 'warn',
 }
 
+/**
+ * Remove a project from Kernote.
+ *
+ * Deletes the project's memories, history and findings from the vault, and
+ * nothing else: the folder on disk is never touched. A snapshot is taken first
+ * and its path shown, so this is recoverable through Restore above. Two steps,
+ * in the stale colour, for the same reason restore has them.
+ */
+function ProjectsPanel() {
+  const qc = useQueryClient()
+  const { projects, projectId, select } = useProject()
+  const [pending, setPending] = useState<string | null>(null)
+  const remove = useMutation({
+    mutationFn: (id: string) => api.removeProject(id),
+    onSuccess: (_r, id) => {
+      setPending(null)
+      if (id === projectId) select(null)
+      qc.invalidateQueries()
+    },
+  })
+  const rows = projects.data ?? []
+
+  return (
+    <Panel title="Projects">
+      {rows.length === 0 ? (
+        <Empty title="No projects" hint="Use + Add project in the sidebar." />
+      ) : (
+        <ul className="space-y-2">
+          {rows.map((p) => (
+            <li
+              key={p.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              <div className="min-w-0">
+                <div className="mono text-[12px] truncate">{p.name}</div>
+                <div className="mono text-[11px] truncate" style={{ color: 'var(--muted)' }}>
+                  {p.root_path}
+                </div>
+              </div>
+              {pending !== p.id ? (
+                <button
+                  className="mono rounded border px-2 py-1 text-[11px]"
+                  style={{ borderColor: 'var(--stale)', color: 'var(--stale)' }}
+                  onClick={() => setPending(p.id)}
+                >
+                  Remove…
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="mono text-[11px]" style={{ color: 'var(--stale)' }}>
+                    Deletes its memory from Kernote. Your folder is untouched. Sure?
+                  </span>
+                  <button
+                    className="mono rounded border px-2 py-1 text-[11px]"
+                    style={{ borderColor: 'var(--stale)', color: 'var(--stale)' }}
+                    disabled={remove.isPending}
+                    onClick={() => remove.mutate(p.id)}
+                  >
+                    {remove.isPending ? 'removing…' : 'Yes, remove it'}
+                  </button>
+                  <button
+                    className="mono rounded border px-2 py-1 text-[11px]"
+                    style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+                    onClick={() => setPending(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {remove.isError && <div className="mt-2"><ErrorNote error={remove.error} /></div>}
+      {remove.data && (
+        <p className="mono mt-2 text-[11px]" style={{ color: 'var(--ok)' }}>
+          Removed {remove.data.counts.memories ?? 0}{' '}
+          {remove.data.counts.memories === 1 ? 'memory' : 'memories'}. A snapshot was saved first:{' '}
+          {remove.data.safety_backup}
+        </p>
+      )}
+    </Panel>
+  )
+}
+
 export default function Settings() {
   const [allowDownload, setAllowDownload] = useState(false)
   const set = useQuery({ queryKey: ['eval-set'], queryFn: api.evalQuestionSet })
@@ -384,6 +470,8 @@ export default function Settings() {
         Where your data lives, what it is indexed with, and measured retrieval
         quality against a labelled question set.
       </ScreenHeader>
+
+      <ProjectsPanel />
 
       <DataAndPrivacyPanel />
 

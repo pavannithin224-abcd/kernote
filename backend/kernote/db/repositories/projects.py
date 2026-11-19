@@ -37,6 +37,35 @@ def list_all(conn: sqlite3.Connection) -> list[Project]:
     return [_row(r) for r in rows]
 
 
+def remove(conn: sqlite3.Connection, project_id: str) -> dict[str, int]:
+    """Delete a project and everything Kernote stored about it. One transaction.
+
+    The schema cascades from `projects` to every table that references it, but
+    `embeddings` has no foreign key (a target is a memory *or* a chunk), so it
+    is cleared by hand -- otherwise the vectors would outlive their rows and
+    only ever be found again as unexplained disk use.
+
+    Only Kernote's own records are touched. The project's folder on disk is
+    never opened for writing.
+    """
+    from ..connection import transaction
+
+    with transaction(conn):
+        removed = counts(conn, project_id)
+        conn.execute(
+            "DELETE FROM embeddings WHERE target_kind='memory' AND target_id IN "
+            "(SELECT id FROM memories WHERE project_id=?)",
+            (project_id,),
+        )
+        conn.execute(
+            "DELETE FROM embeddings WHERE target_kind='chunk' AND target_id IN "
+            "(SELECT id FROM chunks WHERE project_id=?)",
+            (project_id,),
+        )
+        conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
+    return removed
+
+
 def counts(conn: sqlite3.Connection, project_id: str) -> dict[str, int]:
     def one(sql: str) -> int:
         return int(conn.execute(sql, (project_id,)).fetchone()[0])

@@ -458,6 +458,11 @@ export const api = {
     }>('/restore', { method: 'POST', body: JSON.stringify({ path, confirm: true }) }),
   registerProject: (name: string, root_path: string) =>
     call<Project>('/projects', { method: 'POST', body: JSON.stringify({ name, root_path }) }),
+  removeProject: (id: string) =>
+    call<{ removed: string; counts: Record<string, number>; safety_backup: string }>(
+      `/projects/${id}`,
+      { method: 'DELETE', body: JSON.stringify({ confirm: true }) },
+    ),
   scan: (id: string) => call<ScanResult>(`/projects/${id}/scan`, { method: 'POST' }),
   // Long work goes through the job runner so the window never freezes.
   scanInBackground: (id: string) =>

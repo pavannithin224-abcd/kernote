@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from ... import jobs
 from ...config import settings
+from ...db import backup as backup_db
 from ...db.repositories import graph as graph_repo
 from ...db.repositories import projects as repo
 from ...db.repositories import sources as source_repo
@@ -36,6 +37,41 @@ def register_project(body: RegisterProject) -> Project:
         raise HTTPException(409, f"already registered as project {existing.id}")
     project = Project(name=body.name, root_path=str(root), is_git_repo=gitmeta.is_repo(root))
     return repo.create(conn, project)
+
+
+class RemoveProject(BaseModel):
+    # Removing a project deletes its memories, history and findings from the
+    # vault. Same rule as restore: say so in the request, or nothing happens.
+    confirm: bool = Field(
+        default=False, description="Must be true: this deletes the project's memory."
+    )
+
+
+@router.delete("/projects/{project_id}")
+def remove_project(project_id: str, body: RemoveProject | None = None) -> dict:
+    """Remove a project from Kernote. Your folder is not touched.
+
+    A snapshot is taken first and its path returned, so the removal can be
+    undone by restoring it. Refused while a scan or analysis is running,
+    because deleting rows out from under a job would make it fail halfway.
+    """
+    if not (body and body.confirm):
+        raise HTTPException(400, "removing a project deletes its memory; send confirm=true")
+    conn = db()
+    if repo.get(conn, project_id) is None:
+        raise HTTPException(404, "project not found")
+    for kind in ("scan", "analyze"):
+        if jobs.runner.active_for(project_id, kind) is not None:
+            raise HTTPException(
+                409, f"a {kind} is running for this project; wait for it to finish"
+            )
+    safety = (
+        backup_db.backup_dir(settings.data_dir)
+        / f"kernote-before-remove-{backup_db.stamp()}.db"
+    )
+    backup_db.snapshot(conn, safety)
+    removed = repo.remove(conn, project_id)
+    return {"removed": project_id, "counts": removed, "safety_backup": str(safety)}
 
 
 @router.get("/projects/{project_id}", response_model=ProjectDetail)
