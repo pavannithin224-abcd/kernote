@@ -8,7 +8,7 @@ Newest entry first.
 ## 2026-11-19 — From localhost site to installable Windows app
 
 Audit, fixes, packaging and a README rewrite, on native Windows (Python 3.12, Node 26).
-12 local commits, **not pushed**.
+Pushed to `main`; CI green (c116dad).
 
 ### Found by actually running it
 | | |
@@ -33,7 +33,7 @@ Audit, fixes, packaging and a README rewrite, on native Windows (Python 3.12, No
 - Sizes: main bundle 522 kB -> 329 kB (lazy graph); bundle 177 -> 160 MB; installer 65 MB.
 
 ### Not verified, stated plainly
-- **CI has never run.** The workflows are valid YAML and every command in them was run locally; the first push is the first real execution. The Linux half in particular is untested by me.
+- ~~CI has never run.~~ **Ran on first push (c116dad): all three jobs green** (frontend, backend on Windows, backend on Linux) after two fixes the first run exposed: the runner's own `pipx` made `pip check` fail on its pin of `platformdirs`, and a new test hard-coded a Windows path that POSIX `Path` cannot parse. Both were mistakes in the CI setup and the test, not in the app. The dependency-audit workflow passed first time.
 - **Semantic search end to end** on the upgraded fastembed (0.5.1 -> 0.9.1). Needs the 90 MB model; the API is checked compatible, the retrieval numbers were not re-measured.
 - **The installer is unsigned.** Needs a purchased certificate in Pavan's name.
 - The native **Browse...** dialog was never clicked; only that the bridge exists in a real window.
@@ -42,7 +42,7 @@ Audit, fixes, packaging and a README rewrite, on native Windows (Python 3.12, No
 - Accessibility: no screen reader, as before.
 
 ### Next safe task
-Push the 12 commits and watch the first CI run; fix whatever Linux or the clean-clone path turns up. Then cut a release and attach `Kernote-Setup-0.1.0.exe` with its SHA-256.
+Cut a release and attach `Kernote-Setup-0.1.0.exe` with its SHA-256.
 
 ## 2026-11-18 — Published, and the README made true again
 
