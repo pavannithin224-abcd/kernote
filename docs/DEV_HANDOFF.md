@@ -41,8 +41,15 @@ Pushed to `main`; CI green (c116dad).
 - Never opened on Windows 10 or on a machine without WebView2.
 - Accessibility: no screen reader, as before.
 
+### Released
+`v0.1.0-rc.2` (pre-release) at `40dbf6b`, with `Kernote-Setup-0.1.0.exe` (65,510,099 bytes) and `SHA256SUMS.txt`.
+SHA-256 `06ccc814c5149550c49854c8594a0538034a6a2c8881582d01d1ba014d4a6ed9`; the asset was re-downloaded from GitHub and
+the hash matched. The installer was rebuilt from that exact commit and smoke-tested (install, launch, foreign-Host 403,
+log written, uninstall keeps data). `CLAUDE.md` was removed in `40dbf6b`; its references now say "the project contract"
+and the file remains in history (last touched at `214b771`).
+
 ### Next safe task
-Cut a release and attach `Kernote-Setup-0.1.0.exe` with its SHA-256.
+Buy a code-signing certificate in Pavan's name and sign the installer; clear the name before promoting it publicly.
 
 ## 2026-11-18 — Published, and the README made true again
 
