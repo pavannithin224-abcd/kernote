@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
+import { useAddProject } from '../lib/useAddProject'
 import { Link } from 'react-router-dom'
 
 export function Panel({ title, children, right }: {
@@ -173,11 +174,24 @@ export function ErrorNote({ error }: { error: unknown }) {
   )
 }
 
-export function Empty({ title, hint }: { title: string; hint?: string }) {
+/** The shared dead end for "no project yet", with the way out attached. */
+export function NoProject() {
+  const addProject = useAddProject()
+  return (
+    <Empty
+      title="No project selected"
+      hint="Add a local folder and Kernote builds its memory."
+      action={<Button primary onClick={addProject}>+ Add project</Button>}
+    />
+  )
+}
+
+export function Empty({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
   return (
     <div className="py-10 text-center">
       <p className="text-[13px] font-medium">{title}</p>
       {hint && <p className="mt-1 text-[12px]" style={{ color: 'var(--muted)' }}>{hint}</p>}
+      {action && <div className="mt-3">{action}</div>}
     </div>
   )
 }

@@ -12,6 +12,8 @@ import KnowledgeGraph from '../screens/KnowledgeGraph'
 import AgentIntegrations from '../screens/AgentIntegrations'
 import SettingsScreen from '../screens/Settings'
 import { CaptureMemory } from '../components/CaptureMemory'
+import { AddProject } from '../components/AddProject'
+import { AddProjectContext } from '../lib/useAddProject'
 import CommandPalette from '../components/CommandPalette'
 import { useCommandPalette } from '../lib/useCommandPalette'
 import { Button, Dot } from '../components/ui'
@@ -106,6 +108,7 @@ export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
   const [capturing, setCapturing] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [query, setQuery] = useState('')
   const palette = useCommandPalette()
 
@@ -113,6 +116,7 @@ export default function App() {
   const screen = TITLE[location.pathname] ?? ''
 
   return (
+    <AddProjectContext.Provider value={() => setAdding(true)}>
     <div className="flex min-h-screen" style={{ background: 'var(--bg)' }}>
       {/* The sidebar is ~20 tab stops. Without this, every keyboard visit to
           a screen begins by traversing all of them. */}
@@ -156,6 +160,14 @@ export default function App() {
               selected={p.id === projectId} onSelect={() => select(p.id)}
             />
           ))}
+
+          <button
+            onClick={() => setAdding(true)}
+            className="mono flex w-full items-center rounded px-2.5 py-1.5 text-[12px] mb-0.5 text-left"
+            style={{ color: 'var(--accent)' }}
+          >
+            + Add project
+          </button>
 
           <NavGroup label="System" />
           {SYSTEM.map((n) => <NavRow key={n.to} to={n.to} label={n.label} />)}
@@ -244,6 +256,13 @@ export default function App() {
         </div>
       </main>
 
+      {adding && (
+        <AddProject
+          onClose={() => setAdding(false)}
+          onAdded={(id) => { select(id); navigate('/dashboard') }}
+        />
+      )}
+
       {capturing && projectId && (
         <CaptureMemory projectId={projectId} onClose={() => setCapturing(false)} />
       )}
@@ -256,5 +275,6 @@ export default function App() {
         />
       )}
     </div>
+    </AddProjectContext.Provider>
   )
 }

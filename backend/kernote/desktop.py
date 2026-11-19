@@ -170,11 +170,62 @@ def main() -> int:
     return 0
 
 
+DEFAULT_SIZE = (1366, 900)
+MIN_SIZE = (960, 600)
+
+
+def window_size(screen: tuple[int, int] | None) -> tuple[int, int]:
+    """The default window, shrunk to fit the display it opens on.
+
+    A fixed 1366x900 is clipped on a 1366x768 laptop or a display scaled to
+    125%, which hides the bottom of every screen with no way to reach it. Leave
+    room for the taskbar and title bar, and never go below the minimum the
+    layout is designed for.
+    """
+    if not screen:
+        return DEFAULT_SIZE
+    width = max(MIN_SIZE[0], min(DEFAULT_SIZE[0], screen[0] - 80))
+    height = max(MIN_SIZE[1], min(DEFAULT_SIZE[1], screen[1] - 140))
+    return width, height
+
+
+class _Bridge:
+    """Methods the page can call as `window.pywebview.api.<name>()`.
+
+    Deliberately tiny. The page is our own bundled UI on a loopback origin,
+    but anything exposed here is reachable from it, so this offers one
+    read-only capability: choose a folder. It returns a path; registering it is
+    still an ordinary API call that goes through the usual checks.
+    """
+
+    def pick_folder(self) -> str | None:
+        import webview
+
+        kind = getattr(getattr(webview, "FileDialog", None), "FOLDER", None)
+        if kind is None:  # pywebview < 5 spells it as a module constant
+            kind = webview.FOLDER_DIALOG
+        chosen = webview.windows[0].create_file_dialog(kind)
+        return str(chosen[0]) if chosen else None
+
+
+def _screen_size() -> tuple[int, int] | None:
+    import webview
+
+    try:
+        primary = webview.screens[0]
+        return int(primary.width), int(primary.height)
+    except (AttributeError, IndexError, TypeError):
+        return None
+
+
 def _open_window(url: str) -> None:
     import webview
 
-    log.info("desktop.window", url=url)
-    webview.create_window(WINDOW_TITLE, url, width=1366, height=900, min_size=(960, 600))
+    width, height = window_size(_screen_size())
+    log.info("desktop.window", url=url, width=width, height=height)
+    webview.create_window(
+        WINDOW_TITLE, url, width=width, height=height, min_size=MIN_SIZE, js_api=_Bridge()
+    )
     # Blocks until the window is closed; the API thread is a daemon, so the
     # process ends with it.
     webview.start()

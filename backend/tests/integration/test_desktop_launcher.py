@@ -162,3 +162,21 @@ def test_the_window_opens_only_when_the_server_answers(monkeypatch, ready):
 
     desktop.main()
     assert bool(opened) is ready
+
+
+def test_window_fits_a_small_display():
+    # 1366x768 laptop, and 125%-scaled 1920x1080 (= 1536x864 effective).
+    assert desktop.window_size((1366, 768)) == (1286, 628)
+    assert desktop.window_size((1536, 864)) == (1366, 724)
+
+
+def test_window_never_exceeds_the_default_on_a_big_display():
+    assert desktop.window_size((3840, 2160)) == desktop.DEFAULT_SIZE
+
+
+def test_window_never_goes_below_the_designed_minimum():
+    assert desktop.window_size((800, 500)) == desktop.MIN_SIZE
+
+
+def test_window_size_with_unknown_display_uses_the_default():
+    assert desktop.window_size(None) == desktop.DEFAULT_SIZE

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type Finding, type Freshness, type Proposal } from '../lib/api'
 import { useProject } from '../lib/useProject'
+import { useAddProject } from '../lib/useAddProject'
 import { Badge, Bar, Button, Dot, Empty, ErrorNote, Neon, PanelTitle } from '../components/ui'
 import MemoryPulse from '../components/MemoryPulse'
 
@@ -72,6 +73,11 @@ function IntelligenceQueue({ projectId }: { projectId: string }) {
     queryKey: ['proposals', projectId],
     queryFn: () => api.proposals(projectId),
   })
+
+  // "Nothing waiting" is only a finding once a check has actually run;
+  // before that the honest line is how to run one (same rule as ADR-0037).
+  const detail = useQuery({ queryKey: ['project', projectId], queryFn: () => api.getProject(projectId) })
+  const checked = !!detail.data?.freshness.checked_at
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['findings', projectId] })
@@ -144,7 +150,14 @@ function IntelligenceQueue({ projectId }: { projectId: string }) {
         </ul>
       ) : items.length === 0 ? (
         <div className="px-3.5 pb-3">
-          <Empty title="Nothing waiting" hint="Run an analysis after a scan to look for drift, conflicts and duplicates." />
+          <Empty
+            title="Nothing waiting"
+            hint={
+              checked
+                ? 'The last analysis found no drift, conflicts or duplicates.'
+                : 'Run an analysis after a scan to look for drift, conflicts and duplicates.'
+            }
+          />
         </div>
       ) : (
         <ul>
@@ -396,6 +409,7 @@ function LedgerSummary({ ids }: { ids: string[] }) {
 }
 
 function MemoryLedger() {
+  const addProject = useAddProject()
   const { projects, projectId, select } = useProject()
   const rows = projects.data ?? []
 
@@ -411,7 +425,11 @@ function MemoryLedger() {
         <div className="px-3.5 pb-3"><ErrorNote error={projects.error} /></div>
       ) : rows.length === 0 ? (
         <div className="px-3.5 pb-3">
-          <Empty title="No projects registered" hint="Add a local folder to begin." />
+          <Empty
+            title="No projects yet"
+            hint="Point Kernote at a local folder and it builds the project's memory."
+            action={<Button primary onClick={addProject}>+ Add project</Button>}
+          />
         </div>
       ) : (
         <table className="w-full table-fixed">
@@ -589,7 +607,7 @@ export default function Dashboard() {
           <div className="px-3.5 py-6">
             <Empty
               title="No project selected"
-              hint="Register a local folder from the Memory Explorer, or pick one above."
+              hint="Add a local folder with the button above, or pick a project from the sidebar."
             />
           </div>
         </div>

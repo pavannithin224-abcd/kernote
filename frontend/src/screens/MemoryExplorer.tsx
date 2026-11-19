@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { TYPE_LABEL, api, citationOf, shortDate, type MemoryType } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Citation, Empty, ErrorNote, Panel, ScreenHeader } from '../components/ui'
+import { Badge, Citation, Empty, ErrorNote, Panel, ScreenHeader, NoProject } from '../components/ui'
 
 const TYPES: MemoryType[] = [
   'project_fact', 'architecture', 'decision', 'procedure',
@@ -46,7 +46,7 @@ export default function MemoryExplorer() {
   )
 
   if (!projectId) {
-    return <Empty title="No project selected" hint="Register one on the Dashboard first." />
+    return <NoProject />
   }
 
   return (

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Finding } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader, Stat } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader, Stat, NoProject } from '../components/ui'
 
 const KIND_LABEL: Record<Finding['kind'], string> = {
   stale_risk: 'May be stale',
@@ -498,7 +498,7 @@ export default function MaintenanceCenter() {
   })
 
   if (!projectId) {
-    return <Empty title="No project selected" hint="Register one on the Dashboard first." />
+    return <NoProject />
   }
 
   const byKind = (findings.data ?? []).reduce<Record<string, Finding[]>>((acc, f) => {

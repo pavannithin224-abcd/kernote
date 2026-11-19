@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader, Stat } from '../components/ui'
+import { Badge, Button, Citation, ErrorNote, Panel, ScreenHeader, Stat, NoProject } from '../components/ui'
 
 export default function AgentIntegrations() {
   const { projectId } = useProject()
@@ -21,7 +21,7 @@ export default function AgentIntegrations() {
   })
 
   if (!projectId) {
-    return <Empty title="No project selected" hint="Register one on the Dashboard first." />
+    return <NoProject />
   }
 
   function copySnippet(text: string) {

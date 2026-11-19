@@ -377,6 +377,18 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export type Job = {
+  id: string
+  kind: string
+  project_id: string
+  status: 'queued' | 'running' | 'done' | 'failed'
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+  result: Record<string, number> | null
+  error: string | null
+}
+
 export const api = {
   health: () =>
     call<{
@@ -447,6 +459,12 @@ export const api = {
   registerProject: (name: string, root_path: string) =>
     call<Project>('/projects', { method: 'POST', body: JSON.stringify({ name, root_path }) }),
   scan: (id: string) => call<ScanResult>(`/projects/${id}/scan`, { method: 'POST' }),
+  // Long work goes through the job runner so the window never freezes.
+  scanInBackground: (id: string) =>
+    call<Job>(`/projects/${id}/scan/background`, { method: 'POST' }),
+  analyzeInBackground: (id: string) =>
+    call<Job>(`/projects/${id}/analyze/background`, { method: 'POST' }),
+  job: (id: string) => call<Job>(`/jobs/${id}`),
   skipped: (runId: string) =>
     call<{ total: number; by_reason: Record<string, string[]> }>(`/scans/${runId}/skipped`),
   // Superseded and archived records are hidden by default (MEMORY_MODEL.md):

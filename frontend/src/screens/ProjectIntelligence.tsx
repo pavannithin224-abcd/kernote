@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type AnswerBundle } from '../lib/api'
 import { useProject } from '../lib/useProject'
-import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader } from '../components/ui'
+import { Badge, Button, Citation, Empty, ErrorNote, Panel, ScreenHeader, NoProject } from '../components/ui'
 
 const OUTCOME: Record<AnswerBundle['outcome'], { label: string; tone: 'ok' | 'warn' | 'neutral' }> = {
   evidence_found: { label: 'Evidence found', tone: 'ok' },
@@ -55,7 +55,7 @@ export default function ProjectIntelligence() {
   })
 
   if (!projectId) {
-    return <Empty title="No project selected" hint="Register one on the Dashboard first." />
+    return <NoProject />
   }
 
   const emb = embeddings.data
