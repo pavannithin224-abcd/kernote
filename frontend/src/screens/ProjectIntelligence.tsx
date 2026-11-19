@@ -148,13 +148,25 @@ export default function ProjectIntelligence() {
               {bundle.evidence.map((item) => (
                 <li key={`${item.source}-${item.target_id}`} className="space-y-1">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge tone={item.kind === 'evidence' ? 'ok' : 'warn'}>
-                      {item.kind === 'evidence' ? 'quoted from source' : 'interpretation'}
-                    </Badge>
+                    {/* When the outcome is weak, these rows are the search's closest
+                        guesses, not answers. Stamping them "quoted from source" with a
+                        confidence figure made an irrelevant record read as evidence,
+                        which is the one thing this screen must never do. */}
+                    {bundle.outcome === 'weak_evidence' ? (
+                      <Badge tone="warn">lead · not an answer</Badge>
+                    ) : (
+                      <Badge tone={item.kind === 'evidence' ? 'ok' : 'warn'}>
+                        {item.kind === 'evidence' ? 'quoted from source' : 'interpretation'}
+                      </Badge>
+                    )}
                     <Citation>{item.citation}</Citation>
-                    {item.confidence !== null && (
-                      <span className="mono text-[11px]" style={{ color: 'var(--muted)' }}>
-                        confidence {item.confidence.toFixed(2)}
+                    {item.confidence !== null && bundle.outcome !== 'weak_evidence' && (
+                      <span
+                        className="mono text-[11px]"
+                        style={{ color: 'var(--muted)' }}
+                        title="How reliably this record was extracted from its source, not how well it answers the question"
+                      >
+                        extraction confidence {item.confidence.toFixed(2)}
                       </span>
                     )}
                   </div>
