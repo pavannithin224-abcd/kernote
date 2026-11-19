@@ -538,3 +538,33 @@ def test_mcp_info_tool_list_comes_from_the_live_registry(conn, tmp_path):
     advertised = {t["name"] for t in tool_manifest(conn, project.id)}
     assert advertised == set(_tools(conn, project.id))
     assert all(t["description"] for t in tool_manifest(conn, project.id))
+
+
+def test_installed_app_points_agents_at_the_console_helper(client, demo_repo, monkeypatch):
+    # In the installed app there is no interpreter and no source tree, so the
+    # source-tree command (python -m kernote.mcp.server, PYTHONPATH=backend) is
+    # a command that cannot run. It must name the helper exe beside the app.
+    import sys
+
+    project = client.post("/api/v1/projects", json={"name": "p", "root_path": demo_repo}).json()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(
+        sys, "executable", r"C:\Users\Jane Doe\AppData\Local\Programs\Kernote\kernote.exe"
+    )
+
+    body = client.get(f"/api/v1/projects/{project['id']}/mcp").json()
+
+    assert body["command"].endswith("kernote-mcp.exe'") or body["command"].endswith(
+        "kernote-mcp.exe"
+    )
+    assert "Jane Doe" in body["command"] and "-m kernote" not in body["command"]
+    assert "PYTHONPATH" not in body["env"]
+    assert body["env"]["KERNOTE_PROJECT"] == project["id"]
+    assert "kernote-mcp.exe" in body["claude_code_snippet"]
+
+
+def test_source_checkout_still_uses_the_module_command(client, demo_repo):
+    project = client.post("/api/v1/projects", json={"name": "p", "root_path": demo_repo}).json()
+    body = client.get(f"/api/v1/projects/{project['id']}/mcp").json()
+    assert "-m kernote.mcp.server" in body["command"]
+    assert "PYTHONPATH" in body["env"]

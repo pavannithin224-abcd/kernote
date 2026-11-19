@@ -34,6 +34,21 @@ class McpInfo(BaseModel):
     note: str
 
 
+def _mcp_launch() -> tuple[str, dict[str, str]]:
+    """The command an agent runs to talk to this install, and its extra env.
+
+    From source that is the interpreter plus the module. From the installed
+    app there is no interpreter and no source tree, so it is the console
+    helper that ships beside the app. Quoting matters on the installed path:
+    it lives under a user name that routinely contains a space.
+    """
+    if getattr(sys, "frozen", False):
+        helper = Path(sys.executable).with_name("kernote-mcp.exe")
+        return shlex.quote(str(helper)), {}
+    backend_dir = str(Path(__file__).resolve().parents[3])
+    return f"{shlex.quote(sys.executable)} -m kernote.mcp.server", {"PYTHONPATH": backend_dir}
+
+
 @router.post("/projects/{project_id}/context")
 def build_context(project_id: str, body: BundleRequest) -> dict:
     """A budgeted Markdown bundle of approved memory, with citations.
@@ -74,11 +89,9 @@ def mcp_info(project_id: str) -> McpInfo:
     if project is None:
         raise HTTPException(404, "project not found")
 
-    interpreter = sys.executable
-    backend_dir = str(Path(__file__).resolve().parents[3])
-    command = f"{interpreter} -m kernote.mcp.server"
+    command, env = _mcp_launch()
     env = {
-        "PYTHONPATH": backend_dir,
+        **env,
         "KERNOTE_PROJECT": project.id,
         "KERNOTE_DATA_DIR": str(settings.data_dir),
     }
